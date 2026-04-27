@@ -1,0 +1,23 @@
+{
+  "content": [
+    {
+      "id": "post-uuid-001", "authorId": "user-uuid-5678", "authorName": "John Doe",
+      "authorAvatar": null, "groupId": null, "groupSlug": null, "groupName": null,
+      "title": "Flood situation near Sungai Sarawak",
+      "content": "Water levels are rising rapidly. Stay safe everyone.",
+      "imageUrl": null, "likesCount": 12, "commentsCount": 3,
+      "likedByMe": false, "createdAt": "2025-01-01T08:00:00Z",
+      "updatedAt": "2025-01-01T08:00:00Z", "comments": []
+    },
+    {
+      "id": "post-uuid-002", "authorId": "user-uuid-5679", "authorName": "Jane Smith",
+      "authorAvatar": null, "groupId": null, "groupSlug": null, "groupName": null,
+      "title": "Emergency supplies available at community centre",
+      "content": "Free food and water at Kompleks Yayasan Sarawak.",
+      "imageUrl": null, "likesCount": 45, "commentsCount": 8,
+      "likedByMe": true, "createdAt": "2025-01-01T09:00:00Z",
+      "updatedAt": "2025-01-01T09:00:00Z", "comments": []
+    }
+  ],
+  "totalElements": 2, "totalPages": 1, "number": 0, "size": 20
+}

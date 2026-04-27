@@ -1,0 +1,125 @@
+/**
+ * Web Push Notification utilities for the FloodWatch Community website.
+ *
+ * Uses the browser's native Push API + a registered Service Worker (public/sw.js).
+ * The server sends VAPID-signed push messages; we store the PushSubscription
+ * object in the Java backend via POST /settings/push-subscription.
+ *
+ * Usage (in a client component or settings page):
+ *   import { subscribeToPush, unsubscribeFromPush, isPushSupported, getSubscriptionState } from '@/lib/pushNotifications';
+ */
+
+/** VAPID public key — must match the key used by the Java backend to sign pushes. */
+const VAPID_PUBLIC_KEY =
+  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ||
+  'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U';
+
+/** Convert a base64url VAPID key to an ArrayBuffer for the Push API. */
+function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray.buffer;
+}
+
+/** Returns true when the current browser supports Web Push. */
+export function isPushSupported(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    'serviceWorker' in navigator &&
+    'PushManager' in window &&
+    'Notification' in window
+  );
+}
+
+/** Returns the current push subscription state for the user. */
+export async function getSubscriptionState(): Promise<{
+  permission: NotificationPermission;
+  subscribed: boolean;
+}> {
+  if (!isPushSupported()) {
+    return { permission: 'denied', subscribed: false };
+  }
+
+  const permission = Notification.permission;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration('/sw.js');
+    if (!reg) return { permission, subscribed: false };
+    const sub = await reg.pushManager.getSubscription();
+    return { permission, subscribed: !!sub };
+  } catch {
+    return { permission, subscribed: false };
+  }
+}
+
+/**
+ * Registers the service worker, requests notification permission, subscribes
+ * to push notifications, and sends the PushSubscription to the Java backend.
+ *
+ * @param accessToken  JWT bearer token for the authenticated user.
+ * @returns  'subscribed' | 'denied' | 'unsupported'
+ */
+export async function subscribeToPush(
+  accessToken: string
+): Promise<'subscribed' | 'denied' | 'unsupported'> {
+  if (!isPushSupported()) return 'unsupported';
+
+  // 1. Register (or reuse) the service worker
+  const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+  await navigator.serviceWorker.ready;
+
+  // 2. Request notification permission
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') return 'denied';
+
+  // 3. Subscribe via PushManager
+  const subscription = await reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+  });
+
+  // 4. Send subscription to Java backend
+  await fetch('/api/push/subscribe', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(subscription.toJSON()),
+  });
+
+  return 'subscribed';
+}
+
+/**
+ * Unsubscribes the user from push notifications and removes the subscription
+ * from the Java backend.
+ *
+ * @param accessToken  JWT bearer token for the authenticated user.
+ */
+export async function unsubscribeFromPush(accessToken: string): Promise<void> {
+  if (!isPushSupported()) return;
+
+  const reg = await navigator.serviceWorker.getRegistration('/sw.js');
+  if (!reg) return;
+
+  const sub = await reg.pushManager.getSubscription();
+  if (!sub) return;
+
+  // Remove from backend first
+  await fetch('/api/push/subscribe', {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ endpoint: sub.endpoint }),
+  });
+
+  // Unsubscribe from browser
+  await sub.unsubscribe();
+}
