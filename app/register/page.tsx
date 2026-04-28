@@ -106,7 +106,7 @@ export default function RegisterPage() {
         <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden">
           <div className="absolute inset-0">
             <Image
-              src="/images/login-background.png"
+              src="/images/flood-background.jpeg"
               alt="Flood monitoring"
               fill
               className="object-cover"
@@ -154,8 +154,8 @@ export default function RegisterPage() {
               <div
                 className="mb-4 rounded-xl px-4 py-3 text-sm border"
                 style={{
-                  background: "rgba(237,28,36,0.08)",
-                  borderColor: "rgba(237,28,36,0.3)",
+                  background: "rgba(29,78,216,0.08)",
+                  borderColor: "rgba(29,78,216,0.3)",
                   color: "var(--color-brand)",
                 }}
               >
@@ -300,12 +300,12 @@ export default function RegisterPage() {
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-colors focus:ring-2"
                   style={{
                     background: "var(--color-input-bg)",
-                    borderColor: !passwordMatch ? "rgba(237,28,36,0.6)" : "var(--color-border)",
+                    borderColor: !passwordMatch ? "#ef4444" : "var(--color-border)",
                     color: "var(--color-text)",
                   }}
                 />
                 {!passwordMatch && (
-                  <p className="mt-1 text-xs" style={{ color: "var(--color-brand)" }}>
+                  <p className="mt-1 text-xs" style={{ color: "#ef4444" }}>
                     Passwords do not match
                   </p>
                 )}

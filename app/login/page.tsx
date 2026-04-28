@@ -156,7 +156,7 @@ export default function LoginPage() {
         <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden">
           <div className="absolute inset-0">
             <Image
-              src="/images/login-background.png"
+              src="/images/flood-background.jpeg"
               alt="Flood monitoring"
               fill
               sizes="50vw"
@@ -199,7 +199,7 @@ export default function LoginPage() {
                 {error && (
                   <div
                     className="mb-4 rounded-xl px-4 py-3 text-sm border"
-                    style={{ background: "rgba(237,28,36,0.08)", borderColor: "rgba(237,28,36,0.3)", color: "var(--color-brand)" }}
+                    style={{ background: "rgba(29,78,216,0.08)", borderColor: "rgba(29,78,216,0.3)", color: "var(--color-brand)" }}
                   >
                     {error}
                   </div>
@@ -307,7 +307,7 @@ export default function LoginPage() {
                 {error && (
                   <div
                     className="mb-4 rounded-xl px-4 py-3 text-sm border"
-                    style={{ background: "rgba(237,28,36,0.08)", borderColor: "rgba(237,28,36,0.3)", color: "var(--color-brand)" }}
+                    style={{ background: "rgba(29,78,216,0.08)", borderColor: "rgba(29,78,216,0.3)", color: "var(--color-brand)" }}
                   >
                     {error}
                   </div>

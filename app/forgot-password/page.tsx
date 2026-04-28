@@ -68,7 +68,7 @@ export default function ForgotPasswordPage() {
 
             {error && (
               <div className="mb-4 rounded-xl px-4 py-3 text-sm border"
-                style={{ background: "rgba(237,28,36,0.08)", borderColor: "rgba(237,28,36,0.3)", color: "var(--color-brand)" }}>
+                style={{ background: "rgba(29,78,216,0.08)", borderColor: "rgba(29,78,216,0.3)", color: "var(--color-brand)" }}>
                 {error}
               </div>
             )}
