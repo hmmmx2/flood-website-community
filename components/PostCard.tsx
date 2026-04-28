@@ -332,7 +332,7 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
                       <button type="button" onClick={() => fileInputRef.current?.click()}
                         className="bg-black/60 text-white text-xs px-2 py-1 rounded-lg hover:bg-black/80">Change</button>
                       <button type="button" onClick={() => { setEditImagePreview(null); setEditImageBase64(null); setRemoveImage(true); }}
-                        className="bg-red-500/80 text-white text-xs px-2 py-1 rounded-lg hover:bg-red-600">Remove</button>
+                        className="bg-gray-500/80 text-white text-xs px-2 py-1 rounded-lg hover:bg-gray-600">Remove</button>
                     </div>
                   </div>
                 ) : (

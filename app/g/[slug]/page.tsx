@@ -172,7 +172,7 @@ export default function GroupPage() {
         <div className="border-b border-[var(--color-border)] bg-white">
           <div className="mx-auto max-w-5xl px-4 py-5 flex items-center gap-4">
             <div className="h-16 w-16 rounded-2xl flex items-center justify-center text-2xl font-bold text-white flex-shrink-0 shadow"
-              style={{ backgroundColor: group.iconColor || "#ef4444" }}>
+              style={{ backgroundColor: group.iconColor || "var(--color-brand)" }}>
               {group.iconLetter}
             </div>
             <div className="flex-1 min-w-0">

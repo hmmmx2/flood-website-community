@@ -311,7 +311,7 @@ export default function HomePage() {
                   <Link key={g.id} href={`/g/${g.slug}`}
                     className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-[var(--color-hover)] transition group">
                     <div className="h-8 w-8 rounded-lg flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
-                      style={{ backgroundColor: g.iconColor || "#ef4444" }}>
+                      style={{ backgroundColor: g.iconColor || "var(--color-brand)" }}>
                       {g.iconLetter}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -321,7 +321,7 @@ export default function HomePage() {
                       <p className="text-xs text-[var(--color-muted)]">{g.membersCount.toLocaleString()} members</p>
                     </div>
                     {g.joinedByMe && (
-                      <span className="text-[10px] font-bold text-[var(--color-brand)] bg-red-50 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                      <span className="text-[10px] font-bold text-[var(--color-brand)] bg-blue-50 px-1.5 py-0.5 rounded-full flex-shrink-0">
                         Joined
                       </span>
                     )}

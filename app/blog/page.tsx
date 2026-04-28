@@ -30,7 +30,7 @@ const CATEGORIES = ["All", "Flood Alert", "Safety Tips", "Community", "Updates",
 
 function categoryColor(cat: string): string {
   switch (cat) {
-    case "Flood Alert": return "bg-red-100 text-red-700";
+    case "Flood Alert": return "bg-blue-100 text-blue-700";
     case "Safety Tips": return "bg-amber-100 text-amber-700";
     case "Community": return "bg-purple-100 text-purple-700";
     case "Updates": return "bg-blue-100 text-blue-700";
@@ -254,7 +254,7 @@ export default function BlogPage() {
                     key={cat}
                     onClick={() => handleCategoryChange(cat)}
                     className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                      activeCategory === cat ? "bg-red-50 text-[var(--color-brand)] font-medium" : "text-gray-600 hover:bg-gray-50"
+                      activeCategory === cat ? "bg-blue-50 text-[var(--color-brand)] font-medium" : "text-gray-600 hover:bg-gray-50"
                     }`}
                   >
                     {cat}

@@ -327,13 +327,13 @@ export default function SensorsPage() {
             <nav className="hidden sm:flex items-center gap-1">
               <Link href="/" className="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors">Community</Link>
               <Link href="/blog" className="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors">Blog</Link>
-              <span className="px-3 py-1.5 rounded-lg text-sm font-semibold text-[var(--color-brand)] bg-red-50">Sensors</span>
+              <span className="px-3 py-1.5 rounded-lg text-sm font-semibold text-[var(--color-brand)] bg-blue-50">Sensors</span>
             </nav>
           </div>
           <div className="flex items-center gap-3">
             {user ? (
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-[var(--color-brand)] font-bold text-sm">
+                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-[var(--color-brand)] font-bold text-sm">
                   {user.displayName?.charAt(0).toUpperCase() ?? "U"}
                 </div>
                 <span className="text-sm font-medium text-gray-700 hidden sm:block">{user.displayName}</span>

@@ -20,7 +20,7 @@ type BlogDto = {
 
 function categoryColor(cat: string): string {
   switch (cat) {
-    case "Flood Alert": return "bg-red-100 text-red-700";
+    case "Flood Alert": return "bg-blue-100 text-blue-700";
     case "Safety Tips": return "bg-amber-100 text-amber-700";
     case "Community": return "bg-purple-100 text-purple-700";
     case "Updates": return "bg-blue-100 text-blue-700";
@@ -98,7 +98,7 @@ export default function BlogDetailPage() {
             <Link href="/" className="font-bold text-[var(--color-brand)] text-sm">FloodWatch</Link>
           </div>
           {user ? (
-            <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-[var(--color-brand)] font-bold text-sm">
+            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-[var(--color-brand)] font-bold text-sm">
               {user.displayName?.charAt(0).toUpperCase() ?? "U"}
             </div>
           ) : (
@@ -124,7 +124,7 @@ export default function BlogDetailPage() {
                 {blog.category}
               </span>
               {blog.isFeatured && (
-                <span className="text-xs font-semibold text-[var(--color-brand)] bg-red-50 px-2.5 py-1 rounded-full">★ Featured</span>
+                <span className="text-xs font-semibold text-[var(--color-brand)] bg-blue-50 px-2.5 py-1 rounded-full">★ Featured</span>
               )}
             </div>
 
