@@ -2,11 +2,12 @@
 
 import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import Image from "next/image";
 import { saveSession, AuthUser } from "@/lib/auth";
 
 const CRM_URL = process.env.NEXT_PUBLIC_CRM_URL || "http://localhost:3000";
-type View = "login" | "register" | "mfa";
+type View = "login" | "register";
 
 // Java API returns: { session: { accessToken, refreshToken }, user: { id, email, displayName, role } }
 type LoginResponse = {
@@ -36,6 +37,7 @@ export default function LoginPage() {
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [showLoginPw, setShowLoginPw] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
 
   // Register
   const [firstName, setFirstName] = useState("");
@@ -44,14 +46,6 @@ export default function LoginPage() {
   const [regPassword, setRegPassword] = useState("");
   const [showRegPw, setShowRegPw] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState("");
-
-  // MFA
-  const [mfaCode, setMfaCode] = useState("");
-  const [pendingSession, setPendingSession] = useState<{
-    accessToken: string;
-    refreshToken: string;
-    user: AuthUser;
-  } | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -102,29 +96,6 @@ export default function LoginPage() {
     }
   }
 
-  async function handleMfa(e: FormEvent) {
-    e.preventDefault();
-    if (!pendingSession) return;
-    setError("");
-    setLoading(true);
-    try {
-      const res = await fetch("/api/auth/verify-reset-code", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: pendingSession.user.email, code: mfaCode }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Invalid or expired code.");
-      }
-      redirectToAdmin(pendingSession.accessToken, pendingSession.refreshToken, pendingSession.user);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Verification failed.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function handleRegister(e: FormEvent) {
     e.preventDefault();
     setError("");
@@ -170,7 +141,7 @@ export default function LoginPage() {
       >
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-2">
-            <Image src="/images/logo.png" alt="Logo" width={36} height={36} />
+            <Image src="/images/logo.png" alt="Pop Up Advertising And Information Enterprise" width={36} height={36} priority />
             <span className="hidden sm:block text-sm font-semibold" style={{ color: "var(--color-text)" }}>
               FloodWatch Community
             </span>
@@ -188,14 +159,15 @@ export default function LoginPage() {
               src="/images/login-background.png"
               alt="Flood monitoring"
               fill
+              sizes="50vw"
               className="object-cover"
               priority
             />
-            <div className="absolute inset-0" style={{ background: "linear-gradient(135deg, rgba(28,28,28,0.6) 0%, rgba(28,28,28,0.4) 50%, rgba(237,28,36,0.5) 100%)" }} />
+            <div className="absolute inset-0" style={{ background: "linear-gradient(135deg, rgba(30,58,138,0.7) 0%, rgba(29,78,216,0.5) 50%, rgba(8,145,178,0.5) 100%)" }} />
           </div>
           <div className="relative z-10 flex flex-1 flex-col justify-center items-center text-center px-12">
             <div className="drop-shadow-lg">
-              <Image src="/images/logo.png" alt="Logo" width={100} height={100} className="mx-auto mb-6" />
+              <Image src="/images/logo.png" alt="Pop Up Advertising And Information Enterprise" width={100} height={100} className="mx-auto mb-6" priority />
               <h1 className="text-3xl font-bold text-white mb-3">FloodWatch Community</h1>
               <p className="text-base text-white/90 max-w-sm mx-auto">
                 Real-time flood alerts and community updates for Sarawak, powered by IoT sensors.
@@ -212,68 +184,8 @@ export default function LoginPage() {
           >
             {/* Logo (mobile only) */}
             <div className="flex justify-center mb-6 lg:hidden">
-              <Image src="/images/logo.png" alt="Logo" width={80} height={80} />
+              <Image src="/images/logo.png" alt="Pop Up Advertising And Information Enterprise" width={80} height={80} priority />
             </div>
-
-            {/* ── MFA view ───────────────────────────────────────── */}
-            {/* TODO: Re-enable once admin email is configured to receive verification codes.
-            {view === "mfa" && (
-              <>
-                <h2 className="text-2xl font-semibold mb-2" style={{ color: "var(--color-text)" }}>
-                  Verify your identity
-                </h2>
-                <p className="text-sm mb-6" style={{ color: "var(--color-muted)" }}>
-                  A 6-digit code was sent to <strong>{pendingSession?.user.email}</strong>. Enter it below to continue.
-                </p>
-                {error && (
-                  <div
-                    className="mb-4 rounded-xl px-4 py-3 text-sm border"
-                    style={{ background: "rgba(237,28,36,0.08)", borderColor: "rgba(237,28,36,0.3)", color: "var(--color-brand)" }}
-                  >
-                    {error}
-                  </div>
-                )}
-                <form onSubmit={handleMfa} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: "var(--color-text)" }}>
-                      Verification code
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={6}
-                      value={mfaCode}
-                      onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ""))}
-                      placeholder="123456"
-                      required
-                      className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none text-center tracking-widest text-lg font-mono transition-colors focus:ring-2"
-                      style={{
-                        background: "var(--color-input-bg)",
-                        borderColor: "var(--color-border)",
-                        color: "var(--color-text)",
-                      }}
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={loading || mfaCode.length !== 6}
-                    className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{ background: "var(--color-brand)" }}
-                  >
-                    {loading ? "Verifying…" : "Verify & Continue"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setView("login"); setError(""); setMfaCode(""); }}
-                    className="w-full text-sm text-center transition hover:opacity-80"
-                    style={{ color: "var(--color-muted)" }}
-                  >
-                    ← Back to sign in
-                  </button>
-                </form>
-              </>
-            )}
-            */}
 
             {/* ── Login view ─────────────────────────────────────── */}
             {view === "login" && (
@@ -345,6 +257,8 @@ export default function LoginPage() {
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
+                        checked={rememberMe}
+                        onChange={e => setRememberMe(e.target.checked)}
                         className="h-4 w-4 rounded"
                         style={{ accentColor: "var(--color-brand)" }}
                       />
@@ -352,6 +266,7 @@ export default function LoginPage() {
                     </label>
                     <button
                       type="button"
+                      onClick={() => router.push("/forgot-password")}
                       className="font-semibold transition hover:opacity-80"
                       style={{ color: "var(--color-brand)" }}
                     >
@@ -482,6 +397,7 @@ export default function LoginPage() {
                         {showRegPw ? "Hide" : "Show"}
                       </button>
                     </div>
+                    <p className="mt-1 text-xs" style={{ color: "var(--color-muted)" }}>Minimum 8 characters</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-2" style={{ color: "var(--color-text)" }}>

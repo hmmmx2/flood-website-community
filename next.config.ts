@@ -1,12 +1,8 @@
 import type { NextConfig } from "next";
-import path from "path";
 
+/** `output: "standalone"` enables the production Dockerfile (see deploy/docker-compose.yml). */
 const nextConfig: NextConfig = {
-  experimental: {
-    turbo: {
-      root: path.resolve(__dirname),
-    },
-  },
+  output: "standalone",
 };
 
 export default nextConfig;

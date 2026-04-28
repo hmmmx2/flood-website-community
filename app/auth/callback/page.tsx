@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { saveSession } from "@/lib/auth";
 import type { AuthUser } from "@/lib/auth";
 
-export default function AuthCallbackPage() {
+function CallbackContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -19,15 +19,21 @@ export default function AuthCallbackPage() {
       return;
     }
 
-    try {
-      const user: AuthUser = JSON.parse(atob(u));
-      saveSession({ accessToken: at, refreshToken: rt }, user);
-      // Remove tokens from URL immediately (security: no browser history leak)
-      window.history.replaceState({}, "", "/");
-      router.replace("/");
-    } catch {
-      router.replace("/login");
+    const decoded = (() => {
+      try { return JSON.parse(atob(u)); } catch {}
+      try { return JSON.parse(decodeURIComponent(u)); } catch {}
+      return null;
+    })();
+
+    if (!decoded || !decoded.id || !decoded.email || !decoded.role) {
+      router.replace("/login?error=invalid_session");
+      return;
     }
+
+    const user: AuthUser = decoded as AuthUser;
+    saveSession({ accessToken: at, refreshToken: rt }, user);
+    window.history.replaceState({}, "", "/");
+    router.replace("/");
   }, [router, searchParams]);
 
   return (
@@ -37,5 +43,19 @@ export default function AuthCallbackPage() {
         <p className="text-sm text-[var(--color-muted)]">Signing you in…</p>
       </div>
     </div>
+  );
+}
+
+export default function AuthCallbackPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg)]">
+          <p className="text-sm text-[var(--color-muted)]">Loading…</p>
+        </div>
+      }
+    >
+      <CallbackContent />
+    </Suspense>
   );
 }

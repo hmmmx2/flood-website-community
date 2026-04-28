@@ -1,0 +1,58 @@
+[
+  {
+    "id": "node-uuid-001",
+    "nodeId": "102782478",
+    "name": "Node 102782478",
+    "status": "active",
+    "distance": "1.2 km",
+    "coordinate": [110.3592, 1.5533],
+    "area": "Kuching",
+    "location": "Sungai Sarawak",
+    "state": "Sarawak",
+    "currentLevel": 1.2,
+    "isDead": false,
+    "lastUpdated": "2025-01-01T10:00:00Z"
+  },
+  {
+    "id": "node-uuid-002",
+    "nodeId": "102782479",
+    "name": "Node 102782479",
+    "status": "warning",
+    "distance": "2.5 km",
+    "coordinate": [110.3700, 1.5600],
+    "area": "Kuching",
+    "location": "Sungai Tabuan",
+    "state": "Sarawak",
+    "currentLevel": 2.8,
+    "isDead": false,
+    "lastUpdated": "2025-01-01T10:00:00Z"
+  },
+  {
+    "id": "node-uuid-003",
+    "nodeId": "102782480",
+    "name": "Node 102782480",
+    "status": "critical",
+    "distance": "4.0 km",
+    "coordinate": [110.3800, 1.5700],
+    "area": "Kuching",
+    "location": "Sungai Samarahan",
+    "state": "Sarawak",
+    "currentLevel": 4.5,
+    "isDead": false,
+    "lastUpdated": "2025-01-01T10:00:00Z"
+  },
+  {
+    "id": "node-uuid-004",
+    "nodeId": "102782481",
+    "name": "Node 102782481",
+    "status": "inactive",
+    "distance": "6.1 km",
+    "coordinate": [110.3900, 1.5800],
+    "area": "Kuching",
+    "location": "Sungai Kedayan",
+    "state": "Sarawak",
+    "currentLevel": 0,
+    "isDead": true,
+    "lastUpdated": "2025-01-01T08:00:00Z"
+  }
+]

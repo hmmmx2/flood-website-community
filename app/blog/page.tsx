@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getUser, getToken, timeAgo } from "@/lib/auth";
+import Navbar from "@/components/Navbar";
+import { getUser, getToken, clearSession, timeAgo } from "@/lib/auth";
 import type { AuthUser } from "@/lib/auth";
 
 type BlogDto = {
@@ -97,22 +98,31 @@ export default function BlogPage() {
   const [featured, setFeatured] = useState<BlogDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
 
   useEffect(() => { setUser(getUser()); }, []);
 
+  function handleLogout() {
+    clearSession();
+    setUser(null);
+    router.push("/login");
+  }
+
   const fetchBlogs = useCallback(async (p = 0, category = activeCategory, reset = false) => {
-    if (p === 0) setLoading(true); else setLoadingMore(true);
+    if (p === 0) { setLoading(true); setError(null); } else setLoadingMore(true);
     try {
       const params = new URLSearchParams({ page: String(p), size: "20" });
       if (category !== "All") params.set("category", category);
       const res = await fetch(`/api/blogs?${params}`);
+      if (!res.ok) { setError("Failed to load blogs"); return; }
       const data: PagedBlogs = await res.json();
-      setBlogs(prev => reset || p === 0 ? data.content : [...prev, ...data.content]);
+      const content = Array.isArray(data.content) ? data.content : [];
+      setBlogs(prev => reset || p === 0 ? content : [...prev, ...content]);
       setHasMore(!data.last);
       setPage(p);
-    } catch { /* ignore */ } finally {
+    } catch { setError("Failed to load blogs"); } finally {
       setLoading(false);
       setLoadingMore(false);
     }
@@ -137,30 +147,7 @@ export default function BlogPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Top Nav */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-6">
-            <Link href="/" className="font-bold text-[var(--color-brand)] text-lg tracking-tight">FloodWatch</Link>
-            <nav className="hidden sm:flex items-center gap-1">
-              <Link href="/" className="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors">Community</Link>
-              <span className="px-3 py-1.5 rounded-lg text-sm font-semibold text-[var(--color-brand)] bg-red-50">Blog</span>
-            </nav>
-          </div>
-          <div className="flex items-center gap-3">
-            {user ? (
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-[var(--color-brand)] font-bold text-sm">
-                  {user.displayName?.charAt(0).toUpperCase() ?? "U"}
-                </div>
-                <span className="text-sm font-medium text-gray-700 hidden sm:block">{user.displayName}</span>
-              </div>
-            ) : (
-              <Link href="/login" className="text-sm font-medium text-gray-600 hover:text-[var(--color-brand)] transition-colors">Sign in</Link>
-            )}
-          </div>
-        </div>
-      </header>
+      <Navbar user={user} onLogout={handleLogout} activeLink="blog" />
 
       <main className="max-w-5xl mx-auto px-4 py-6">
         <div className="flex gap-6">
@@ -198,6 +185,15 @@ export default function BlogPage() {
             )}
 
             {/* Blog list */}
+            {error && !loading && (
+              <div className="bg-white rounded-xl border border-red-200 p-8 text-center mb-4">
+                <p className="text-red-600 font-medium mb-3">{error}</p>
+                <button onClick={() => void fetchBlogs(0, activeCategory, true)}
+                  className="px-4 py-2 rounded-lg bg-[var(--color-brand)] text-white text-sm font-semibold hover:bg-[var(--color-brand-dark)] transition-colors">
+                  Retry
+                </button>
+              </div>
+            )}
             {loading ? (
               <div className="space-y-3">
                 {[1, 2, 3].map(i => (

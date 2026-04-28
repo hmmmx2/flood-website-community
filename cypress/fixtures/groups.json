@@ -1,0 +1,42 @@
+{
+  "content": [
+    {
+      "id": "group-uuid-001",
+      "slug": "flood-alerts-kuching",
+      "name": "Flood Alerts Kuching",
+      "description": "Real-time flood updates and community alerts for the Kuching area.",
+      "memberCount": 142,
+      "isMember": false,
+      "postCount": 28,
+      "createdAt": "2025-01-01T00:00:00Z",
+      "updatedAt": "2025-01-15T00:00:00Z"
+    },
+    {
+      "id": "group-uuid-002",
+      "slug": "sibu-flood-watch",
+      "name": "Sibu Flood Watch",
+      "description": "Community group for monitoring and discussing flood conditions in Sibu, Sarawak.",
+      "memberCount": 87,
+      "isMember": true,
+      "postCount": 15,
+      "createdAt": "2025-01-05T00:00:00Z",
+      "updatedAt": "2025-01-16T00:00:00Z"
+    },
+    {
+      "id": "group-uuid-003",
+      "slug": "miri-flood-community",
+      "name": "Miri Flood Community",
+      "description": "Stay informed about flood events in Miri. Share updates with your neighbours.",
+      "memberCount": 63,
+      "isMember": false,
+      "postCount": 9,
+      "createdAt": "2025-01-08T00:00:00Z",
+      "updatedAt": "2025-01-17T00:00:00Z"
+    }
+  ],
+  "totalElements": 3,
+  "totalPages": 1,
+  "number": 0,
+  "size": 20,
+  "last": true
+}

@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import Navbar from "@/components/Navbar";
 import PostCard from "@/components/PostCard";
 import CreatePostModal from "@/components/CreatePostModal";
 import { getToken, getUser, clearSession, getInitials } from "@/lib/auth";
+import { authFetch } from "@/lib/authFetch";
 import type { Post, PagedPosts, Group } from "@/lib/types";
 import type { AuthUser } from "@/lib/auth";
 
@@ -28,43 +30,45 @@ export default function GroupPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [joinLoading, setJoinLoading] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
+  const [postsError, setPostsError] = useState(false);
+  const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
 
   useEffect(() => {
     setUser(getUser());
     setToken(getToken());
   }, []);
 
-  // Fetch group info
+  // Fetch group info — authFetch ensures the token is refreshed so joinedByMe is accurate
   useEffect(() => {
-    const t = getToken();
-    const headers: Record<string, string> = {};
-    if (t) headers["Authorization"] = `Bearer ${t}`;
     setGroupLoading(true);
-    fetch(`/api/groups/${slug}`, { headers })
+    setFetchError(false);
+    authFetch(`/api/groups/${slug}`)
       .then(r => {
         if (r.status === 404) { setNotFound(true); return null; }
-        return r.ok ? r.json() : null;
+        if (!r.ok) { setFetchError(true); return null; }
+        return r.json();
       })
       .then((data: Group | null) => {
         if (data) setGroup(data);
       })
+      .catch(() => setFetchError(true))
       .finally(() => setGroupLoading(false));
   }, [slug]);
 
   const fetchPosts = useCallback(async (p: number, s: SortKey, replace: boolean) => {
-    if (replace) setLoading(true); else setLoadingMore(true);
+    if (replace) { setLoading(true); setPostsError(false); } else setLoadingMore(true);
     try {
-      const headers: Record<string, string> = {};
-      const t = getToken();
-      if (t) headers["Authorization"] = `Bearer ${t}`;
-      const res = await fetch(`/api/posts?page=${p}&size=10&sort=${s}&group=${encodeURIComponent(slug)}`, { headers });
-      if (!res.ok) return;
+      // authFetch auto-refreshes the access token on 401/403 so likedByMe is accurate
+      const res = await authFetch(`/api/posts?page=${p}&size=10&sort=${s}&group=${encodeURIComponent(slug)}`);
+      if (!res.ok) { if (replace) setPostsError(true); return; }
       const data: PagedPosts = await res.json();
-      setPosts(prev => replace ? data.content : [...prev, ...data.content]);
+      setPosts(prev => replace ? (Array.isArray(data.content) ? data.content : []) : [...prev, ...(Array.isArray(data.content) ? data.content : [])]);
       setHasMore(!data.last);
       setPage(p);
+    } catch {
+      if (replace) setPostsError(true);
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -76,44 +80,37 @@ export default function GroupPage() {
   }, [sort, fetchPosts]);
 
   async function handleJoinToggle() {
-    const t = token || getToken();
-    if (!t) { router.push("/login"); return; }
+    if (!getToken()) { router.push("/login"); return; }
     setJoinLoading(true);
     try {
-      const res = await fetch(`/api/groups/${slug}/membership`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${t}` },
-      });
-      if (res.ok) {
+      const method = group?.joinedByMe ? "DELETE" : "POST";
+      const res = await authFetch(`/api/groups/${slug}/membership`, { method });
+      if (!res.ok) return;
+      if (res.status !== 204) {
         const data: Group = await res.json();
         setGroup(data);
+      } else {
+        setGroup(prev => prev ? { ...prev, joinedByMe: false, membersCount: Math.max(0, prev.membersCount - 1) } : prev);
       }
     } finally { setJoinLoading(false); }
   }
 
   async function handleLike(postId: string) {
-    const t = token || getToken();
-    if (!t) { router.push("/login"); return; }
-    const res = await fetch(`/api/posts/${postId}/like`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${t}` },
-    });
-    if (res.ok) {
-      const data: { liked: boolean; likesCount: number } = await res.json();
-      setPosts(prev => prev.map(p => p.id === postId
-        ? { ...p, likedByMe: data.liked, likesCount: data.likesCount }
-        : p));
-    }
+    if (!getToken()) { router.push("/login"); return; }
+    const res = await authFetch(`/api/posts/${postId}/like`, { method: "POST" });
+    if (!res.ok) return;
+    const data: { liked: boolean; likesCount: number } = await res.json();
+    setPosts(prev => prev.map(p => p.id === postId
+      ? { ...p, likedByMe: data.liked, likesCount: data.likesCount }
+      : p));
   }
 
   async function handleDelete(postId: string) {
-    if (!confirm("Delete this post?")) return;
-    const t = token || getToken();
-    if (!t) return;
-    const res = await fetch(`/api/posts/${postId}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${t}` },
-    });
+    // WEB-013: two-step inline confirmation
+    if (deletingPostId !== postId) { setDeletingPostId(postId); return; }
+    setDeletingPostId(null);
+    if (!getToken()) return;
+    const res = await authFetch(`/api/posts/${postId}`, { method: "DELETE" });
     if (res.ok || res.status === 204) {
       setPosts(prev => prev.filter(p => p.id !== postId));
     }
@@ -123,7 +120,6 @@ export default function GroupPage() {
     clearSession();
     setUser(null);
     setToken(null);
-    setMenuOpen(false);
   }
 
   if (notFound) {
@@ -139,57 +135,37 @@ export default function GroupPage() {
     );
   }
 
+  if (fetchError) {
+    return (
+      <div className="min-h-screen bg-[var(--color-bg)] flex flex-col items-center justify-center gap-4">
+        <div className="text-5xl">⚠️</div>
+        <h1 className="text-xl font-bold text-[var(--color-text)]">Failed to load community</h1>
+        <p className="text-[var(--color-muted)]">The server may be unavailable. Please try again.</p>
+        <button type="button" onClick={() => { setFetchError(false); setGroupLoading(true); }}
+          className="rounded-full bg-[var(--color-brand)] px-6 py-2.5 text-sm font-bold text-white hover:bg-[var(--color-brand-dark)] transition">
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[var(--color-bg)]">
-      {/* Navbar */}
-      <header className="sticky top-0 z-40 bg-white border-b border-[var(--color-border)] shadow-sm">
-        <div className="mx-auto max-w-5xl flex items-center justify-between h-14 px-4">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="flex items-center gap-2 font-bold text-[var(--color-text)]">
-              <div className="h-8 w-8 rounded-full bg-[var(--color-brand)] flex items-center justify-center">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" className="h-4.5 w-4.5">
-                  <path fillRule="evenodd" d="M11.54 22.351l.07.04.028.016a.76.76 0 00.723 0l.028-.015.071-.041a16.975 16.975 0 001.144-.742 19.58 19.58 0 002.683-2.282c1.944-1.99 3.963-4.98 3.963-8.827a8.25 8.25 0 00-16.5 0c0 3.846 2.02 6.837 3.963 8.827a19.58 19.58 0 002.682 2.282 16.975 16.975 0 001.145.742z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <span className="hidden sm:block text-lg">FloodWatch</span>
-            </Link>
-            <span className="text-[var(--color-border)]">/</span>
-            <span className="text-sm font-bold text-[var(--color-text)]">g/{slug}</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {user ? (
-              <div className="relative">
-                <button type="button" onClick={() => setMenuOpen(o => !o)}
-                  className="flex items-center gap-2 rounded-full border border-[var(--color-border)] px-3 py-1.5 hover:bg-[var(--color-hover)] transition">
-                  <div className="h-6 w-6 rounded-full bg-[var(--color-brand)] flex items-center justify-center text-[10px] font-bold text-white">
-                    {getInitials(user.displayName)}
-                  </div>
-                  <span className="text-sm font-semibold text-[var(--color-text)] hidden sm:block max-w-[120px] truncate">
-                    {user.displayName}
-                  </span>
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-[var(--color-muted)]">
-                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
-                  </svg>
-                </button>
-                {menuOpen && (
-                  <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl border border-[var(--color-border)] shadow-lg overflow-hidden z-50">
-                    <button type="button" onClick={handleLogout}
-                      className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition font-semibold">
-                      Sign Out
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <Link href="/login" className="rounded-full border border-[var(--color-brand)] px-4 py-1.5 text-sm font-bold text-[var(--color-brand)] hover:bg-red-50 transition">Log In</Link>
-                <Link href="/login" className="rounded-full bg-[var(--color-brand)] px-4 py-1.5 text-sm font-bold text-white hover:bg-[var(--color-brand-dark)] transition">Sign Up</Link>
-              </div>
-            )}
-          </div>
+      {/* WEB-013 — inline delete confirmation toast */}
+      {deletingPostId && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 rounded-2xl bg-white border border-red-200 shadow-xl px-5 py-3 animate-in slide-in-from-bottom-4">
+          <span className="text-sm font-medium text-gray-700">Delete this post?</span>
+          <button type="button" onClick={() => handleDelete(deletingPostId)}
+            className="text-sm font-bold text-red-600 hover:text-red-700 transition-colors">Delete</button>
+          <button type="button" onClick={() => setDeletingPostId(null)}
+            className="text-sm font-medium text-gray-400 hover:text-gray-600 transition-colors">Cancel</button>
         </div>
-      </header>
+      )}
+      <Navbar
+        user={user}
+        onLogout={handleLogout}
+        breadcrumb={{ label: `g/${slug}` }}
+      />
 
       {/* Group banner */}
       {!groupLoading && group && (
@@ -273,6 +249,16 @@ export default function GroupPage() {
                 <div key={i} className="bg-white border border-[var(--color-border)] rounded-2xl h-40 animate-pulse" />
               ))}
             </div>
+          ) : postsError ? (
+            <div className="bg-white border border-[var(--color-border)] rounded-2xl p-12 text-center">
+              <div className="text-4xl mb-3">⚠️</div>
+              <h3 className="font-bold text-[var(--color-text)] mb-1">Could not load posts</h3>
+              <p className="text-sm text-[var(--color-muted)] mb-4">The server may be starting up. Please try again.</p>
+              <button type="button" onClick={() => fetchPosts(0, sort, true)}
+                className="rounded-full bg-[var(--color-brand)] px-5 py-2 text-sm font-bold text-white hover:bg-[var(--color-brand-dark)] transition">
+                Retry
+              </button>
+            </div>
           ) : posts.length === 0 ? (
             <div className="bg-white border border-[var(--color-border)] rounded-2xl p-12 text-center">
               <div className="text-4xl mb-3">📭</div>
@@ -293,7 +279,7 @@ export default function GroupPage() {
               ))}
               {hasMore && (
                 <button type="button" onClick={() => fetchPosts(page + 1, sort, false)} disabled={loadingMore}
-                  className="w-full py-3 rounded-2xl bg-white border border-[var(--color-border)] text-sm font-semibold text-[var(--color-brand)] hover:bg-red-50 transition disabled:opacity-50">
+                  className="w-full py-3 rounded-2xl bg-white border border-[var(--color-border)] text-sm font-semibold text-[var(--color-brand)] hover:bg-blue-50 transition disabled:opacity-50">
                   {loadingMore ? "Loading…" : "Load more"}
                 </button>
               )}

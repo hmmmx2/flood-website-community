@@ -53,8 +53,9 @@ export default function CreatePostModal({ token, onClose, onCreated, defaultGrou
           groupSlug: groupSlug || null,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error || "Failed to create post"); setLoading(false); return; }
+      let data: Record<string, unknown> | null;
+      try { data = await res.json(); } catch { data = null; }
+      if (!res.ok) { setError((data && typeof data.error === "string" ? data.error : null) || "Failed to create post"); setLoading(false); return; }
       onCreated(data);
       onClose();
     } catch { setError("Connection error"); setLoading(false); }
@@ -108,13 +109,19 @@ export default function CreatePostModal({ token, onClose, onCreated, defaultGrou
           </div>
 
           {/* Content */}
-          <textarea
-            value={content}
-            onChange={e => setContent(e.target.value)}
-            rows={6}
-            placeholder="Share your flood update, safety tip, or community notice…"
-            className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-3 text-sm outline-none focus:border-[var(--color-brand)] focus:ring-2 focus:ring-[var(--color-brand)]/10 resize-none"
-          />
+          <div>
+            <textarea
+              value={content}
+              onChange={e => setContent(e.target.value)}
+              rows={6}
+              maxLength={5000}
+              placeholder="Share your flood update, safety tip, or community notice…"
+              className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-3 text-sm outline-none focus:border-[var(--color-brand)] focus:ring-2 focus:ring-[var(--color-brand)]/10 resize-none"
+            />
+            <p className={`text-right text-[11px] mt-1 ${content.length > 4800 ? "text-red-500" : "text-[var(--color-muted)]"}`}>
+              {content.length}/5000
+            </p>
+          </div>
 
           {/* Image upload */}
           {imageUrl ? (

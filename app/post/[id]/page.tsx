@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import Navbar from "@/components/Navbar";
 import PostCard from "@/components/PostCard";
-import { getToken, getUser, getInitials } from "@/lib/auth";
+import { getToken, getUser } from "@/lib/auth";
+import { authFetch } from "@/lib/authFetch";
 import type { Post } from "@/lib/types";
 import type { AuthUser } from "@/lib/auth";
 
@@ -27,10 +29,8 @@ export default function PostPage() {
   const fetchPost = useCallback(async () => {
     setLoading(true);
     try {
-      const headers: Record<string, string> = {};
-      const t = getToken();
-      if (t) headers["Authorization"] = `Bearer ${t}`;
-      const res = await fetch(`/api/posts/${id}`, { headers });
+      // authFetch ensures the token is refreshed so likedByMe is accurate
+      const res = await authFetch(`/api/posts/${id}`);
       if (!res.ok) { setError("Post not found"); setLoading(false); return; }
       const data: Post = await res.json();
       setPost(data);
@@ -41,30 +41,23 @@ export default function PostPage() {
   useEffect(() => { fetchPost(); }, [fetchPost]);
 
   async function handleLike(postId: string) {
-    const t = token || getToken();
-    if (!t) { router.push("/login"); return; }
-    const res = await fetch(`/api/posts/${postId}/like`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${t}` },
-    });
-    if (res.ok) {
-      const data: { liked: boolean; likesCount: number } = await res.json();
-      setPost(prev => prev ? { ...prev, likedByMe: data.liked, likesCount: data.likesCount } : prev);
-    }
+    if (!getToken()) { router.push("/login"); return; }
+    const res = await authFetch(`/api/posts/${postId}/like`, { method: "POST" });
+    if (!res.ok) return;
+    const data: { liked: boolean; likesCount: number } = await res.json();
+    setPost(prev => prev ? { ...prev, likedByMe: data.liked, likesCount: data.likesCount } : prev);
   }
 
   async function handleDelete(postId: string) {
     // UX-POST01: first call arms confirmation; second call confirms the delete
     if (!confirmingDelete) { setConfirmingDelete(true); return; }
     setConfirmingDelete(false);
-    const t = token || getToken();
-    if (!t) return;
-    const res = await fetch(`/api/posts/${postId}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${t}` },
-    });
+    if (!getToken()) return;
+    const res = await authFetch(`/api/posts/${postId}`, { method: "DELETE" });
     if (res.ok || res.status === 204) {
       router.push("/");
+    } else {
+      setError("Failed to delete post. Please try again.");
     }
   }
 
@@ -90,29 +83,10 @@ export default function PostPage() {
           </button>
         </div>
       )}
-      {/* Navbar */}
-      <header className="sticky top-0 z-40 bg-white border-b border-[var(--color-border)] shadow-sm">
-        <div className="mx-auto max-w-3xl flex items-center gap-4 h-14 px-4">
-          <Link href="/" className="flex items-center gap-2 font-bold text-[var(--color-text)]">
-            <div className="h-8 w-8 rounded-full bg-[var(--color-brand)] flex items-center justify-center">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" className="h-4 w-4">
-                <path fillRule="evenodd" d="M11.54 22.351l.07.04.028.016a.76.76 0 00.723 0l.028-.015.071-.041a16.975 16.975 0 001.144-.742 19.58 19.58 0 002.683-2.282c1.944-1.99 3.963-4.98 3.963-8.827a8.25 8.25 0 00-16.5 0c0 3.846 2.02 6.837 3.963 8.827a19.58 19.58 0 002.682 2.282 16.975 16.975 0 001.145.742z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <span className="text-base">FloodWatch</span>
-          </Link>
-          <span className="text-[var(--color-muted)]">/</span>
-          <span className="text-sm text-[var(--color-muted)] truncate">Community</span>
-          {user && (
-            <div className="ml-auto flex items-center gap-2">
-              <div className="h-7 w-7 rounded-full bg-[var(--color-brand)] flex items-center justify-center text-[10px] font-bold text-white">
-                {getInitials(user.displayName)}
-              </div>
-              <span className="text-sm font-semibold text-[var(--color-text)] hidden sm:block">{user.displayName}</span>
-            </div>
-          )}
-        </div>
-      </header>
+      <Navbar
+        user={user}
+        breadcrumb={{ label: "Community", href: "/" }}
+      />
 
       <main className="mx-auto max-w-3xl px-4 py-6">
         {/* Back */}

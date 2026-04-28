@@ -27,10 +27,9 @@ export async function POST(req: NextRequest) {
       token,
     });
   } catch (err: unknown) {
-    // Endpoint may not be implemented yet — log but still return success.
-    // The browser subscription is already active; the backend just won't send server pushes.
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.warn('[push/subscribe POST] backend unavailable:', message);
+    return NextResponse.json({ ok: false, reason: 'Backend error' }, { status: 500 });
   }
   return NextResponse.json({ ok: true });
 }
@@ -55,6 +54,7 @@ export async function DELETE(req: NextRequest) {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.warn('[push/subscribe DELETE] backend unavailable:', message);
+    return NextResponse.json({ ok: false, reason: 'Backend error' }, { status: 500 });
   }
   return NextResponse.json({ ok: true });
 }

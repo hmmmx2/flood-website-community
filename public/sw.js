@@ -41,7 +41,7 @@ self.addEventListener('push', (event) => {
     requireInteraction: isCritical,
     vibrate: isCritical ? [200, 100, 200, 100, 400] : [200, 100, 200],
     data: {
-      url: data.nodeId ? `/feed?node=${data.nodeId}` : '/',
+      url: '/',
       nodeId: data.nodeId,
       level: data.level,
     },
@@ -76,8 +76,12 @@ self.addEventListener('notificationclick', (event) => {
           (c) => new URL(c.url).origin === self.location.origin
         );
         if (existing) {
-          existing.focus();
-          return existing.navigate(targetUrl);
+          if (existing.navigate) {
+            existing.navigate(targetUrl);
+          } else {
+            existing.focus();
+          }
+          return;
         }
         // Open new tab
         return self.clients.openWindow(targetUrl);

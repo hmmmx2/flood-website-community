@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { Post, Group } from "@/lib/types";
 
 type Props = {
@@ -9,6 +10,7 @@ type Props = {
 };
 
 export default function SearchModal({ onClose }: Props) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [posts, setPosts] = useState<Post[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -64,6 +66,12 @@ export default function SearchModal({ onClose }: Props) {
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "Enter") {
+                if (posts.length > 0) { router.push(`/post/${posts[0].id}`); onClose(); }
+                else if (groups.length > 0) { router.push(`/g/${groups[0].slug}`); onClose(); }
+              }
+            }}
             placeholder="Search posts and communities…"
             className="flex-1 bg-transparent text-[var(--color-text)] placeholder:text-[var(--color-muted)] text-sm outline-none"
           />
@@ -99,7 +107,7 @@ export default function SearchModal({ onClose }: Props) {
                     <Link key={g.id} href={`/g/${g.slug}`} onClick={onClose}
                       className="flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--color-hover)] transition-colors">
                       <div className="h-8 w-8 rounded-lg flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
-                        style={{ backgroundColor: g.iconColor || "#ed1c24" }}>
+                        style={{ backgroundColor: g.iconColor || "#1d4ed8" }}>
                         {g.iconLetter || g.name[0]?.toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">

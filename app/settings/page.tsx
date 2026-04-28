@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
+import Navbar from "@/components/Navbar";
 import { getToken, getUser, saveSession, clearSession, getInitials } from "@/lib/auth";
 import type { AuthUser } from "@/lib/auth";
 import {
@@ -147,7 +147,7 @@ export default function SettingsPage() {
       }
       setPwMsg({ type: "success", text: "Password changed successfully. Please sign in again." });
       setCurrentPw(""); setNewPw(""); setConfirmPw("");
-      setTimeout(() => { clearSession(); router.replace(`${CRM_URL}/login`); }, 2000);
+      setTimeout(() => { clearSession(); router.replace("/login"); }, 2000);
     } catch {
       setPwMsg({ type: "error", text: "Connection error. Please try again." });
     } finally {
@@ -168,23 +168,7 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-[var(--color-bg)]">
-      {/* Navbar */}
-      <header className="sticky top-0 z-40 bg-white border-b border-[var(--color-border)] shadow-sm">
-        <div className="mx-auto max-w-5xl flex items-center justify-between h-14 px-4">
-          <Link href="/" className="flex items-center gap-2 font-bold text-[var(--color-text)]">
-            <div className="h-8 w-8 rounded-xl bg-white border border-[var(--color-border)] flex items-center justify-center p-0.5 flex-shrink-0">
-              <Image src="/images/logo.png" alt="MCRS" width={28} height={28} />
-            </div>
-            <span className="hidden sm:block text-base">FloodWatch</span>
-          </Link>
-          <div className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-full bg-[var(--color-brand)] flex items-center justify-center text-[10px] font-bold text-white">
-              {getInitials(user.displayName)}
-            </div>
-            <span className="text-sm font-semibold text-[var(--color-text)] hidden sm:block max-w-[120px] truncate">{user.displayName}</span>
-          </div>
-        </div>
-      </header>
+      <Navbar user={user} />
 
       <main className="mx-auto max-w-3xl px-4 py-8">
         <div className="mb-6">

@@ -146,9 +146,9 @@ export default function BlogDetailPage() {
               )}
             </div>
 
-            {/* Body */}
+            {/* Body — strip any HTML tags before rendering as plain text */}
             <div className="prose prose-sm sm:prose max-w-none text-gray-700 leading-relaxed">
-              {blog.body.split("\n").filter(Boolean).map((para, i) => (
+              {blog.body.replace(/<[^>]+>/g, "").split("\n").filter(Boolean).map((para, i) => (
                 <p key={i} className="mb-4">{para}</p>
               ))}
             </div>

@@ -2,25 +2,37 @@
  * lib/redis.ts — Upstash Redis HTTP client (server-only)
  *
  * Upstash Redis uses a REST API, compatible with serverless and edge runtimes.
+ * The client is created lazily so that importing this module never throws when
+ * env vars are absent (e.g. during build or tests that don't need Redis).
  *
  * Usage:
- *   import { redis, CACHE_TTL, withCache } from '@/lib/redis';
+ *   import { getRedis, CACHE_TTL, withCache } from '@/lib/redis';
  */
 
 import { Redis } from '@upstash/redis';
 
-if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
-  throw new Error(
-    'Upstash Redis env vars missing. Add to .env.local:\n' +
-    'UPSTASH_REDIS_REST_URL=https://<your-db>.upstash.io\n' +
-    'UPSTASH_REDIS_REST_TOKEN=<your-token>'
-  );
+let _redis: Redis | null = null;
+
+/** Lazy getter — creates the Redis client on first call. */
+export function getRedis(): Redis {
+  if (!_redis) {
+    if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
+      throw new Error(
+        'Upstash Redis env vars missing. Add to .env.local:\n' +
+        'UPSTASH_REDIS_REST_URL=https://<your-db>.upstash.io\n' +
+        'UPSTASH_REDIS_REST_TOKEN=<your-token>'
+      );
+    }
+    _redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    });
+  }
+  return _redis;
 }
 
-export const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN,
-});
+/** Convenience re-export for code that already imports `redis` directly. */
+export const redis = { get: (...a: Parameters<Redis['get']>) => getRedis().get(...a), set: (...a: Parameters<Redis['set']>) => getRedis().set(...a), del: (...a: Parameters<Redis['del']>) => getRedis().del(...a) };
 
 /** Cache TTL constants (seconds) */
 export const CACHE_TTL = {
@@ -50,7 +62,7 @@ export async function withCache<T>(
   fetcher: () => Promise<T>
 ): Promise<T> {
   try {
-    const cached = await redis.get<T>(key);
+    const cached = await getRedis().get<T>(key);
     if (cached !== null && cached !== undefined) {
       return cached;
     }
@@ -61,7 +73,7 @@ export async function withCache<T>(
   const fresh = await fetcher();
 
   try {
-    await redis.set(key, JSON.stringify(fresh), { ex: ttl });
+    await getRedis().set(key, JSON.stringify(fresh), { ex: ttl });
   } catch {
     console.warn(`[redis] cache write failed for key "${key}"`);
   }
@@ -74,7 +86,7 @@ export async function withCache<T>(
  */
 export async function invalidate(...keys: string[]): Promise<void> {
   try {
-    if (keys.length > 0) await redis.del(...keys);
+    if (keys.length > 0) await getRedis().del(...keys);
   } catch {
     console.warn('[redis] cache invalidation failed:', keys);
   }

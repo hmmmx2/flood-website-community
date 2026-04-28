@@ -10,9 +10,14 @@
  */
 
 /** VAPID public key — must match the key used by the Java backend to sign pushes. */
-const VAPID_PUBLIC_KEY =
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ||
-  'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U';
+const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+if (!VAPID_PUBLIC_KEY) {
+  throw new Error(
+    '[FloodWatch] NEXT_PUBLIC_VAPID_PUBLIC_KEY is not set. ' +
+    'Add it to .env.local (local dev) or deploy/.env (Docker). ' +
+    'Generate a key pair: npx web-push generate-vapid-keys'
+  );
+}
 
 /** Convert a base64url VAPID key to an ArrayBuffer for the Push API. */
 function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
@@ -47,7 +52,8 @@ export async function getSubscriptionState(): Promise<{
 
   const permission = Notification.permission;
   try {
-    const reg = await navigator.serviceWorker.getRegistration('/sw.js');
+    const regs = await navigator.serviceWorker.getRegistrations();
+    const reg = regs.find(r => r.scope === `${location.origin}/`);
     if (!reg) return { permission, subscribed: false };
     const sub = await reg.pushManager.getSubscription();
     return { permission, subscribed: !!sub };
@@ -79,11 +85,11 @@ export async function subscribeToPush(
   // 3. Subscribe via PushManager
   const subscription = await reg.pushManager.subscribe({
     userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY!),
   });
 
   // 4. Send subscription to Java backend
-  await fetch('/api/push/subscribe', {
+  const res = await fetch('/api/push/subscribe', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -91,6 +97,9 @@ export async function subscribeToPush(
     },
     body: JSON.stringify(subscription.toJSON()),
   });
+  if (!res.ok) {
+    throw new Error('Failed to save subscription');
+  }
 
   return 'subscribed';
 }

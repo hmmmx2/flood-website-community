@@ -1,0 +1,45 @@
+{
+  "content": [
+    {
+      "id": "blog-uuid-001",
+      "title": "Understanding Flood Risk in Kuching",
+      "body": "Kuching faces annual flooding due to its geography and proximity to major rivers. This article explores the key risk factors, historical patterns, and what residents can do to prepare.",
+      "category": "Education",
+      "imageKey": "flood-risk-kuching",
+      "imageUrl": null,
+      "isFeatured": true,
+      "authorName": "FloodWatch Team",
+      "createdAt": "2025-01-01T00:00:00Z",
+      "updatedAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "blog-uuid-002",
+      "title": "Flood Safety Tips for Families",
+      "body": "When flood warnings are issued, knowing what to do can save lives. Here are essential safety tips every family in flood-prone areas should know.",
+      "category": "Safety",
+      "imageKey": "flood-safety",
+      "imageUrl": null,
+      "isFeatured": false,
+      "authorName": "Safety Team",
+      "createdAt": "2025-01-02T00:00:00Z",
+      "updatedAt": "2025-01-02T00:00:00Z"
+    },
+    {
+      "id": "blog-uuid-003",
+      "title": "IoT Sensors: How FloodWatch Monitors Water Levels",
+      "body": "Our network of IoT sensors provides real-time water level readings from rivers across Sarawak. Learn how the technology works and how it helps keep communities safe.",
+      "category": "Technology",
+      "imageKey": "iot-sensors",
+      "imageUrl": null,
+      "isFeatured": true,
+      "authorName": "Tech Team",
+      "createdAt": "2025-01-03T00:00:00Z",
+      "updatedAt": "2025-01-03T00:00:00Z"
+    }
+  ],
+  "totalElements": 3,
+  "totalPages": 1,
+  "number": 0,
+  "size": 20,
+  "last": true
+}

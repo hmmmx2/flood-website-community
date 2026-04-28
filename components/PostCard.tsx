@@ -23,6 +23,8 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
   const [comments, setComments] = useState(post.comments ?? []);
   const [showComments, setShowComments] = useState(!compact);
   const [submitting, setSubmitting] = useState(false);
+  const [commentError, setCommentError] = useState<string | null>(null);
+  const [localCommentCount, setLocalCommentCount] = useState(post.commentsCount ?? 0);
 
   // Edit state
   const [editOpen, setEditOpen] = useState(false);
@@ -39,17 +41,20 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
     e.preventDefault();
     if (!commentText.trim() || !token) return;
     setSubmitting(true);
+    setCommentError(null);
     try {
       const res = await authFetch(`/api/posts/${post.id}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: commentText.trim() }),
       });
-      if (res.ok) {
-        const c = await res.json();
-        setComments(prev => [...prev, c]);
-        setCommentText("");
-      }
+      if (!res.ok) { setCommentError("Failed to post comment. Please try again."); return; }
+      const c = await res.json();
+      setComments(prev => [...prev, c]);
+      setCommentText("");
+      const newCount = localCommentCount + 1;
+      setLocalCommentCount(newCount);
+      onEdit?.(post.id, { commentsCount: newCount });
     } finally { setSubmitting(false); }
   }
 
@@ -60,6 +65,11 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
     });
     if (res.ok || res.status === 204) {
       setComments(prev => prev.filter(c => c.id !== commentId));
+      const newCount = Math.max(0, localCommentCount - 1);
+      setLocalCommentCount(newCount);
+      onEdit?.(post.id, { commentsCount: newCount });
+    } else {
+      setCommentError("Failed to delete comment. Please try again.");
     }
   }
 
@@ -188,7 +198,7 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
                 </svg>
-                {post.commentsCount} Comments
+                {localCommentCount} Comments
               </button>
 
               {/* Share */}
@@ -228,19 +238,24 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
               <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
                 {/* Comment input */}
                 {token ? (
-                  <form onSubmit={submitComment} className="flex gap-2 mb-3">
-                    <input
-                      type="text"
-                      value={commentText}
-                      onChange={e => setCommentText(e.target.value)}
-                      placeholder="Add a comment..."
-                      className="flex-1 rounded-full border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-2 text-sm outline-none focus:border-[var(--color-brand)] focus:ring-2 focus:ring-[var(--color-brand)]/10"
-                    />
-                    <button type="submit" disabled={!commentText.trim() || submitting}
-                      className="rounded-full bg-[var(--color-brand)] px-4 py-2 text-xs font-bold text-white transition hover:bg-[var(--color-brand-dark)] disabled:opacity-50">
-                      Post
-                    </button>
-                  </form>
+                  <div className="mb-3">
+                    <form onSubmit={submitComment} className="flex gap-2">
+                      <input
+                        type="text"
+                        value={commentText}
+                        onChange={e => setCommentText(e.target.value)}
+                        placeholder="Add a comment..."
+                        className="flex-1 rounded-full border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-2 text-sm outline-none focus:border-[var(--color-brand)] focus:ring-2 focus:ring-[var(--color-brand)]/10"
+                      />
+                      <button type="submit" disabled={!commentText.trim() || submitting}
+                        className="rounded-full bg-[var(--color-brand)] px-4 py-2 text-xs font-bold text-white transition hover:bg-[var(--color-brand-dark)] disabled:opacity-50">
+                        Post
+                      </button>
+                    </form>
+                    {commentError && (
+                      <p className="mt-1.5 text-xs text-red-500 px-1">{commentError}</p>
+                    )}
+                  </div>
                 ) : (
                   <p className="text-xs text-[var(--color-muted)] mb-3">
                     <Link href="/login" className="text-[var(--color-brand)] font-semibold hover:underline">Sign in</Link> to comment

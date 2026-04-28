@@ -29,6 +29,11 @@ export default defineConfig({
   env: {
     USER_EMAIL: 'user@example.com',
     USER_PASSWORD: 'Password@123',
+    ADMIN_EMAIL: 'admin@example.com',
+    ADMIN_PASSWORD: 'Admin@123',
     API_BASE: 'http://localhost:3002',
+    ACCESS_TOKEN_KEY: 'community_access_token',
+    REFRESH_TOKEN_KEY: 'community_refresh_token',
+    USER_KEY: 'community_auth_user',
   },
 });

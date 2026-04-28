@@ -6,7 +6,19 @@
     "dev": "next dev --port 3002",
     "build": "next build",
     "start": "next start --port 3002",
-    "lint": "eslint"
+    "lint": "eslint",
+    "cy:open": "cypress open",
+    "cy:run": "cypress run",
+    "cy:run:headed": "cypress run --headed",
+    "cy:run:auth": "cypress run --spec 'cypress/e2e/auth/**/*.cy.ts'",
+    "cy:run:feed": "cypress run --spec 'cypress/e2e/feed/**/*.cy.ts'",
+    "cy:run:blog": "cypress run --spec 'cypress/e2e/blog/**/*.cy.ts'",
+    "cy:run:sensors": "cypress run --spec 'cypress/e2e/sensors/**/*.cy.ts'",
+    "cy:run:settings": "cypress run --spec 'cypress/e2e/settings/**/*.cy.ts'",
+    "cy:run:community": "cypress run --spec 'cypress/e2e/community/**/*.cy.ts'",
+    "cy:run:navigation": "cypress run --spec 'cypress/e2e/navigation/**/*.cy.ts'",
+    "test:e2e": "start-server-and-test dev http://localhost:3002 cy:run",
+    "test:e2e:open": "start-server-and-test dev http://localhost:3002 cy:open"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
@@ -20,8 +32,11 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "cypress": "^13.17.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
+    "pg": "^8.20.0",
+    "start-server-and-test": "^2.1.5",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

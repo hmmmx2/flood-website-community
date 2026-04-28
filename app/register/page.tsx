@@ -91,7 +91,7 @@ export default function RegisterPage() {
       >
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
           <Link href="/" className="flex items-center gap-2">
-            <Image src="/images/logo.png" alt="FloodWatch" width={36} height={36} />
+            <Image src="/images/logo.png" alt="Pop Up Advertising And Information Enterprise" width={36} height={36} />
             <span className="hidden sm:block text-sm font-semibold" style={{ color: "var(--color-text)" }}>
               FloodWatch Community
             </span>
@@ -116,13 +116,13 @@ export default function RegisterPage() {
               className="absolute inset-0"
               style={{
                 background:
-                  "linear-gradient(135deg, rgba(28,28,28,0.6) 0%, rgba(28,28,28,0.4) 50%, rgba(237,28,36,0.5) 100%)",
+                  "linear-gradient(135deg, rgba(30,58,138,0.7) 0%, rgba(29,78,216,0.5) 50%, rgba(8,145,178,0.5) 100%)",
               }}
             />
           </div>
           <div className="relative z-10 flex flex-1 flex-col justify-center items-center text-center px-12">
             <div className="drop-shadow-lg">
-              <Image src="/images/logo.png" alt="Logo" width={100} height={100} className="mx-auto mb-6" />
+              <Image src="/images/logo.png" alt="Pop Up Advertising And Information Enterprise" width={100} height={100} className="mx-auto mb-6" />
               <h1 className="text-3xl font-bold text-white mb-3">Join FloodWatch</h1>
               <p className="text-base text-white/90 max-w-sm mx-auto">
                 Get real-time flood alerts, share updates, and stay connected with your community.
@@ -139,7 +139,7 @@ export default function RegisterPage() {
           >
             {/* Mobile logo */}
             <div className="flex justify-center mb-6 lg:hidden">
-              <Image src="/images/logo.png" alt="Logo" width={80} height={80} />
+              <Image src="/images/logo.png" alt="Pop Up Advertising And Information Enterprise" width={80} height={80} />
             </div>
 
             <h2 className="text-2xl font-semibold mb-1" style={{ color: "var(--color-text)" }}>
