@@ -134,7 +134,7 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
               className={`flex flex-col items-center p-1 rounded-lg transition-all ${
                 post.likedByMe
                   ? "text-[var(--color-brand)]"
-                  : "text-[var(--color-muted)] hover:text-[var(--color-upvote)] hover:bg-orange-50"
+                  : "text-[var(--color-muted)] hover:text-[var(--color-upvote)] hover:bg-blue-50"
               }`}
               title={post.likedByMe ? "Unlike" : "Like"}
             >

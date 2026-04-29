@@ -47,14 +47,14 @@ function readingTime(body: string): string {
 function BlogCard({ blog, featured = false }: { blog: BlogDto; featured?: boolean }) {
   return (
     <Link href={`/blog/${blog.id}`} className="block group">
-      <article className={`bg-white rounded-xl border border-gray-200 overflow-hidden hover:border-orange-300 hover:shadow-md transition-all duration-200 ${featured ? "mb-4" : ""}`}>
+      <article className={`bg-white rounded-xl border border-gray-200 overflow-hidden hover:border-[var(--color-brand)] hover:shadow-md transition-all duration-200 ${featured ? "mb-4" : ""}`}>
         {featured && blog.imageUrl && (
           <div className="relative h-48 bg-gray-100 overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={blog.imageUrl} alt={blog.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
             <div className="absolute bottom-3 left-4">
-              <span className="inline-flex items-center gap-1 bg-orange-500 text-white text-xs font-semibold px-2 py-0.5 rounded-full">
+              <span className="inline-flex items-center gap-1 bg-[var(--color-brand)] text-white text-xs font-semibold px-2 py-0.5 rounded-full">
                 ★ Featured
               </span>
             </div>
@@ -67,11 +67,11 @@ function BlogCard({ blog, featured = false }: { blog: BlogDto; featured?: boolea
               {blog.category}
             </span>
             {blog.isFeatured && !featured && (
-              <span className="text-xs font-semibold text-orange-500">★ Featured</span>
+              <span className="text-xs font-semibold text-[var(--color-brand)]">★ Featured</span>
             )}
           </div>
           {/* Title */}
-          <h2 className={`font-bold text-gray-900 group-hover:text-orange-600 transition-colors leading-snug mb-1 ${featured ? "text-xl" : "text-base"}`}>
+          <h2 className={`font-bold text-gray-900 group-hover:text-[var(--color-brand)] transition-colors leading-snug mb-1 ${featured ? "text-xl" : "text-base"}`}>
             {blog.title}
           </h2>
           {/* Preview */}
@@ -146,7 +146,7 @@ export default function BlogPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[var(--color-bg)]">
       <Navbar user={user} onLogout={handleLogout} activeLink="blog" />
 
       <main className="max-w-5xl mx-auto px-4 py-6">

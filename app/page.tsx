@@ -160,11 +160,11 @@ export default function HomePage() {
       {/* FEAT-03 — login-gating snackbar for guest interactions */}
       {showLoginSnack && (
         <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-2xl bg-gray-900 text-white shadow-xl px-5 py-3 animate-in slide-in-from-bottom-4">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 flex-shrink-0 text-orange-400">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 flex-shrink-0 text-[var(--color-brand)]">
             <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
           </svg>
           <span className="text-sm">Sign in to like, comment and post</span>
-          <Link href="/login" className="text-sm font-bold text-orange-400 hover:text-orange-300 transition-colors flex-shrink-0">
+          <Link href="/login" className="text-sm font-bold text-[var(--color-brand)] hover:text-[var(--color-brand-dark)] transition-colors flex-shrink-0">
             Sign In →
           </Link>
         </div>

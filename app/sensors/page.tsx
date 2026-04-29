@@ -91,7 +91,7 @@ function NodeCard({
   onViewMap: (node: SensorNodeDto) => void;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 hover:border-orange-300 hover:shadow-sm transition-all">
+    <div className="bg-white rounded-xl border border-gray-200 p-4 hover:border-[var(--color-brand)] hover:shadow-sm transition-all">
       {/* Header row */}
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex-1 min-w-0">
@@ -101,7 +101,7 @@ function NodeCard({
         <button
           onClick={() => onToggleFav(node)}
           title={isFav ? "Remove favourite" : "Add to favourites"}
-          className={`flex-shrink-0 p-1.5 rounded-lg transition-colors ${isFav ? "text-orange-500 hover:bg-orange-50" : "text-gray-300 hover:text-orange-400 hover:bg-orange-50"}`}
+          className={`flex-shrink-0 p-1.5 rounded-lg transition-colors ${isFav ? "text-[var(--color-brand)] hover:bg-blue-50" : "text-gray-300 hover:text-[var(--color-brand)] hover:bg-blue-50"}`}
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill={isFav ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" className="w-5 h-5">
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
@@ -133,7 +133,7 @@ function NodeCard({
       {/* View on map button */}
       <button
         onClick={() => onViewMap(node)}
-        className="mt-3 w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-orange-200 text-xs font-semibold text-[var(--color-brand)] hover:bg-orange-50 transition-colors"
+        className="mt-3 w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-[var(--color-brand)]/30 text-xs font-semibold text-[var(--color-brand)] hover:bg-blue-50 transition-colors"
       >
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
           <polygon points="3 11 22 2 13 21 11 13 3 11" />
