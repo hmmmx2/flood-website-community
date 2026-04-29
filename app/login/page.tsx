@@ -199,7 +199,7 @@ export default function LoginPage() {
                 {error && (
                   <div
                     className="mb-4 rounded-xl px-4 py-3 text-sm border"
-                    style={{ background: "rgba(29,78,216,0.08)", borderColor: "rgba(29,78,216,0.3)", color: "var(--color-brand)" }}
+                    style={{ background: "rgba(29,78,216,0.08)", borderColor: "rgba(29,78,216,0.3)", color: "#1d4ed8" }}
                   >
                     {error}
                   </div>
@@ -259,16 +259,15 @@ export default function LoginPage() {
                         type="checkbox"
                         checked={rememberMe}
                         onChange={e => setRememberMe(e.target.checked)}
-                        className="h-4 w-4 rounded"
-                        style={{ accentColor: "var(--color-brand)" }}
+                        className="h-4 w-4 rounded border-slate-300 text-[#1d4ed8] accent-[#1d4ed8] focus:ring-[#1d4ed8]"
+                        style={{ accentColor: "#1d4ed8" }}
                       />
                       <span style={{ color: "var(--color-muted)" }}>Remember me</span>
                     </label>
                     <button
                       type="button"
                       onClick={() => router.push("/forgot-password")}
-                      className="font-semibold transition hover:opacity-80"
-                      style={{ color: "var(--color-brand)" }}
+                      className="font-semibold transition hover:opacity-80 text-[#1d4ed8]"
                     >
                       Forgot password?
                     </button>
@@ -276,8 +275,7 @@ export default function LoginPage() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{ background: "var(--color-brand)" }}
+                    className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1e40af] disabled:opacity-50 disabled:cursor-not-allowed bg-[#1d4ed8]"
                   >
                     {loading ? "Signing in…" : "Sign In"}
                   </button>
@@ -286,8 +284,8 @@ export default function LoginPage() {
                   Don&apos;t have an account?{" "}
                   <button
                     onClick={() => { setView("register"); setError(""); }}
-                    className="font-semibold transition hover:opacity-80"
-                    style={{ color: "var(--color-brand)" }}
+                    className="font-semibold transition hover:opacity-80 text-[#1d4ed8]"
+                    type="button"
                   >
                     Create one
                   </button>
@@ -307,7 +305,7 @@ export default function LoginPage() {
                 {error && (
                   <div
                     className="mb-4 rounded-xl px-4 py-3 text-sm border"
-                    style={{ background: "rgba(29,78,216,0.08)", borderColor: "rgba(29,78,216,0.3)", color: "var(--color-brand)" }}
+                    style={{ background: "rgba(29,78,216,0.08)", borderColor: "rgba(29,78,216,0.3)", color: "#1d4ed8" }}
                   >
                     {error}
                   </div>
@@ -420,8 +418,7 @@ export default function LoginPage() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{ background: "var(--color-brand)" }}
+                    className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1e40af] disabled:opacity-50 disabled:cursor-not-allowed bg-[#1d4ed8]"
                   >
                     {loading ? "Creating account…" : "Create Account"}
                   </button>
@@ -430,8 +427,8 @@ export default function LoginPage() {
                   Already have an account?{" "}
                   <button
                     onClick={() => { setView("login"); setError(""); }}
-                    className="font-semibold transition hover:opacity-80"
-                    style={{ color: "var(--color-brand)" }}
+                    className="font-semibold transition hover:opacity-80 text-[#1d4ed8]"
+                    type="button"
                   >
                     Sign In
                   </button>

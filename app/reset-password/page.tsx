@@ -81,7 +81,7 @@ function ResetPasswordForm() {
             <p className="text-sm mb-4" style={{ color: "var(--color-muted)" }}>
               Your password has been updated. Redirecting to sign in…
             </p>
-            <Link href="/login" className="font-semibold hover:opacity-80" style={{ color: "var(--color-brand)" }}>
+            <Link href="/login" className="font-semibold hover:opacity-80 text-[#1d4ed8]">
               Sign In now
             </Link>
           </div>
@@ -94,7 +94,7 @@ function ResetPasswordForm() {
 
             {error && (
               <div className="mb-4 rounded-xl px-4 py-3 text-sm border"
-                style={{ background: "rgba(29,78,216,0.08)", borderColor: "rgba(29,78,216,0.3)", color: "var(--color-brand)" }}>
+                style={{ background: "rgba(29,78,216,0.08)", borderColor: "rgba(29,78,216,0.3)", color: "#1d4ed8" }}>
                 {error}
               </div>
             )}
@@ -113,13 +113,12 @@ function ResetPasswordForm() {
                   style={{ background: "var(--color-input-bg)", borderColor: "var(--color-border)", color: "var(--color-text)" }} />
               </div>
               <button type="submit" disabled={loading}
-                className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
-                style={{ background: "var(--color-brand)" }}>
+                className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1e40af] disabled:opacity-50 bg-[#1d4ed8]">
                 {loading ? "Verifying…" : "Verify Code"}
               </button>
             </form>
             <p className="mt-6 text-sm text-center" style={{ color: "var(--color-muted)" }}>
-              <Link href="/forgot-password" className="font-semibold hover:opacity-80" style={{ color: "var(--color-brand)" }}>
+              <Link href="/forgot-password" className="font-semibold hover:opacity-80 text-[#1d4ed8]">
                 Resend code
               </Link>
               {" · "}
@@ -135,7 +134,7 @@ function ResetPasswordForm() {
 
             {error && (
               <div className="mb-4 rounded-xl px-4 py-3 text-sm border"
-                style={{ background: "rgba(29,78,216,0.08)", borderColor: "rgba(29,78,216,0.3)", color: "var(--color-brand)" }}>
+                style={{ background: "rgba(29,78,216,0.08)", borderColor: "rgba(29,78,216,0.3)", color: "#1d4ed8" }}>
                 {error}
               </div>
             )}
@@ -163,8 +162,7 @@ function ResetPasswordForm() {
                   style={{ background: "var(--color-input-bg)", borderColor: "var(--color-border)", color: "var(--color-text)" }} />
               </div>
               <button type="submit" disabled={loading}
-                className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
-                style={{ background: "var(--color-brand)" }}>
+                className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1e40af] disabled:opacity-50 bg-[#1d4ed8]">
                 {loading ? "Resetting…" : "Reset Password"}
               </button>
             </form>
