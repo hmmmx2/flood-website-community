@@ -45,7 +45,7 @@ export default function PostPage() {
     const res = await authFetch(`/api/posts/${postId}/like`, { method: "POST" });
     if (!res.ok) return;
     const data: { liked: boolean; likesCount: number } = await res.json();
-    setPost(prev => prev ? { ...prev, likedByMe: data.liked, likesCount: data.likesCount } : prev);
+    setPost(prev => prev ? { ...prev, likedByMe: data.liked, likesCount: Math.max(0, data.likesCount) } : prev);
   }
 
   async function handleDelete(postId: string) {

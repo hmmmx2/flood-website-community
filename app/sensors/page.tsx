@@ -1,19 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { getUser, getToken, timeAgo } from "@/lib/auth";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import Navbar from "@/components/Navbar";
+import NodeMap, { type MapNode, type FloodLevel, getMarkerColor, STATUS_HEX } from "@/components/NodeMap";
+import { getUser, getToken, clearSession } from "@/lib/auth";
 import { authFetch } from "@/lib/authFetch";
 import type { AuthUser } from "@/lib/auth";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type FloodLevel = 0 | 1 | 2 | 3;
-type NodeStatus = "active" | "warning" | "inactive";
+type NodeStatus = "active" | "warning" | "critical" | "inactive";
 
 type SensorNodeDto = {
   id: string;
   nodeId: string;
-  name: string;
+  name?: string;
   area: string;
   location: string;
   state: string;
@@ -28,204 +29,185 @@ type SensorNodeDto = {
 type FavouriteNodeDto = SensorNodeDto & { favouritedAt: string };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const LEVEL_COLOR: Record<FloodLevel, string> = {
-  0: "bg-green-100 text-green-700",
-  1: "bg-blue-100  text-blue-700",
-  2: "bg-orange-100 text-orange-700",
-  3: "bg-red-100 text-red-700",
-};
-const LEVEL_LABEL: Record<FloodLevel, string> = {
-  0: "Dry",
-  1: "Normal",
-  2: "Warning",
-  3: "Critical",
-};
-const LEVEL_DOT: Record<FloodLevel, string> = {
-  0: "bg-green-500",
-  1: "bg-blue-500",
-  2: "bg-orange-500",
-  3: "bg-red-500",
-};
-const WATER_M: Record<FloodLevel, string> = {
-  0: "0.0 m",
-  1: "1.0 m",
-  2: "2.5 m",
-  3: "4.0 m",
-};
+const LEVEL_LABEL: Record<FloodLevel, string> = { 0: "Dry", 1: "Normal", 2: "Warning", 3: "Critical" };
+const WATER_M: Record<FloodLevel, string>     = { 0: "0.0 m", 1: "1.0 m", 2: "2.5 m", 3: "4.0 m" };
+const OFFLINE_HEX = "#6b7280";
 
-function statusClass(node: SensorNodeDto): string {
-  if (node.status === "inactive") return "bg-gray-100 text-gray-500";
-  return LEVEL_COLOR[node.currentLevel];
+function toMapNode(n: SensorNodeDto): MapNode {
+  return {
+    id:           n.id,
+    nodeId:       n.nodeId,
+    name:         n.name,
+    area:         n.area,
+    location:     n.location,
+    state:        n.state,
+    latitude:     n.latitude,
+    longitude:    n.longitude,
+    currentLevel: n.currentLevel,
+    isOffline:    n.status === "inactive",
+    lastUpdated:  n.lastUpdated,
+  };
 }
-function statusLabel(node: SensorNodeDto): string {
+
+function statusDotHex(node: SensorNodeDto): string {
+  if (node.status === "inactive") return OFFLINE_HEX;
+  return STATUS_HEX[node.currentLevel];
+}
+function statusText(node: SensorNodeDto) {
   if (node.status === "inactive") return "Offline";
   return LEVEL_LABEL[node.currentLevel];
 }
-function dotClass(node: SensorNodeDto): string {
-  if (node.status === "inactive") return "bg-gray-400";
-  return LEVEL_DOT[node.currentLevel];
+function markerHex(node: SensorNodeDto): string {
+  return getMarkerColor(toMapNode(node));
 }
 
-type FilterKey = "all" | "0" | "1" | "2" | "3" | "offline" | "favs";
+function formatTimeAgo(iso: string): string {
+  const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (secs < 60) return `${secs}s ago`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
 
-const FILTERS: { key: FilterKey; label: string }[] = [
-  { key: "all",     label: "All" },
-  { key: "favs",    label: "⭐ Favourites" },
-  { key: "0",       label: "🟢 Dry" },
-  { key: "1",       label: "🔵 Normal" },
-  { key: "2",       label: "🟠 Warning" },
-  { key: "3",       label: "🔴 Critical" },
-  { key: "offline", label: "⚫ Offline" },
+// ── Status filter keys ────────────────────────────────────────────────────────
+type StatusKey = "dry" | "normal" | "warning" | "critical" | "offline";
+
+const STATUS_OPTIONS: { key: StatusKey; label: string; dotHex: string }[] = [
+  { key: "dry",      label: "Dry",      dotHex: STATUS_HEX[0] },
+  { key: "normal",   label: "Normal",   dotHex: STATUS_HEX[1] },
+  { key: "warning",  label: "Warning",  dotHex: STATUS_HEX[2] },
+  { key: "critical", label: "Critical", dotHex: STATUS_HEX[3] },
+  { key: "offline",  label: "Offline",  dotHex: OFFLINE_HEX   },
 ];
 
-// ── Node Card ─────────────────────────────────────────────────────────────────
-function NodeCard({
-  node,
-  isFav,
-  onToggleFav,
-  onViewMap,
-}: {
-  node: SensorNodeDto;
-  isFav: boolean;
-  onToggleFav: (node: SensorNodeDto) => void;
-  onViewMap: (node: SensorNodeDto) => void;
-}) {
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 hover:border-[var(--color-brand)] hover:shadow-sm transition-all">
-      {/* Header row */}
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-gray-900 truncate">{node.nodeId}</p>
-          <p className="text-xs text-gray-500 truncate">{node.area}{node.location ? ` · ${node.location}` : ""}</p>
-        </div>
-        <button
-          onClick={() => onToggleFav(node)}
-          title={isFav ? "Remove favourite" : "Add to favourites"}
-          className={`flex-shrink-0 p-1.5 rounded-lg transition-colors ${isFav ? "text-[var(--color-brand)] hover:bg-blue-50" : "text-gray-300 hover:text-[var(--color-brand)] hover:bg-blue-50"}`}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill={isFav ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" className="w-5 h-5">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
-          </svg>
-        </button>
-      </div>
-
-      {/* Status badge + water level */}
-      <div className="flex items-center gap-2 mb-2">
-        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(node)}`}>
-          <span className={`h-1.5 w-1.5 rounded-full ${dotClass(node)}`} />
-          {statusLabel(node)}
-        </span>
-        {node.status !== "inactive" && (
-          <span className="text-xs text-gray-500 font-medium">{WATER_M[node.currentLevel]}</span>
-        )}
-      </div>
-
-      {/* Coords + last seen */}
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-gray-400 font-mono">
-          {node.latitude.toFixed(4)}, {node.longitude.toFixed(4)}
-        </p>
-        {node.lastUpdated && (
-          <p className="text-xs text-gray-400">{timeAgo(node.lastUpdated)}</p>
-        )}
-      </div>
-
-      {/* View on map button */}
-      <button
-        onClick={() => onViewMap(node)}
-        className="mt-3 w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-[var(--color-brand)]/30 text-xs font-semibold text-[var(--color-brand)] hover:bg-blue-50 transition-colors"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
-          <polygon points="3 11 22 2 13 21 11 13 3 11" />
-        </svg>
-        View on Map
-      </button>
-    </div>
-  );
+function nodeStatusKey(node: SensorNodeDto): StatusKey {
+  if (node.status === "inactive") return "offline";
+  if (node.currentLevel === 0)    return "dry";
+  if (node.currentLevel === 1)    return "normal";
+  if (node.currentLevel === 2)    return "warning";
+  return "critical";
 }
 
-// ── Mini embedded map (using iframe with Google Maps) ─────────────────────────
-function NodeMapEmbed({ node, onClose }: { node: SensorNodeDto; onClose: () => void }) {
-  const mapUrl = `https://maps.google.com/maps?q=${node.latitude},${node.longitude}&z=15&output=embed`;
+// ── SVG icons ─────────────────────────────────────────────────────────────────
+function RefreshIcon(p: React.SVGProps<SVGSVGElement>) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <div>
-            <h2 className="font-bold text-gray-900 text-base">{node.nodeId}</h2>
-            <p className="text-sm text-gray-500">{node.area}{node.state ? ` · ${node.state}` : ""}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(node)}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${dotClass(node)}`} />
-              {statusLabel(node)}
-            </span>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors text-gray-500">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        {/* Map embed */}
-        <div className="relative h-80 bg-gray-100">
-          <iframe
-            src={mapUrl}
-            className="w-full h-full border-0"
-            allowFullScreen
-            loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
-            title={`Map of ${node.nodeId}`}
-          />
-        </div>
-
-        {/* Footer info */}
-        <div className="px-5 py-3 bg-gray-50 grid grid-cols-3 gap-4 text-center">
-          <div>
-            <p className="text-xs text-gray-400 uppercase tracking-wide">Coordinates</p>
-            <p className="text-xs font-mono text-gray-700 mt-0.5">{node.latitude.toFixed(5)}, {node.longitude.toFixed(5)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-400 uppercase tracking-wide">Water Level</p>
-            <p className="text-sm font-bold text-gray-900 mt-0.5">{node.status === "inactive" ? "—" : WATER_M[node.currentLevel]}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-400 uppercase tracking-wide">Distance</p>
-            <p className="text-sm font-bold text-gray-900 mt-0.5">
-              {node.distance || '—'}
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
+      <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" /><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+      <path d="M16 16h5v5" />
+    </svg>
+  );
+}
+function FilterIcon(p: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
+      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+    </svg>
+  );
+}
+function ChevronDownIcon(p: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
+function XIcon(p: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
+      <path d="M18 6L6 18M6 6l12 12" />
+    </svg>
+  );
+}
+function SearchIcon(p: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
+      <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+    </svg>
+  );
+}
+function ActivityIcon(p: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+    </svg>
+  );
+}
+function StarIcon({ filled, ...p }: { filled?: boolean } & React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+    </svg>
+  );
+}
+function MapPinIcon(p: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
+      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+      <circle cx="12" cy="10" r="3" />
+    </svg>
+  );
+}
+function AlertTriangleIcon(p: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
+      <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+      <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
   );
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function SensorsPage() {
-  const [user, setUser]             = useState<AuthUser | null>(null);
-  const [nodes, setNodes]           = useState<SensorNodeDto[]>([]);
-  const [favIds, setFavIds]         = useState<Set<string>>(new Set());
-  const [loading, setLoading]       = useState(true);
-  const [fetchError, setFetchError] = useState(false);
-  const [search, setSearch]         = useState("");
-  const [filter, setFilter]         = useState<FilterKey>("all");
-  const [mapNode, setMapNode]       = useState<SensorNodeDto | null>(null);
-  const [pendingFavs, setPendingFavs] = useState<Set<string>>(new Set());
+  const router = useRouter();
+  const [user, setUser]               = useState<AuthUser | null>(null);
+  const [nodes, setNodes]             = useState<SensorNodeDto[]>([]);
+  const [favIds, setFavIds]           = useState<Set<string>>(new Set());
+  const [loading, setLoading]         = useState(true);
+  const [fetchError, setFetchError]   = useState(false);
+  const [lastFetch, setLastFetch]     = useState<Date | null>(null);
+  const isFirstFetch                  = useRef(true);
+
+  // ── Filters ────────────────────────────────────────────────────────────────
+  const [searchQuery, setSearchQuery]     = useState("");
+  const [filterState, setFilterState]     = useState("");
+  const [filterCity, setFilterCity]       = useState("");
+  const [filterStatuses, setFilterStatuses] = useState<Set<StatusKey>>(new Set());
+  const [panelOpen, setPanelOpen]         = useState(true);
+
+  // ── Map focus ──────────────────────────────────────────────────────────────
+  const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
+  const mapCardRef = useRef<HTMLDivElement>(null);
+
+  function focusNode(nodeId: string) {
+    setFocusNodeId(null);
+    requestAnimationFrame(() => {
+      setFocusNodeId(nodeId);
+      mapCardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }
 
   useEffect(() => { setUser(getUser()); }, []);
 
-  // ── Fetch sensors
+  function handleLogout() {
+    clearSession();
+    setUser(null);
+    router.push("/login");
+  }
+
+  // ── Data fetching ──────────────────────────────────────────────────────────
   const fetchSensors = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
+    if (isFirstFetch.current) setLoading(true);
     setFetchError(false);
     try {
       const res = await authFetch("/api/sensors", { signal });
       if (!res.ok) { setFetchError(true); return; }
       const data: SensorNodeDto[] = await res.json();
       setNodes(Array.isArray(data) ? data : []);
+      setLastFetch(new Date());
+      isFirstFetch.current = false;
     } catch (err) {
       if ((err as { name?: string }).name === "AbortError") return;
       setFetchError(true);
@@ -234,14 +216,13 @@ export default function SensorsPage() {
     }
   }, []);
 
-  // ── Fetch favourites
   const fetchFavourites = useCallback(async () => {
     if (!getToken()) return;
     try {
       const res = await authFetch("/api/favourites");
       if (!res.ok) return;
       const data: FavouriteNodeDto[] = await res.json();
-      setFavIds(new Set(data.map((f) => f.nodeId)));
+      setFavIds(new Set(data.map(f => f.nodeId)));
     } catch { /* non-critical */ }
   }, []);
 
@@ -249,230 +230,732 @@ export default function SensorsPage() {
     const controller = new AbortController();
     void fetchSensors(controller.signal);
     void fetchFavourites();
-    return () => controller.abort();
-  }, [fetchSensors, fetchFavourites]);
 
-  // ── Toggle favourite
-  const toggleFav = useCallback(async (node: SensorNodeDto) => {
-    if (!getToken()) return;
-    if (pendingFavs.has(node.nodeId)) return; // debounce
-    setPendingFavs((prev) => new Set([...prev, node.nodeId]));
-
-    const isFav = favIds.has(node.nodeId);
-    // Optimistic update
-    setFavIds((prev) => {
-      const next = new Set(prev);
-      if (isFav) next.delete(node.nodeId); else next.add(node.nodeId);
-      return next;
+    const es = new EventSource("/api/sse/sensors");
+    es.addEventListener("sensor-update", (e: MessageEvent) => {
+      try {
+        const updated: SensorNodeDto = JSON.parse(e.data as string);
+        setNodes(prev => {
+          const idx = prev.findIndex(n => n.id === updated.id);
+          if (idx === -1) return [...prev, updated];
+          const next = [...prev];
+          next[idx] = updated;
+          return next;
+        });
+        setLastFetch(new Date());
+        isFirstFetch.current = false;
+      } catch { /* malformed event — ignore */ }
     });
 
+    return () => { controller.abort(); es.close(); };
+  }, [fetchSensors, fetchFavourites]);
+
+  // ── Favourite toggle ───────────────────────────────────────────────────────
+  const [pendingFavs, setPendingFavs] = useState<Set<string>>(new Set());
+
+  const toggleFav = useCallback(async (sensorNodeId: string) => {
+    if (!getToken()) return;
+    if (pendingFavs.has(sensorNodeId)) return;
+    setPendingFavs(prev => new Set([...prev, sensorNodeId]));
+
+    const isFav = favIds.has(sensorNodeId);
+    setFavIds(prev => {
+      const next = new Set(prev);
+      if (isFav) next.delete(sensorNodeId); else next.add(sensorNodeId);
+      return next;
+    });
     try {
       if (isFav) {
-        await authFetch(`/api/favourites/${node.nodeId}`, { method: "DELETE" });
+        await authFetch(`/api/favourites/${sensorNodeId}`, { method: "DELETE" });
       } else {
         await authFetch("/api/favourites", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ nodeId: node.nodeId }),
+          body: JSON.stringify({ nodeId: sensorNodeId }),
         });
       }
     } catch {
-      // Revert on error
-      setFavIds((prev) => {
+      setFavIds(prev => {
         const next = new Set(prev);
-        if (isFav) next.add(node.nodeId); else next.delete(node.nodeId);
+        if (isFav) next.add(sensorNodeId); else next.delete(sensorNodeId);
         return next;
       });
     } finally {
-      setPendingFavs((prev) => { const next = new Set(prev); next.delete(node.nodeId); return next; });
+      setPendingFavs(prev => { const next = new Set(prev); next.delete(sensorNodeId); return next; });
     }
   }, [favIds, pendingFavs]);
 
-  // ── Filtered list
-  const filtered = nodes.filter((node) => {
-    if (filter === "favs") return favIds.has(node.nodeId);
-    if (filter === "offline") return node.status === "inactive";
-    if (filter !== "all") {
-      const lvl = parseInt(filter, 10) as FloodLevel;
-      return node.status !== "inactive" && node.currentLevel === lvl;
-    }
-    return true;
-  }).filter((node) => {
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    return (
-      node.nodeId.toLowerCase().includes(q) ||
-      node.area.toLowerCase().includes(q) ||
-      node.state.toLowerCase().includes(q) ||
-      (node.location && node.location.toLowerCase().includes(q))
-    );
-  });
+  // ── Derived: dropdown options ──────────────────────────────────────────────
+  const availableStates = useMemo(() => {
+    const s = new Set<string>();
+    nodes.forEach(n => { if (n.state) s.add(n.state); });
+    return [...s].sort();
+  }, [nodes]);
 
-  // ── Stats
-  const stats = {
-    total:    nodes.length,
-    online:   nodes.filter((n) => n.status !== "inactive").length,
-    warning:  nodes.filter((n) => n.currentLevel === 2 && n.status !== "inactive").length,
-    critical: nodes.filter((n) => n.currentLevel === 3 && n.status !== "inactive").length,
+  const availableCities = useMemo(() => {
+    const src = filterState ? nodes.filter(n => n.state === filterState) : nodes;
+    const c = new Set<string>();
+    src.forEach(n => { if (n.area) c.add(n.area); });
+    return [...c].sort();
+  }, [nodes, filterState]);
+
+  useEffect(() => { setFilterCity(""); }, [filterState]);
+
+  function toggleStatus(key: StatusKey) {
+    setFilterStatuses(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
+
+  function clearAllFilters() {
+    setFilterState(""); setFilterCity("");
+    setFilterStatuses(new Set()); setSearchQuery("");
+  }
+
+  const activeFilterCount = useMemo(() => {
+    let n = filterStatuses.size;
+    if (filterState)        n++;
+    if (filterCity)         n++;
+    if (searchQuery.trim()) n++;
+    return n;
+  }, [filterState, filterCity, filterStatuses, searchQuery]);
+
+  // ── Filtered nodes ─────────────────────────────────────────────────────────
+  const filteredNodes = useMemo(() => {
+    let r = nodes;
+    if (filterState) r = r.filter(n => n.state === filterState);
+    if (filterCity)  r = r.filter(n => n.area  === filterCity);
+    if (filterStatuses.size > 0) r = r.filter(n => filterStatuses.has(nodeStatusKey(n)));
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      r = r.filter(n =>
+        n.nodeId.toLowerCase().includes(q) ||
+        (n.name     ?? "").toLowerCase().includes(q) ||
+        (n.location ?? "").toLowerCase().includes(q) ||
+        (n.area     ?? "").toLowerCase().includes(q) ||
+        (n.state    ?? "").toLowerCase().includes(q),
+      );
+    }
+    return r;
+  }, [nodes, filterState, filterCity, filterStatuses, searchQuery]);
+
+  // ── Recently updated (top 5) ───────────────────────────────────────────────
+  const recentlyUpdated = useMemo(() =>
+    [...nodes]
+      .filter(n => n.lastUpdated)
+      .sort((a, b) => new Date(b.lastUpdated!).getTime() - new Date(a.lastUpdated!).getTime())
+      .slice(0, 5),
+    [nodes],
+  );
+
+  const recentlyUpdatedIds = useMemo(
+    () => new Set(recentlyUpdated.map(n => n.id)),
+    [recentlyUpdated],
+  );
+
+  // ── Map nodes — always include favourite nodes so clicking a fav always works
+  const mapNodes = useMemo(() => {
+    const filteredIds = new Set(filteredNodes.map(n => n.id));
+    const favExtras = nodes.filter(n => favIds.has(n.nodeId) && !filteredIds.has(n.id));
+    return [...filteredNodes, ...favExtras].map(toMapNode);
+  }, [filteredNodes, nodes, favIds]);
+
+  // ── Stats ──────────────────────────────────────────────────────────────────
+  const stats = useMemo(() => ({
+    total:    filteredNodes.length,
+    totalAll: nodes.length,
+    online:   filteredNodes.filter(n => n.status !== "inactive").length,
+    offline:  filteredNodes.filter(n => n.status === "inactive").length,
+    dry:      filteredNodes.filter(n => n.status !== "inactive" && n.currentLevel === 0).length,
+    normal:   filteredNodes.filter(n => n.status !== "inactive" && n.currentLevel === 1).length,
+    warning:  filteredNodes.filter(n => n.status !== "inactive" && n.currentLevel === 2).length,
+    critical: filteredNodes.filter(n => n.status !== "inactive" && n.currentLevel === 3).length,
     favs:     favIds.size,
-  };
+  }), [filteredNodes, nodes, favIds]);
+
+  // Show ALL favourites in sidebar regardless of active filters
+  const favouriteNodes = useMemo(
+    () => nodes.filter(n => favIds.has(n.nodeId)),
+    [nodes, favIds],
+  );
+
+  // Track which favourites are currently hidden by filters (to show a badge)
+  const filteredNodeIds = useMemo(
+    () => new Set(filteredNodes.map(n => n.id)),
+    [filteredNodes],
+  );
+
+  // ── Shared card class ──────────────────────────────────────────────────────
+  const card = "bg-white rounded-2xl border border-[var(--color-border)] shadow-sm";
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* ── Nav ─────────────────────────────────────────────────────────── */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-6">
-            <Link href="/" className="font-bold text-[var(--color-brand)] text-lg tracking-tight">FloodWatch</Link>
-            <nav className="hidden sm:flex items-center gap-1">
-              <Link href="/" className="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors">Community</Link>
-              <Link href="/blog" className="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors">Blog</Link>
-              <span className="px-3 py-1.5 rounded-lg text-sm font-semibold text-[var(--color-brand)] bg-blue-50">Sensors</span>
-            </nav>
+    <div className="min-h-screen bg-[var(--color-bg)]">
+      <Navbar user={user} onLogout={handleLogout} activeLink="sensors" />
+
+      <main className="max-w-6xl mx-auto px-4 py-6 space-y-5">
+
+        {/* ── Page header ──────────────────────────────────────────────────── */}
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-[var(--color-text)]">Flood Sensors</h1>
+            <p className="text-sm text-[var(--color-muted)] mt-0.5">
+              Real-time IoT sensor locations across Sarawak. Filter by state, city, or status.
+            </p>
           </div>
           <div className="flex items-center gap-3">
-            {user ? (
+            {lastFetch && (
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-[var(--color-brand)] font-bold text-sm">
-                  {user.displayName?.charAt(0).toUpperCase() ?? "U"}
-                </div>
-                <span className="text-sm font-medium text-gray-700 hidden sm:block">{user.displayName}</span>
+                <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                <span className="text-xs text-[var(--color-muted)]">
+                  Live · Updated {lastFetch.toLocaleTimeString()}
+                </span>
               </div>
-            ) : (
-              <Link href="/login" className="text-sm font-medium text-gray-600 hover:text-[var(--color-brand)] transition-colors">Sign in</Link>
             )}
+            <button
+              type="button"
+              onClick={() => void fetchSensors()}
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-brand)] hover:text-[var(--color-brand)] transition"
+              title="Refresh"
+            >
+              <RefreshIcon className="h-4 w-4" />
+            </button>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-6">
-        {/* ── Page header ─────────────────────────────────────────────── */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Flood Sensors</h1>
-            <p className="text-sm text-gray-500 mt-1">Real-time monitoring of {stats.total} sensor nodes across Sarawak</p>
-          </div>
-          <button
-            onClick={() => void fetchSensors()}
-            className="self-start sm:self-auto flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-colors"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
-              <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-              <path d="M3 3v5h5" />
-              <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-              <path d="M16 16h5v5" />
-            </svg>
-            Refresh
-          </button>
-        </div>
-
-        {/* ── Stat pills ──────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
+        {/* ── Stat cards ───────────────────────────────────────────────────── */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: "Total",    value: stats.total,    cls: "text-gray-900" },
+            { label: "Total",    value: stats.totalAll, cls: "text-[var(--color-text)]" },
             { label: "Online",   value: stats.online,   cls: "text-green-600" },
-            { label: "Warning",  value: stats.warning,  cls: "text-orange-500" },
+            { label: "Warning",  value: stats.warning,  cls: "text-amber-500" },
             { label: "Critical", value: stats.critical, cls: "text-red-600" },
-            { label: "★ Saved",  value: stats.favs,     cls: "text-[var(--color-brand)]" },
-          ].map((s) => (
-            <div key={s.label} className="bg-white rounded-xl border border-gray-200 p-3 text-center">
-              <p className="text-xs text-gray-400 uppercase tracking-wide">{s.label}</p>
+          ].map(s => (
+            <div key={s.label} className={`${card} p-3 text-center`}>
+              <p className="text-xs text-[var(--color-muted)] uppercase tracking-wide">{s.label}</p>
               <p className={`text-xl font-bold mt-0.5 ${s.cls}`}>{s.value}</p>
             </div>
           ))}
         </div>
 
-        {/* ── Search + filter ─────────────────────────────────────────── */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-4">
-          <div className="relative flex-1">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400">
-              <circle cx="11" cy="11" r="7" /><path d="M16.5 16.5L21 21" />
-            </svg>
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search node ID, area, state…"
-              className="w-full pl-9 pr-4 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-[var(--color-brand)] transition-colors"
-            />
-          </div>
-        </div>
-
-        {/* ── Filter chips ────────────────────────────────────────────── */}
-        <div className="flex gap-2 overflow-x-auto pb-2 mb-5 scrollbar-hide">
-          {FILTERS.map((f) => (
+        {/* ── Filter panel ─────────────────────────────────────────────────── */}
+        <div className={card}>
+          {/* Panel header */}
+          <div className="flex items-center justify-between px-5 py-4">
             <button
-              key={f.key}
-              onClick={() => setFilter(f.key)}
-              className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap border transition-all ${
-                filter === f.key
-                  ? "bg-[var(--color-brand)] text-white border-[var(--color-brand)]"
-                  : "bg-white text-gray-600 border-gray-200 hover:border-[var(--color-brand)] hover:text-[var(--color-brand)]"
-              }`}
+              type="button"
+              onClick={() => setPanelOpen(o => !o)}
+              className="flex items-center gap-2.5 focus:outline-none"
             >
-              {f.label}
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--color-input-bg)]">
+                <FilterIcon className="h-3.5 w-3.5 text-[var(--color-muted)]" />
+              </span>
+              <span className="text-sm font-semibold text-[var(--color-text)]">Filters</span>
+              {activeFilterCount > 0 && (
+                <span className="rounded-full bg-[var(--color-brand)] px-2 py-0.5 text-[10px] font-bold text-white">
+                  {activeFilterCount} active
+                </span>
+              )}
+              <ChevronDownIcon className={`h-4 w-4 text-[var(--color-muted)] transition-transform duration-200 ${panelOpen ? "rotate-180" : ""}`} />
             </button>
-          ))}
+
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-[var(--color-muted)]">
+                Showing{" "}
+                <span className="font-bold text-[var(--color-text)]">{stats.total}</span>
+                {" "}of{" "}
+                <span className="font-bold text-[var(--color-text)]">{stats.totalAll}</span>
+                {" "}nodes
+              </span>
+              {activeFilterCount > 0 && (
+                <button
+                  type="button"
+                  onClick={clearAllFilters}
+                  className="flex items-center gap-1.5 rounded-lg bg-[var(--color-brand-light)] px-3 py-1.5 text-xs font-semibold text-[var(--color-brand)] hover:bg-blue-100 transition"
+                >
+                  <XIcon className="h-3 w-3" />
+                  Clear all
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Collapsible body */}
+          {panelOpen && (
+            <div className="border-t border-[var(--color-border)] px-5 pb-5 pt-4">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+
+                {/* Search */}
+                <div>
+                  <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                    Search
+                  </label>
+                  <div className="relative">
+                    <SearchIcon className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 pointer-events-none text-[var(--color-muted)]" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      placeholder="Node ID, location, area…"
+                      className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] py-2.5 pl-9 pr-8 text-sm text-[var(--color-text)] placeholder-[var(--color-muted)] focus:border-[var(--color-brand)] focus:outline-none transition"
+                    />
+                    {searchQuery && (
+                      <button type="button" onClick={() => setSearchQuery("")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)] hover:text-[var(--color-brand)]">
+                        <XIcon className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* State */}
+                <div>
+                  <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                    State
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={filterState}
+                      onChange={e => setFilterState(e.target.value)}
+                      className="w-full appearance-none rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] py-2.5 pl-3 pr-9 text-sm text-[var(--color-text)] focus:border-[var(--color-brand)] focus:outline-none transition"
+                    >
+                      <option value="">All States ({availableStates.length})</option>
+                      {availableStates.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    <ChevronDownIcon className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-muted)]" />
+                  </div>
+                </div>
+
+                {/* City / Area */}
+                <div>
+                  <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                    City / Area
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={filterCity}
+                      onChange={e => setFilterCity(e.target.value)}
+                      disabled={availableCities.length === 0}
+                      className="w-full appearance-none rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] py-2.5 pl-3 pr-9 text-sm text-[var(--color-text)] focus:border-[var(--color-brand)] focus:outline-none transition disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <option value="">All Cities ({availableCities.length})</option>
+                      {availableCities.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <ChevronDownIcon className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-muted)]" />
+                  </div>
+                </div>
+
+                {/* Status chips */}
+                <div>
+                  <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                    Status
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {STATUS_OPTIONS.map(opt => {
+                      const on = filterStatuses.has(opt.key);
+                      return (
+                        <button key={opt.key} type="button" onClick={() => toggleStatus(opt.key)}
+                          className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all ${
+                            on
+                              ? "bg-[var(--color-brand)] text-white shadow-sm scale-[1.02]"
+                              : "bg-[var(--color-input-bg)] text-[var(--color-muted)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
+                          }`}>
+                          <span
+                            className="h-1.5 w-1.5 rounded-full"
+                            style={{ backgroundColor: on ? "rgba(255,255,255,0.8)" : opt.dotHex }}
+                          />
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Active filter chips */}
+              {activeFilterCount > 0 && (
+                <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] pt-3">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                    Active filters:
+                  </span>
+                  {filterState && (
+                    <FilterChip label="State" value={filterState} onRemove={() => setFilterState("")} />
+                  )}
+                  {filterCity && (
+                    <FilterChip label="City" value={filterCity} onRemove={() => setFilterCity("")} />
+                  )}
+                  {[...filterStatuses].map(s => (
+                    <FilterChip key={s} label="Status"
+                      value={STATUS_OPTIONS.find(o => o.key === s)?.label ?? s}
+                      onRemove={() => toggleStatus(s)} />
+                  ))}
+                  {searchQuery.trim() && (
+                    <FilterChip label="Search" value={`"${searchQuery.trim()}"`}
+                      onRemove={() => setSearchQuery("")} />
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* ── Content ─────────────────────────────────────────────────── */}
+        {/* ── Loading / error ───────────────────────────────────────────────── */}
         {loading ? (
-          <div className="space-y-3">
-            {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className="bg-white rounded-xl border border-gray-200 p-4 animate-pulse">
-                <div className="h-3 w-32 bg-gray-200 rounded mb-2" />
-                <div className="h-3 w-48 bg-gray-100 rounded mb-3" />
-                <div className="h-5 w-20 bg-gray-200 rounded" />
-              </div>
-            ))}
+          <div className="flex min-h-[400px] items-center justify-center">
+            <div className="flex flex-col items-center gap-4">
+              <div className="h-12 w-12 animate-spin rounded-full border-4 border-[var(--color-border)] border-t-[var(--color-brand)]" />
+              <p className="text-sm font-medium text-[var(--color-muted)]">Loading sensor data…</p>
+            </div>
           </div>
         ) : fetchError ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center">
-            <p className="text-3xl mb-2">⚠️</p>
-            <p className="font-semibold text-red-700 mb-1">Could not load sensor data</p>
-            <p className="text-sm text-red-600/80 mb-4">The server may be starting up.</p>
-            <button
-              onClick={() => void fetchSensors()}
-              className="px-5 py-2 rounded-lg bg-[var(--color-brand)] text-white text-sm font-semibold hover:opacity-90 transition-opacity"
-            >
-              Retry
-            </button>
+          <div className="flex min-h-[400px] items-center justify-center">
+            <div className={`${card} p-8 text-center max-w-sm w-full`}>
+              <AlertTriangleIcon className="h-10 w-10 text-red-400 mx-auto mb-4" />
+              <h2 className="text-lg font-semibold text-[var(--color-text)] mb-2">Connection Error</h2>
+              <p className="text-sm text-[var(--color-muted)] mb-4">
+                Could not load sensor data. The server may be starting up.
+              </p>
+              <button
+                type="button" onClick={() => void fetchSensors()}
+                className="rounded-xl bg-[var(--color-brand)] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[var(--color-brand-dark)] transition"
+              >
+                Retry Connection
+              </button>
+            </div>
           </div>
         ) : (
-          <>
-            <p className="text-xs text-gray-400 mb-3">{filtered.length} nodes</p>
-            {filtered.length === 0 ? (
-              <div className="text-center py-16">
-                <p className="text-4xl mb-3">📡</p>
-                <p className="text-gray-500 font-medium">No nodes match your filter.</p>
-                <button
-                  onClick={() => { setFilter("all"); setSearch(""); }}
-                  className="mt-3 text-sm text-[var(--color-brand)] font-medium hover:underline"
-                >
-                  Clear filters
-                </button>
-              </div>
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {filtered.map((node) => (
-                  <NodeCard
-                    key={node.id}
-                    node={node}
-                    isFav={favIds.has(node.nodeId)}
-                    onToggleFav={toggleFav}
-                    onViewMap={(n) => setMapNode(n)}
+
+          /* ── Main content grid ──────────────────────────────────────────── */
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,1.1fr)]">
+
+            {/* ── Left column ──────────────────────────────────────────────── */}
+            <div className="flex flex-col gap-5">
+
+              {/* Map card */}
+              <article ref={mapCardRef} className={card + " p-5"}>
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-[var(--color-muted)]">Live View</p>
+                    <h2 className="text-lg font-semibold text-[var(--color-text)]">IoT Sensor Nodes</h2>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-4 text-sm font-semibold text-[var(--color-text)]">
+                    <span>Online: <span className="text-green-600">{stats.online}</span></span>
+                    <span>Offline: <span className="text-[var(--color-brand)]">{stats.offline}</span></span>
+                    {activeFilterCount > 0 && (
+                      <span className="text-xs font-medium text-[var(--color-muted)]">
+                        ({stats.total} / {stats.totalAll} shown)
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Recently updated chips */}
+                {recentlyUpdated.length > 0 && (
+                  <div className="mb-4">
+                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                      Recently Updated
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {recentlyUpdated.map((node, i) => (
+                        <button key={node.id} type="button" onClick={() => focusNode(node.id)}
+                          title={`Jump to ${node.nodeId}${node.location ? ` · ${node.location}` : ""}`}
+                          className="group flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-input-bg)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-all hover:border-amber-400 hover:bg-amber-50"
+                        >
+                          <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold ${
+                            i === 0 ? "bg-amber-400 text-white" : "bg-[var(--color-border)] text-[var(--color-muted)]"
+                          }`}>
+                            {i + 1}
+                          </span>
+                          <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ backgroundColor: statusDotHex(node) }} />
+                          <span>{node.nodeId}</span>
+                          {node.area && <span className="text-[var(--color-muted)]">· {node.area}</span>}
+                          {node.lastUpdated && (
+                            <span className="text-[10px] text-[var(--color-muted)]">
+                              {formatTimeAgo(node.lastUpdated)}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Google Map */}
+                <div className="rounded-2xl border border-[var(--color-border)] overflow-hidden">
+                  <NodeMap
+                    nodes={mapNodes}
+                    height={460}
+                    zoom={10}
+                    focusNodeId={focusNodeId}
+                    highlightedIds={recentlyUpdatedIds}
+                    favouriteIds={favIds}
+                    onToggleFavourite={toggleFav}
                   />
-                ))}
+                </div>
+
+                {/* Water level legend */}
+                <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-[var(--color-muted)]">
+                  <span className="font-semibold text-[var(--color-text)]">Water Level:</span>
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[0] }} /> Dry ({stats.dry})</span>
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[1] }} /> Normal ({stats.normal})</span>
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[2] }} /> Warning ({stats.warning})</span>
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[3] }} /> Critical ({stats.critical})</span>
+                </div>
+              </article>
+
+              {/* All nodes grid */}
+              <article className={card + " p-5"}>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h2 className="text-base font-semibold text-[var(--color-text)]">All Sensor Nodes</h2>
+                    <p className="text-xs text-[var(--color-muted)]">
+                      Click any node to navigate the map · star to save to Favourites
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-[var(--color-input-bg)] px-2.5 py-1 text-xs font-medium text-[var(--color-muted)]">
+                    {stats.total}{activeFilterCount > 0 ? ` / ${stats.totalAll}` : ""} nodes
+                  </span>
+                </div>
+
+                {filteredNodes.length === 0 ? (
+                  <div className="flex flex-col items-center gap-3 rounded-2xl bg-[var(--color-input-bg)] py-12">
+                    <FilterIcon className="h-10 w-10 text-[var(--color-border)]" />
+                    <div className="text-center">
+                      <p className="text-sm font-semibold text-[var(--color-text)]">No nodes match your filters</p>
+                      <p className="mt-1 text-xs text-[var(--color-muted)]">
+                        Try broadening your criteria or clearing all filters.
+                      </p>
+                    </div>
+                    <button type="button" onClick={clearAllFilters}
+                      className="rounded-lg bg-[var(--color-brand)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--color-brand-dark)] transition">
+                      Clear Filters
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+                    {filteredNodes.map(node => {
+                      const isFav = favIds.has(node.nodeId);
+                      return (
+                        <div
+                          key={node.id}
+                          className={`group relative flex items-center gap-2 rounded-2xl border px-3 py-2.5 text-xs transition-colors ${
+                            isFav
+                              ? "border-amber-200 bg-amber-50"
+                              : "border-transparent bg-[var(--color-input-bg)] hover:bg-[var(--color-hover)]"
+                          }`}
+                        >
+                          <span className={`h-2 w-2 flex-shrink-0 rounded-full`}
+                            style={{ backgroundColor: markerHex(node) }} />
+                          <div
+                            className="min-w-0 flex-1 cursor-pointer"
+                            onClick={() => focusNode(node.id)}
+                            title={`Navigate to ${node.nodeId} on map`}
+                          >
+                            <p className="truncate font-semibold text-[var(--color-text)] group-hover:text-[var(--color-brand)] group-hover:underline transition-colors">
+                              {node.nodeId}
+                            </p>
+                            {(node.location || node.area) && (
+                              <p className="truncate text-[10px] leading-tight text-[var(--color-muted)]">
+                                {[node.location, node.area].filter(Boolean).join(" · ")}
+                              </p>
+                            )}
+                          </div>
+                          <MapPinIcon className="h-3 w-3 flex-shrink-0 text-[var(--color-brand)] opacity-0 group-hover:opacity-60 transition-opacity" />
+                          <span className="flex-shrink-0 font-mono text-[10px] text-[var(--color-muted)]">
+                            {node.status === "inactive" ? "—" : WATER_M[node.currentLevel]}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => void toggleFav(node.nodeId)}
+                            title={isFav ? "Remove favourite" : "Add to favourites"}
+                            className={`flex-shrink-0 transition-colors ${
+                              isFav
+                                ? "text-amber-400 hover:text-amber-500"
+                                : "opacity-0 group-hover:opacity-100 text-[var(--color-border)] hover:text-amber-400"
+                            }`}
+                          >
+                            <StarIcon filled={isFav} className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </article>
+            </div>
+
+            {/* ── Right sidebar ─────────────────────────────────────────────── */}
+            <aside className="flex flex-col gap-5">
+
+              {/* Live monitoring */}
+              <div className="bg-[var(--color-brand)] rounded-2xl p-4 text-white">
+                <div className="flex items-center gap-2 mb-3">
+                  <ActivityIcon className="h-5 w-5" />
+                  <h3 className="font-bold text-sm">Live Monitoring</h3>
+                </div>
+                <p className="text-sm text-white/85 mb-4">
+                  Tracking {stats.totalAll} sensor nodes across Sarawak in real-time.
+                </p>
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-white/80">Online</span>
+                    <span className="font-bold">{stats.online}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-white/80">Warning</span>
+                    <span className="font-bold text-amber-300">{stats.warning}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-white/80">Critical</span>
+                    <span className="font-bold text-red-300">{stats.critical}</span>
+                  </div>
+                  {user && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-white/80">Saved</span>
+                      <span className="font-bold">{stats.favs}</span>
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
-          </>
+
+              {/* Favourites */}
+              <div className={card + " p-4"}>
+                <div className="mb-3 flex items-center gap-2">
+                  <StarIcon filled className="h-4 w-4 text-amber-400" />
+                  <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--color-text)]">
+                    Favourites
+                  </h3>
+                  {favouriteNodes.length > 0 && (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-600">
+                      {favouriteNodes.length}
+                    </span>
+                  )}
+                </div>
+                {favouriteNodes.length > 0 && (
+                  <p className="mb-3 text-[10px] text-[var(--color-muted)]">
+                    Click any saved node to navigate the map to its location.
+                  </p>
+                )}
+
+                {favouriteNodes.length === 0 ? (
+                  <div className="flex flex-col items-center gap-1.5 rounded-2xl bg-[var(--color-input-bg)] py-6">
+                    <StarIcon className="h-7 w-7 text-[var(--color-border)]" />
+                    <p className="px-4 text-center text-xs leading-relaxed text-[var(--color-muted)]">
+                      Click the star on any node to pin it here.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {favouriteNodes.map(node => {
+                      const isFiltered = !filteredNodeIds.has(node.id);
+                      return (
+                        <div
+                          key={node.id}
+                          className="group flex cursor-pointer items-center gap-2 rounded-xl bg-[var(--color-input-bg)] px-3 py-2.5 transition-colors hover:bg-amber-50 hover:border-amber-200 border border-transparent"
+                          onClick={() => focusNode(node.id)}
+                          title="Click to navigate to this node on the map"
+                        >
+                          <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                            style={{ backgroundColor: markerHex(node) }} />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <p className="truncate text-xs font-semibold text-[var(--color-text)] group-hover:text-[var(--color-brand)] transition-colors">{node.nodeId}</p>
+                              {isFiltered && (
+                                <span className="flex-shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-400 border border-slate-200">
+                                  filtered
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-[var(--color-muted)]">
+                              {statusText(node)} · {node.status === "inactive" ? "—" : WATER_M[node.currentLevel]}
+                            </p>
+                            {(node.location || node.area) && (
+                              <p className="mt-0.5 truncate text-[9px] text-[var(--color-muted)]/70">
+                                {[node.location, node.area].filter(Boolean).join(" · ")}
+                              </p>
+                            )}
+                          </div>
+                          <MapPinIcon className="h-3.5 w-3.5 flex-shrink-0 text-[var(--color-brand)] opacity-0 group-hover:opacity-70 transition-opacity" />
+                          <button
+                            type="button"
+                            onClick={e => { e.stopPropagation(); void toggleFav(node.nodeId); }}
+                            className="flex-shrink-0 text-amber-400 hover:text-amber-500 transition-colors"
+                            title="Remove from favourites"
+                          >
+                            <StarIcon filled className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Status legend */}
+              <div className={card + " p-4"}>
+                <h3 className="text-base font-semibold text-[var(--color-text)]">Status Legend</h3>
+                <p className="text-xs text-[var(--color-muted)] mt-0.5 mb-4">
+                  Sarawak flood SOP water levels.
+                </p>
+                <ul className="space-y-3">
+                  {[
+                    { hex: STATUS_HEX[0],  label: "Dry",      desc: "No flood risk",          lvl: 0 },
+                    { hex: STATUS_HEX[1],  label: "Normal",   desc: "Safe water level",        lvl: 1 },
+                    { hex: STATUS_HEX[2],  label: "Warning",  desc: "Monitor closely",         lvl: 2 },
+                    { hex: STATUS_HEX[3],  label: "Critical", desc: "Severe flood risk",       lvl: 3 },
+                    { hex: OFFLINE_HEX,    label: "Offline",  desc: "Sensor not reporting",    lvl: null },
+                  ].map(({ hex, label, desc, lvl }) => (
+                    <li
+                      key={label}
+                      className="flex items-center justify-between rounded-2xl border border-[var(--color-border)] px-4 py-3"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span
+                          className="flex h-9 w-9 items-center justify-center rounded-full text-white text-sm font-semibold"
+                          style={{ backgroundColor: hex }}
+                        >
+                          {lvl ?? "—"}
+                        </span>
+                        <div>
+                          <p className="text-sm font-semibold text-[var(--color-text)]">{label}</p>
+                          <p className="text-xs text-[var(--color-muted)]">{desc}</p>
+                        </div>
+                      </div>
+                      {lvl !== null && (
+                        <span className="text-sm font-semibold text-[var(--color-brand)]">
+                          LVL {lvl}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-4 rounded-2xl bg-[var(--color-input-bg)] px-4 py-3 text-xs text-[var(--color-muted)]">
+                  <p className="font-semibold uppercase tracking-wide text-[var(--color-text)]">Map Info</p>
+                  <p>Total: {stats.totalAll} · Visible: {stats.total} · Online: {stats.online} · Offline: {stats.offline}</p>
+                  <p className="mt-0.5">Live · Server-Sent Events (SSE).</p>
+                </div>
+              </div>
+            </aside>
+          </div>
         )}
       </main>
-
-      {/* ── Map modal ─────────────────────────────────────────────────── */}
-      {mapNode && (
-        <NodeMapEmbed node={mapNode} onClose={() => setMapNode(null)} />
-      )}
     </div>
+  );
+}
+
+// ── FilterChip sub-component ──────────────────────────────────────────────────
+function FilterChip({ label, value, onRemove }: { label: string; value: string; onRemove: () => void }) {
+  return (
+    <span className="flex items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-input-bg)] px-2.5 py-1 text-xs font-medium text-[var(--color-text)]">
+      <span className="text-[10px] text-[var(--color-muted)]">{label}:</span>
+      {value}
+      <button type="button" onClick={onRemove}
+        className="ml-0.5 text-[var(--color-brand)] hover:opacity-70 transition-opacity">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+          <path d="M18 6L6 18M6 6l12 12" />
+        </svg>
+      </button>
+    </span>
   );
 }

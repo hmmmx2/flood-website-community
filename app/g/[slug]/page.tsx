@@ -101,7 +101,7 @@ export default function GroupPage() {
     if (!res.ok) return;
     const data: { liked: boolean; likesCount: number } = await res.json();
     setPosts(prev => prev.map(p => p.id === postId
-      ? { ...p, likedByMe: data.liked, likesCount: data.likesCount }
+      ? { ...p, likedByMe: data.liked, likesCount: Math.max(0, data.likesCount) }
       : p));
   }
 
