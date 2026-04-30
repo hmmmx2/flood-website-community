@@ -6,7 +6,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { saveSession, AuthUser } from "@/lib/auth";
 
-const CRM_URL = process.env.NEXT_PUBLIC_CRM_URL || "http://localhost:3000";
 type View = "login" | "register";
 
 // Java API returns: { session: { accessToken, refreshToken }, user: { id, email, displayName, role } }
@@ -24,9 +23,21 @@ type LoginResponse = {
   };
 };
 
-function redirectToAdmin(accessToken: string, refreshToken: string, user: AuthUser) {
+/** Fetches the CRM base URL from the server (not baked into the bundle). */
+async function getCrmUrl(): Promise<string> {
+  try {
+    const res = await fetch("/api/auth/crm-url");
+    const data = await res.json();
+    return data.url || "http://localhost:3000";
+  } catch {
+    return "http://localhost:3000";
+  }
+}
+
+async function redirectToAdmin(accessToken: string, refreshToken: string, user: AuthUser) {
+  const crmBase = await getCrmUrl();
   const u = encodeURIComponent(JSON.stringify(user));
-  window.location.href = `${CRM_URL}/auth/callback?at=${encodeURIComponent(accessToken)}&rt=${encodeURIComponent(refreshToken)}&u=${u}`;
+  window.location.href = `${crmBase}/auth/callback?at=${encodeURIComponent(accessToken)}&rt=${encodeURIComponent(refreshToken)}&u=${u}`;
 }
 
 export default function LoginPage() {
@@ -72,19 +83,10 @@ export default function LoginPage() {
         avatarUrl: data.user.avatarUrl,
         role: data.user.role,
       };
-      if (data.user.role === "admin") {
-        // TODO: Re-enable MFA once admin email account is configured to receive verification codes.
-        // await fetch("/api/auth/forgot-password", {
-        //   method: "POST",
-        //   headers: { "Content-Type": "application/json" },
-        //   body: JSON.stringify({ email: data.user.email }),
-        // });
-        // setPendingSession({ accessToken: data.session.accessToken, refreshToken: data.session.refreshToken, user });
-        // setView("mfa");
-
+      if (data.user.role?.toLowerCase() === "admin") {
         // Save community session so the navbar and settings page work if admin returns to community site
         saveSession({ accessToken: data.session.accessToken, refreshToken: data.session.refreshToken }, user);
-        redirectToAdmin(data.session.accessToken, data.session.refreshToken, user);
+        await redirectToAdmin(data.session.accessToken, data.session.refreshToken, user);
       } else {
         saveSession({ accessToken: data.session.accessToken, refreshToken: data.session.refreshToken }, user);
         router.push("/");
