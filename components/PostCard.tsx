@@ -39,7 +39,7 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
 
   async function submitComment(e: React.FormEvent) {
     e.preventDefault();
-    if (!commentText.trim() || !token) return;
+    if (!commentText.trim() || !currentUserId) return;
     setSubmitting(true);
     setCommentError(null);
     try {
@@ -59,7 +59,7 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
   }
 
   async function deleteComment(commentId: string) {
-    if (!token) return;
+    if (!currentUserId) return;
     const res = await authFetch(`/api/posts/${post.id}/comments/${commentId}`, {
       method: "DELETE",
     });
@@ -237,7 +237,7 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
             {showComments && (
               <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
                 {/* Comment input */}
-                {token ? (
+                {currentUserId ? (
                   <div className="mb-3">
                     <form onSubmit={submitComment} className="flex gap-2">
                       <input

@@ -1,16 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { javaFetch, extractToken } from "@/lib/javaApi";
+import { auth } from "@/auth";
+import { javaFetch } from "@/lib/javaApi";
 
 export const dynamic = "force-dynamic";
 
 export async function DELETE(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string; commentId: string }> }
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string; commentId: string }> },
 ) {
   const { id, commentId } = await params;
+  const session = await auth();
+  if (!session?.accessToken) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
-    const token = extractToken(req.headers.get("authorization"));
-    await javaFetch<void>(`/community/posts/${id}/comments/${commentId}`, { method: "DELETE", token });
+    await javaFetch<void>(`/community/posts/${id}/comments/${commentId}`, { method: "DELETE", token: session.accessToken });
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     const status = (error as { status?: number }).status ?? 500;

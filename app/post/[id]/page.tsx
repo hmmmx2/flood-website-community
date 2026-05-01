@@ -5,26 +5,21 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import PostCard from "@/components/PostCard";
-import { getToken, getUser } from "@/lib/auth";
+import { useSession } from "next-auth/react";
+import { sessionToAuthUser } from "@/lib/auth";
 import { authFetch } from "@/lib/authFetch";
 import type { Post } from "@/lib/types";
-import type { AuthUser } from "@/lib/auth";
 
 export default function PostPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const { data: session } = useSession();
+  const user = session?.user ? sessionToAuthUser(session.user) : null;
   const [post, setPost] = useState<Post | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // UX-POST01: inline delete confirmation (replaces native confirm())
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-
-  useEffect(() => {
-    setUser(getUser());
-    setToken(getToken());
-  }, []);
 
   const fetchPost = useCallback(async () => {
     setLoading(true);
@@ -41,7 +36,7 @@ export default function PostPage() {
   useEffect(() => { fetchPost(); }, [fetchPost]);
 
   async function handleLike(postId: string) {
-    if (!getToken()) { router.push("/login"); return; }
+    if (!session) { router.push("/login"); return; }
     const res = await authFetch(`/api/posts/${postId}/like`, { method: "POST" });
     if (!res.ok) return;
     const data: { liked: boolean; likesCount: number } = await res.json();
@@ -52,7 +47,7 @@ export default function PostPage() {
     // UX-POST01: first call arms confirmation; second call confirms the delete
     if (!confirmingDelete) { setConfirmingDelete(true); return; }
     setConfirmingDelete(false);
-    if (!getToken()) return;
+    if (!session) return;
     const res = await authFetch(`/api/posts/${postId}`, { method: "DELETE" });
     if (res.ok || res.status === 204) {
       router.push("/");
@@ -114,7 +109,6 @@ export default function PostPage() {
           <PostCard
             post={post}
             currentUserId={user?.id}
-            token={token ?? undefined}
             onLike={handleLike}
             onDelete={handleDelete}
             compact={false}

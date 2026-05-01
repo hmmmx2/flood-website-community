@@ -1,37 +1,22 @@
 "use client";
 
-/**
- * /register — Standalone community registration page (FEAT-M06)
- *
- * Separate route so users can be linked directly to sign-up without
- * needing to find the toggle inside /login.
- *
- * POST /api/auth/register → Java community backend (port 4001)
- * On success → saves session → redirects to home feed.
- */
-
 import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { saveSession, AuthUser } from "@/lib/auth";
-
-type LoginResponse = {
-  session: { accessToken: string; refreshToken: string };
-  user: { id: string; email: string; displayName: string; avatarUrl?: string; role: string };
-};
+import { signIn } from "next-auth/react";
 
 export default function RegisterPage() {
   const router = useRouter();
 
-  const [firstName, setFirstName]         = useState("");
-  const [lastName, setLastName]           = useState("");
-  const [email, setEmail]                 = useState("");
-  const [password, setPassword]           = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [showPw, setShowPw]               = useState(false);
-  const [loading, setLoading]             = useState(false);
-  const [error, setError]                 = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const passwordMatch = confirmPassword === "" || password === confirmPassword;
 
@@ -50,6 +35,7 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
+      // Step 1: create the account on Spring Boot
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -61,18 +47,15 @@ export default function RegisterPage() {
         throw new Error(data.error || "Registration failed. Please try again.");
       }
 
-      const data: LoginResponse = await res.json();
-      const user: AuthUser = {
-        id: data.user.id,
-        email: data.user.email,
-        displayName: data.user.displayName,
-        avatarUrl: data.user.avatarUrl,
-        role: data.user.role,
-      };
-      saveSession(
-        { accessToken: data.session.accessToken, refreshToken: data.session.refreshToken },
-        user,
-      );
+      // Step 2: sign in via NextAuth to establish the secure session cookie
+      const result = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      });
+      if (result?.error) {
+        throw new Error("Account created but sign-in failed. Please log in.");
+      }
       router.push("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed.");

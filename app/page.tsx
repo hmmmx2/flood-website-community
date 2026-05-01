@@ -7,16 +7,16 @@ import PostCard from "@/components/PostCard";
 import CreatePostModal from "@/components/CreatePostModal";
 import SearchModal from "@/components/SearchModal";
 import Footer from "@/components/Footer";
-import { getToken, getUser, clearSession, getInitials } from "@/lib/auth";
+import { useSession, signOut } from "next-auth/react";
+import { sessionToAuthUser, getInitials } from "@/lib/auth";
 import { authFetch } from "@/lib/authFetch";
 import type { Post, PagedPosts, Group } from "@/lib/types";
-import type { AuthUser } from "@/lib/auth";
 
 type SortKey = "new" | "top";
 
 export default function HomePage() {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const { data: session } = useSession();
+  const user = session?.user ? sessionToAuthUser(session.user) : null;
   const [posts, setPosts] = useState<Post[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [sort, setSort] = useState<SortKey>("new");
@@ -33,20 +33,15 @@ export default function HomePage() {
   const [showLoginSnack, setShowLoginSnack] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setUser(getUser());
-    setToken(getToken());
-  }, []);
-
   // WEB-029: auto-open create modal when ?create=1
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
-    if (params.get("create") === "1" && getToken()) {
+    if (params.get("create") === "1" && session) {
       setCreateOpen(true);
       window.history.replaceState({}, "", "/");
     }
-  }, []);
+  }, [session]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -101,7 +96,7 @@ export default function HomePage() {
 
   async function handleLike(postId: string) {
     // FEAT-03: show snackbar instead of redirecting so the user keeps context
-    if (!getToken()) { showLoginHint(); return; }
+    if (!session) { showLoginHint(); return; }
     const res = await authFetch(`/api/posts/${postId}/like`, { method: "POST" });
     if (!res.ok) { showActionError("Failed to update like. Please try again."); return; }
     const data: { liked: boolean; likesCount: number } = await res.json();
@@ -114,7 +109,7 @@ export default function HomePage() {
     // UX-POST01: two-step inline confirmation — first call arms it, second confirms
     if (pendingDeleteId !== postId) { setPendingDeleteId(postId); return; }
     setPendingDeleteId(null);
-    if (!getToken()) return;
+    if (!session) return;
     const res = await authFetch(`/api/posts/${postId}`, { method: "DELETE" });
     if (res.ok || res.status === 204) {
       setPosts(prev => prev.filter(p => p.id !== postId));
@@ -124,9 +119,7 @@ export default function HomePage() {
   }
 
   function handleLogout() {
-    clearSession();
-    setUser(null);
-    setToken(null);
+    signOut({ callbackUrl: "/login" });
   }
 
   return (
@@ -260,7 +253,6 @@ export default function HomePage() {
                   key={post.id}
                   post={post}
                   currentUserId={user?.id}
-                  token={token ?? undefined}
                   onLike={handleLike}
                   onDelete={handleDelete}
                   onEdit={(postId, updated) => setPosts(prev => prev.map(p => p.id === postId ? { ...p, ...updated } : p))}
@@ -377,9 +369,8 @@ export default function HomePage() {
 
       <Footer />
 
-      {createOpen && token && (
+      {createOpen && session && (
         <CreatePostModal
-          token={token}
           onClose={() => setCreateOpen(false)}
           onCreated={post => setPosts(prev => [post as Post, ...prev])}
         />

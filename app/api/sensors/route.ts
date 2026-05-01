@@ -1,16 +1,15 @@
-import { NextRequest, NextResponse } from "next/server";
-import { javaFetch, extractToken } from "@/lib/javaApi";
+import { NextResponse } from "next/server";
+import { auth } from "@/auth";
+import { javaFetch } from "@/lib/javaApi";
 
-export async function GET(req: NextRequest) {
+export async function GET() {
+  const session = await auth();
+  const token = session?.accessToken;
   try {
-    const token = extractToken(req.headers.get("authorization"));
     const data = await javaFetch<unknown>("/sensors", { token });
     return NextResponse.json(data);
   } catch (error) {
     const status = (error as { status?: number }).status ?? 500;
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed" },
-      { status },
-    );
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed" }, { status });
   }
 }

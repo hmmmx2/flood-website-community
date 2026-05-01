@@ -4,26 +4,11 @@ import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { saveSession, AuthUser } from "@/lib/auth";
+import { signIn, getSession } from "next-auth/react";
+import type { AuthUser } from "@/lib/auth";
 
 type View = "login" | "register";
 
-// Java API returns: { session: { accessToken, refreshToken }, user: { id, email, displayName, role } }
-type LoginResponse = {
-  session: {
-    accessToken: string;
-    refreshToken: string;
-  };
-  user: {
-    id: string;
-    email: string;
-    displayName: string;
-    avatarUrl?: string;
-    role: string;
-  };
-};
-
-/** Fetches the CRM base URL from the server (not baked into the bundle). */
 async function getCrmUrl(): Promise<string> {
   try {
     const res = await fetch("/api/auth/crm-url");
@@ -34,7 +19,11 @@ async function getCrmUrl(): Promise<string> {
   }
 }
 
-async function redirectToAdmin(accessToken: string, refreshToken: string, user: AuthUser) {
+async function redirectToAdmin(
+  accessToken: string,
+  refreshToken: string,
+  user: AuthUser,
+) {
   const crmBase = await getCrmUrl();
   const u = encodeURIComponent(JSON.stringify(user));
   window.location.href = `${crmBase}/auth/callback?at=${encodeURIComponent(accessToken)}&rt=${encodeURIComponent(refreshToken)}&u=${u}`;
@@ -66,30 +55,36 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+      const result = await signIn("credentials", {
+        email: loginEmail,
+        password: loginPassword,
+        redirect: false,
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Invalid email or password.");
+
+      if (result?.error) {
+        throw new Error("Invalid email or password.");
       }
-      const data: LoginResponse = await res.json();
-      const user: AuthUser = {
-        id: data.user.id,
-        email: data.user.email,
-        displayName: data.user.displayName,
-        avatarUrl: data.user.avatarUrl,
-        role: data.user.role,
-      };
-      if (data.user.role?.toLowerCase() === "admin") {
-        // Save community session so the navbar and settings page work if admin returns to community site
-        saveSession({ accessToken: data.session.accessToken, refreshToken: data.session.refreshToken }, user);
-        await redirectToAdmin(data.session.accessToken, data.session.refreshToken, user);
+
+      // Fetch the session to check user role
+      const session = await getSession();
+      if (!session?.user) {
+        throw new Error("Login failed. Please try again.");
+      }
+
+      if (session.user.role?.toLowerCase() === "admin") {
+        const adminUser: AuthUser = {
+          id: session.user.id,
+          email: session.user.email ?? "",
+          displayName: session.user.name ?? "",
+          avatarUrl: session.user.image ?? undefined,
+          role: session.user.role,
+        };
+        await redirectToAdmin(session.accessToken, session.refreshToken, adminUser);
       } else {
-        saveSession({ accessToken: data.session.accessToken, refreshToken: data.session.refreshToken }, user);
-        router.push("/");
+        const callbackUrl = new URLSearchParams(window.location.search).get(
+          "callbackUrl",
+        );
+        router.push(callbackUrl ?? "/");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed.");
@@ -107,24 +102,31 @@ export default function LoginPage() {
     }
     setLoading(true);
     try {
+      // Step 1: create account on Spring Boot
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ firstName, lastName, email: regEmail, password: regPassword }),
+        body: JSON.stringify({
+          firstName,
+          lastName,
+          email: regEmail,
+          password: regPassword,
+        }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Registration failed.");
       }
-      const data: LoginResponse = await res.json();
-      const user: AuthUser = {
-        id: data.user.id,
-        email: data.user.email,
-        displayName: data.user.displayName,
-        avatarUrl: data.user.avatarUrl,
-        role: data.user.role,
-      };
-      saveSession({ accessToken: data.session.accessToken, refreshToken: data.session.refreshToken }, user);
+
+      // Step 2: sign in via NextAuth to establish the session cookie
+      const result = await signIn("credentials", {
+        email: regEmail,
+        password: regPassword,
+        redirect: false,
+      });
+      if (result?.error) {
+        throw new Error("Account created but sign-in failed. Please log in.");
+      }
       router.push("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed.");
@@ -189,7 +191,7 @@ export default function LoginPage() {
               <Image src="/images/logo.png" alt="Pop Up Advertising And Information Enterprise" width={80} height={80} priority />
             </div>
 
-            {/* ── Login view ─────────────────────────────────────── */}
+            {/* ── Login view ─────────────────────────────────────────────── */}
             {view === "login" && (
               <>
                 <h2 className="text-2xl font-semibold mb-2" style={{ color: "var(--color-text)" }}>
@@ -217,6 +219,7 @@ export default function LoginPage() {
                       value={loginEmail}
                       onChange={(e) => setLoginEmail(e.target.value)}
                       required
+                      autoComplete="email"
                       placeholder="Enter your email"
                       className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-colors focus:ring-2"
                       style={{
@@ -237,6 +240,7 @@ export default function LoginPage() {
                         value={loginPassword}
                         onChange={(e) => setLoginPassword(e.target.value)}
                         required
+                        autoComplete="current-password"
                         placeholder="Enter your password"
                         className="w-full rounded-xl border px-4 py-2.5 pr-16 text-sm outline-none transition-colors focus:ring-2"
                         style={{
@@ -295,7 +299,7 @@ export default function LoginPage() {
               </>
             )}
 
-            {/* ── Register view ──────────────────────────────────── */}
+            {/* ── Register view ──────────────────────────────────────────── */}
             {view === "register" && (
               <>
                 <h2 className="text-2xl font-semibold mb-2" style={{ color: "var(--color-text)" }}>
@@ -324,6 +328,7 @@ export default function LoginPage() {
                         onChange={(e) => setFirstName(e.target.value)}
                         placeholder="John"
                         required
+                        autoComplete="given-name"
                         className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-colors focus:ring-2"
                         style={{
                           background: "var(--color-input-bg)",
@@ -342,6 +347,7 @@ export default function LoginPage() {
                         onChange={(e) => setLastName(e.target.value)}
                         placeholder="Doe"
                         required
+                        autoComplete="family-name"
                         className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-colors focus:ring-2"
                         style={{
                           background: "var(--color-input-bg)",
@@ -361,6 +367,7 @@ export default function LoginPage() {
                       onChange={(e) => setRegEmail(e.target.value)}
                       placeholder="Enter your email"
                       required
+                      autoComplete="email"
                       className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-colors focus:ring-2"
                       style={{
                         background: "var(--color-input-bg)",
@@ -381,6 +388,7 @@ export default function LoginPage() {
                         placeholder="Enter your password"
                         required
                         minLength={8}
+                        autoComplete="new-password"
                         className="w-full rounded-xl border px-4 py-2.5 pr-16 text-sm outline-none transition-colors focus:ring-2"
                         style={{
                           background: "var(--color-input-bg)",
@@ -409,6 +417,7 @@ export default function LoginPage() {
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       placeholder="Confirm your password"
                       required
+                      autoComplete="new-password"
                       className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-colors focus:ring-2"
                       style={{
                         background: "var(--color-input-bg)",

@@ -4,12 +4,13 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRef, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { clearSession, getInitials } from "@/lib/auth";
+import { signOut } from "next-auth/react";
+import { getInitials } from "@/lib/auth";
 import type { AuthUser } from "@/lib/auth";
 
 export interface NavbarProps {
   user: AuthUser | null;
-  /** Custom logout handler. Falls back to clearSession + redirect to /login. */
+  /** Custom logout handler. Falls back to signOut({ callbackUrl: "/login" }). */
   onLogout?: () => void;
   /** When provided a search icon / bar is rendered. */
   onSearchOpen?: () => void;
@@ -126,8 +127,7 @@ export default function Navbar({
     if (onLogout) {
       onLogout();
     } else {
-      clearSession();
-      router.push("/login");
+      void signOut({ callbackUrl: "/login" });
     }
   }
 

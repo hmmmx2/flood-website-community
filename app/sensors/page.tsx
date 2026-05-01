@@ -1,12 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import NodeMap, { type MapNode, type FloodLevel, getMarkerColor, STATUS_HEX } from "@/components/NodeMap";
-import { getUser, getToken, clearSession } from "@/lib/auth";
+import { useSession, signOut } from "next-auth/react";
+import { sessionToAuthUser } from "@/lib/auth";
 import { authFetch } from "@/lib/authFetch";
-import type { AuthUser } from "@/lib/auth";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type NodeStatus = "active" | "warning" | "critical" | "inactive";
@@ -161,8 +160,8 @@ function AlertTriangleIcon(p: React.SVGProps<SVGSVGElement>) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function SensorsPage() {
-  const router = useRouter();
-  const [user, setUser]               = useState<AuthUser | null>(null);
+  const { data: session } = useSession();
+  const user = session?.user ? sessionToAuthUser(session.user) : null;
   const [nodes, setNodes]             = useState<SensorNodeDto[]>([]);
   const [favIds, setFavIds]           = useState<Set<string>>(new Set());
   const [loading, setLoading]         = useState(true);
@@ -189,14 +188,6 @@ export default function SensorsPage() {
     });
   }
 
-  useEffect(() => { setUser(getUser()); }, []);
-
-  function handleLogout() {
-    clearSession();
-    setUser(null);
-    router.push("/login");
-  }
-
   // ── Data fetching ──────────────────────────────────────────────────────────
   const fetchSensors = useCallback(async (signal?: AbortSignal) => {
     if (isFirstFetch.current) setLoading(true);
@@ -217,7 +208,7 @@ export default function SensorsPage() {
   }, []);
 
   const fetchFavourites = useCallback(async () => {
-    if (!getToken()) return;
+    if (!session) return;
     try {
       const res = await authFetch("/api/favourites");
       if (!res.ok) return;
@@ -254,7 +245,7 @@ export default function SensorsPage() {
   const [pendingFavs, setPendingFavs] = useState<Set<string>>(new Set());
 
   const toggleFav = useCallback(async (sensorNodeId: string) => {
-    if (!getToken()) return;
+    if (!session) return;
     if (pendingFavs.has(sensorNodeId)) return;
     setPendingFavs(prev => new Set([...prev, sensorNodeId]));
 
@@ -392,7 +383,7 @@ export default function SensorsPage() {
 
   return (
     <div className="min-h-screen bg-[var(--color-bg)]">
-      <Navbar user={user} onLogout={handleLogout} activeLink="sensors" />
+      <Navbar user={user} onLogout={() => void signOut({ callbackUrl: "/login" })} activeLink="sensors" />
 
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-5">
 

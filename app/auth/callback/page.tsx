@@ -2,8 +2,7 @@
 
 import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { saveSession } from "@/lib/auth";
-import type { AuthUser } from "@/lib/auth";
+import { signIn } from "next-auth/react";
 
 function CallbackContent() {
   const router = useRouter();
@@ -12,28 +11,29 @@ function CallbackContent() {
   useEffect(() => {
     const at = searchParams.get("at");
     const rt = searchParams.get("rt");
-    const u = searchParams.get("u");
 
-    if (!at || !rt || !u) {
+    if (!at) {
       router.replace("/login");
       return;
     }
 
-    const decoded = (() => {
-      try { return JSON.parse(atob(u)); } catch {}
-      try { return JSON.parse(decodeURIComponent(u)); } catch {}
-      return null;
-    })();
-
-    if (!decoded || !decoded.id || !decoded.email || !decoded.role) {
-      router.replace("/login?error=invalid_session");
-      return;
-    }
-
-    const user: AuthUser = decoded as AuthUser;
-    saveSession({ accessToken: at, refreshToken: rt }, user);
-    window.history.replaceState({}, "", "/");
-    router.replace("/");
+    // Validate the provided Spring Boot token against /profile and create a NextAuth session
+    signIn("admin-token", {
+      accessToken: at,
+      refreshToken: rt ?? "",
+      redirect: false,
+    })
+      .then((result) => {
+        if (result?.ok) {
+          window.history.replaceState({}, "", "/");
+          router.replace("/");
+        } else {
+          router.replace("/login?error=invalid_session");
+        }
+      })
+      .catch(() => {
+        router.replace("/login?error=invalid_session");
+      });
   }, [router, searchParams]);
 
   return (

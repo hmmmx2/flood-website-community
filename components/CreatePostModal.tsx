@@ -2,15 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Group } from "@/lib/types";
+import { authFetch } from "@/lib/authFetch";
 
 type Props = {
-  token: string;
   onClose: () => void;
   onCreated: (post: unknown) => void;
   defaultGroupSlug?: string;
 };
 
-export default function CreatePostModal({ token, onClose, onCreated, defaultGroupSlug }: Props) {
+export default function CreatePostModal({ onClose, onCreated, defaultGroupSlug }: Props) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -22,11 +22,11 @@ export default function CreatePostModal({ token, onClose, onCreated, defaultGrou
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetch("/api/groups", { headers: { Authorization: `Bearer ${token}` } })
+    authFetch("/api/groups")
       .then(r => r.ok ? r.json() : [])
       .then((data: Group[]) => setGroups(data))
       .catch(() => {});
-  }, [token]);
+  }, []);
 
   function handleFile(file: File) {
     if (!file.type.startsWith("image/")) { setError("Only image files are allowed"); return; }
@@ -43,9 +43,9 @@ export default function CreatePostModal({ token, onClose, onCreated, defaultGrou
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch("/api/posts", {
+      const res = await authFetch("/api/posts", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: title.trim(),
           content: content.trim(),

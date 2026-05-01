@@ -66,12 +66,12 @@ export async function getSubscriptionState(): Promise<{
  * Registers the service worker, requests notification permission, subscribes
  * to push notifications, and sends the PushSubscription to the Java backend.
  *
- * @param accessToken  JWT bearer token for the authenticated user.
+ * The API route uses auth() server-side to authenticate the request — no token
+ * parameter needed from the client.
+ *
  * @returns  'subscribed' | 'denied' | 'unsupported'
  */
-export async function subscribeToPush(
-  accessToken: string
-): Promise<'subscribed' | 'denied' | 'unsupported'> {
+export async function subscribeToPush(): Promise<'subscribed' | 'denied' | 'unsupported'> {
   if (!isPushSupported()) return 'unsupported';
 
   // 1. Register (or reuse) the service worker
@@ -88,13 +88,10 @@ export async function subscribeToPush(
     applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY!),
   });
 
-  // 4. Send subscription to Java backend
+  // 4. Send subscription to Java backend (auth handled server-side via auth())
   const res = await fetch('/api/push/subscribe', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(subscription.toJSON()),
   });
   if (!res.ok) {
@@ -108,9 +105,10 @@ export async function subscribeToPush(
  * Unsubscribes the user from push notifications and removes the subscription
  * from the Java backend.
  *
- * @param accessToken  JWT bearer token for the authenticated user.
+ * The API route uses auth() server-side to authenticate the request — no token
+ * parameter needed from the client.
  */
-export async function unsubscribeFromPush(accessToken: string): Promise<void> {
+export async function unsubscribeFromPush(): Promise<void> {
   if (!isPushSupported()) return;
 
   const reg = await navigator.serviceWorker.getRegistration('/sw.js');
@@ -119,13 +117,10 @@ export async function unsubscribeFromPush(accessToken: string): Promise<void> {
   const sub = await reg.pushManager.getSubscription();
   if (!sub) return;
 
-  // Remove from backend first
+  // Remove from backend first (auth handled server-side via auth())
   await fetch('/api/push/subscribe', {
     method: 'DELETE',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ endpoint: sub.endpoint }),
   });
 

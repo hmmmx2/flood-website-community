@@ -4,8 +4,9 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
-import { getToken, getUser, saveSession, clearSession, getInitials } from "@/lib/auth";
-import type { AuthUser } from "@/lib/auth";
+import { useSession, signOut } from "next-auth/react";
+import { sessionToAuthUser, getInitials } from "@/lib/auth";
+import { authFetch } from "@/lib/authFetch";
 import {
   isPushSupported,
   getSubscriptionState,
@@ -17,8 +18,9 @@ const CRM_URL = process.env.NEXT_PUBLIC_CRM_URL || "http://localhost:3000";
 
 export default function SettingsPage() {
   const router = useRouter();
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const { data: session, update } = useSession();
+  const user = session?.user ? sessionToAuthUser(session.user) : null;
+
   const [activeTab, setActiveTab] = useState<"profile" | "password" | "notifications" | "danger">("profile");
 
   // Notification state
@@ -44,15 +46,13 @@ export default function SettingsPage() {
   const [pwMsg, setPwMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
-    const u = getUser();
-    const t = getToken();
-    if (!u || !t) { router.replace("/login"); return; }
-    setUser(u);
-    setToken(t);
-    const parts = u.displayName?.split(" ") ?? [];
+    if (!session) return;
+    if (!user) { router.replace("/login"); return; }
+
+    const parts = user.displayName?.split(" ") ?? [];
     setFirstName(parts[0] ?? "");
     setLastName(parts.slice(1).join(" "));
-    setAvatarUrl(u.avatarUrl ?? "");
+    setAvatarUrl(user.avatarUrl ?? "");
 
     // Init push notification state
     setPushSupported(isPushSupported());
@@ -60,19 +60,19 @@ export default function SettingsPage() {
       setPushPermission(permission);
       setPushSubscribed(subscribed);
     });
-  }, [router]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
 
   async function handlePushToggle() {
-    if (!token) return;
     setPushLoading(true);
     setPushMsg(null);
     try {
       if (pushSubscribed) {
-        await unsubscribeFromPush(token);
+        await unsubscribeFromPush();
         setPushSubscribed(false);
         setPushMsg({ type: "success", text: "Push notifications disabled." });
       } else {
-        const result = await subscribeToPush(token);
+        const result = await subscribeToPush();
         if (result === "subscribed") {
           setPushSubscribed(true);
           setPushPermission("granted");
@@ -96,9 +96,9 @@ export default function SettingsPage() {
     if (!firstName.trim()) { setProfileMsg({ type: "error", text: "First name is required." }); return; }
     setProfileSaving(true); setProfileMsg(null);
     try {
-      const res = await fetch("/api/auth/profile", {
+      const res = await authFetch("/api/auth/profile", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           firstName: firstName.trim(),
           lastName: lastName.trim(),
@@ -111,16 +111,11 @@ export default function SettingsPage() {
         return;
       }
       const updated = await res.json();
-      const newUser: AuthUser = {
-        ...user!,
-        displayName: updated.displayName || `${firstName.trim()} ${lastName.trim()}`.trim(),
-        avatarUrl: (updated.avatarUrl ?? avatarUrl.trim()) || undefined,
-      };
-      setUser(newUser);
-      // Persist updated user to localStorage
-      const t = getToken()!;
-      const rt = localStorage.getItem("community_refresh_token") ?? "";
-      saveSession({ accessToken: t, refreshToken: rt }, newUser);
+      const newName = updated.displayName || `${firstName.trim()} ${lastName.trim()}`.trim();
+      const newImage = (updated.avatarUrl ?? avatarUrl.trim()) || null;
+
+      // Update the NextAuth session so Navbar and other components reflect the new name/avatar
+      await update({ user: { name: newName, image: newImage } });
       setProfileMsg({ type: "success", text: "Profile updated successfully." });
     } catch {
       setProfileMsg({ type: "error", text: "Connection error. Please try again." });
@@ -135,9 +130,9 @@ export default function SettingsPage() {
     if (newPw !== confirmPw) { setPwMsg({ type: "error", text: "Passwords do not match." }); return; }
     setPwSaving(true); setPwMsg(null);
     try {
-      const res = await fetch("/api/auth/change-password", {
+      const res = await authFetch("/api/auth/change-password", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ currentPassword: currentPw, newPassword: newPw }),
       });
       if (!res.ok) {
@@ -147,7 +142,7 @@ export default function SettingsPage() {
       }
       setPwMsg({ type: "success", text: "Password changed successfully. Please sign in again." });
       setCurrentPw(""); setNewPw(""); setConfirmPw("");
-      setTimeout(() => { clearSession(); router.replace("/login"); }, 2000);
+      setTimeout(() => signOut({ callbackUrl: "/login" }), 2000);
     } catch {
       setPwMsg({ type: "error", text: "Connection error. Please try again." });
     } finally {
@@ -156,8 +151,7 @@ export default function SettingsPage() {
   }
 
   function handleSignOut() {
-    clearSession();
-    router.replace(`${CRM_URL}/login`);
+    signOut({ callbackUrl: `${CRM_URL}/login` });
   }
 
   if (!user) return (

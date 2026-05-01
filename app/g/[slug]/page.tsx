@@ -6,10 +6,10 @@ import { useParams, useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import PostCard from "@/components/PostCard";
 import CreatePostModal from "@/components/CreatePostModal";
-import { getToken, getUser, clearSession, getInitials } from "@/lib/auth";
+import { useSession, signOut } from "next-auth/react";
+import { sessionToAuthUser, getInitials } from "@/lib/auth";
 import { authFetch } from "@/lib/authFetch";
 import type { Post, PagedPosts, Group } from "@/lib/types";
-import type { AuthUser } from "@/lib/auth";
 
 type SortKey = "new" | "top";
 
@@ -18,8 +18,6 @@ export default function GroupPage() {
   const slug = params.slug as string;
   const router = useRouter();
 
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [token, setToken] = useState<string | null>(null);
   const [group, setGroup] = useState<Group | null>(null);
   const [groupLoading, setGroupLoading] = useState(true);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -35,10 +33,8 @@ export default function GroupPage() {
   const [postsError, setPostsError] = useState(false);
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
 
-  useEffect(() => {
-    setUser(getUser());
-    setToken(getToken());
-  }, []);
+  const { data: session } = useSession();
+  const user = session?.user ? sessionToAuthUser(session.user) : null;
 
   // Fetch group info — authFetch ensures the token is refreshed so joinedByMe is accurate
   useEffect(() => {
@@ -80,7 +76,7 @@ export default function GroupPage() {
   }, [sort, fetchPosts]);
 
   async function handleJoinToggle() {
-    if (!getToken()) { router.push("/login"); return; }
+    if (!session) { router.push("/login"); return; }
     setJoinLoading(true);
     try {
       const method = group?.joinedByMe ? "DELETE" : "POST";
@@ -96,7 +92,7 @@ export default function GroupPage() {
   }
 
   async function handleLike(postId: string) {
-    if (!getToken()) { router.push("/login"); return; }
+    if (!session) { router.push("/login"); return; }
     const res = await authFetch(`/api/posts/${postId}/like`, { method: "POST" });
     if (!res.ok) return;
     const data: { liked: boolean; likesCount: number } = await res.json();
@@ -109,17 +105,11 @@ export default function GroupPage() {
     // WEB-013: two-step inline confirmation
     if (deletingPostId !== postId) { setDeletingPostId(postId); return; }
     setDeletingPostId(null);
-    if (!getToken()) return;
+    if (!session) return;
     const res = await authFetch(`/api/posts/${postId}`, { method: "DELETE" });
     if (res.ok || res.status === 204) {
       setPosts(prev => prev.filter(p => p.id !== postId));
     }
-  }
-
-  function handleLogout() {
-    clearSession();
-    setUser(null);
-    setToken(null);
   }
 
   if (notFound) {
@@ -163,7 +153,7 @@ export default function GroupPage() {
       )}
       <Navbar
         user={user}
-        onLogout={handleLogout}
+        onLogout={() => void signOut({ callbackUrl: "/login" })}
         breadcrumb={{ label: `g/${slug}` }}
       />
 
@@ -272,7 +262,6 @@ export default function GroupPage() {
                   key={post.id}
                   post={post}
                   currentUserId={user?.id}
-                  token={token ?? undefined}
                   onLike={handleLike}
                   onDelete={handleDelete}
                 />
@@ -353,9 +342,8 @@ export default function GroupPage() {
         </aside>
       </main>
 
-      {createOpen && token && (
+      {createOpen && session && (
         <CreatePostModal
-          token={token}
           defaultGroupSlug={slug}
           onClose={() => setCreateOpen(false)}
           onCreated={post => setPosts(prev => [post as Post, ...prev])}

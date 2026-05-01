@@ -2,10 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
-import { getUser, getToken, clearSession, timeAgo } from "@/lib/auth";
-import type { AuthUser } from "@/lib/auth";
+import { useSession, signOut } from "next-auth/react";
+import { sessionToAuthUser, timeAgo } from "@/lib/auth";
 
 type BlogDto = {
   id: string;
@@ -91,8 +90,8 @@ function BlogCard({ blog, featured = false }: { blog: BlogDto; featured?: boolea
 }
 
 export default function BlogPage() {
-  const router = useRouter();
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const { data: session } = useSession();
+  const user = session?.user ? sessionToAuthUser(session.user) : null;
   const [activeCategory, setActiveCategory] = useState("All");
   const [blogs, setBlogs] = useState<BlogDto[]>([]);
   const [featured, setFeatured] = useState<BlogDto[]>([]);
@@ -101,14 +100,6 @@ export default function BlogPage() {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
-
-  useEffect(() => { setUser(getUser()); }, []);
-
-  function handleLogout() {
-    clearSession();
-    setUser(null);
-    router.push("/login");
-  }
 
   const fetchBlogs = useCallback(async (p = 0, category = activeCategory, reset = false) => {
     if (p === 0) { setLoading(true); setError(null); } else setLoadingMore(true);
@@ -147,7 +138,7 @@ export default function BlogPage() {
 
   return (
     <div className="min-h-screen bg-[var(--color-bg)]">
-      <Navbar user={user} onLogout={handleLogout} activeLink="blog" />
+      <Navbar user={user} onLogout={() => void signOut({ callbackUrl: "/login" })} activeLink="blog" />
 
       <main className="max-w-5xl mx-auto px-4 py-6">
         <div className="flex gap-6">

@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { javaFetch, extractToken } from "@/lib/javaApi";
+import { auth } from "@/auth";
+import { javaFetch } from "@/lib/javaApi";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const session = await auth();
+  if (!session?.accessToken) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
-    const token = extractToken(req.headers.get("authorization"));
     const body = await req.json();
-    const data = await javaFetch<unknown>(`/community/posts/${id}/comments`, { method: "POST", body, token });
+    const data = await javaFetch<unknown>(`/community/posts/${id}/comments`, { method: "POST", body, token: session.accessToken });
     return NextResponse.json(data);
   } catch (error) {
     const status = (error as { status?: number }).status ?? 500;

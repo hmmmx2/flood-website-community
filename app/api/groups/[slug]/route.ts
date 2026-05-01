@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { javaFetch, extractToken } from "@/lib/javaApi";
+import { auth } from "@/auth";
+import { javaFetch } from "@/lib/javaApi";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
+  const session = await auth();
+  const token = session?.accessToken;
   try {
-    const token = extractToken(req.headers.get("authorization"));
     const data = await javaFetch<unknown>(`/community/groups/${slug}`, { token });
     return NextResponse.json(data);
   } catch (error) {

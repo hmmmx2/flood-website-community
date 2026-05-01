@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { javaFetch, extractToken } from "@/lib/javaApi";
+import { auth } from "@/auth";
+import { javaFetch } from "@/lib/javaApi";
 
 export async function GET(req: NextRequest) {
+  const session = await auth();
+  const token = session?.accessToken;
   try {
     const { searchParams } = new URL(req.url);
 
@@ -14,7 +17,6 @@ export async function GET(req: NextRequest) {
     let path = `/blogs?page=${page}&size=${size}`;
     if (category && category !== "All") path += `&category=${encodeURIComponent(category)}`;
 
-    const token = extractToken(req.headers.get("authorization"));
     const data = await javaFetch(path, { token });
     return NextResponse.json(data);
   } catch (err: unknown) {

@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { getUser, timeAgo } from "@/lib/auth";
-import type { AuthUser } from "@/lib/auth";
+import { useSession } from "next-auth/react";
+import { sessionToAuthUser, timeAgo } from "@/lib/auth";
 
 type BlogDto = {
   id: string;
@@ -36,12 +36,11 @@ function readingTime(body: string): string {
 
 export default function BlogDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const { data: session } = useSession();
+  const user = session?.user ? sessionToAuthUser(session.user) : null;
   const [blog, setBlog] = useState<BlogDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => { setUser(getUser()); }, []);
 
   useEffect(() => {
     if (!id) return;
