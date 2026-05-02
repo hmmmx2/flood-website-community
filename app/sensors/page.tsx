@@ -165,6 +165,7 @@ export default function SensorsPage() {
   const user = session?.user ? sessionToAuthUser(session.user) : null;
   const [nodes, setNodes]             = useState<SensorNodeDto[]>([]);
   const [favIds, setFavIds]           = useState<Set<string>>(new Set());
+  const [pendingFavs, setPendingFavs] = useState<Set<string>>(new Set());
   const [loading, setLoading]         = useState(true);
   const [fetchError, setFetchError]   = useState(false);
   const [lastFetch, setLastFetch]     = useState<Date | null>(null);
@@ -241,8 +242,6 @@ export default function SensorsPage() {
   }, [fetchSensors, fetchFavourites]);
 
   // ── Favourite toggle ───────────────────────────────────────────────────────
-  const [pendingFavs, setPendingFavs] = useState<Set<string>>(new Set());
-
   const toggleFav = useCallback(
     async (sensorNodeId: string) => {
       if (!session) {
