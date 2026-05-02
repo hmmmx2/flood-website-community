@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import type { NextAuthConfig } from "next-auth";
+
+import authConfig from "./auth.config";
 
 function normaliseUrl(raw: string): string {
   if (!raw || raw.startsWith("http://") || raw.startsWith("https://")) return raw;
@@ -10,12 +11,40 @@ function normaliseUrl(raw: string): string {
 const JAVA_API = normaliseUrl(process.env.JAVA_API_URL ?? "http://localhost:4001");
 const ACCESS_TOKEN_MS = 15 * 60 * 1000; // 15 min — matches Spring Boot access token expiry
 
-export const config: NextAuthConfig = {
-  // Required in production (Vercel). Without it JWT/session routes return 500.
-  secret: process.env.AUTH_SECRET,
+if (process.env.NODE_ENV === "production" && !process.env.AUTH_SECRET) {
+  throw new Error(
+    "AUTH_SECRET is not set. Add it in Vercel → Project → Settings → Environment Variables, then redeploy.",
+  );
+}
 
+async function refreshAccessToken(token: Record<string, unknown>) {
+  try {
+    const res = await fetch(`${JAVA_API}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken: token.refreshToken }),
+    });
+    if (!res.ok) throw new Error("Refresh failed");
+    const data = (await res.json()) as {
+      accessToken: string;
+      refreshToken?: string;
+    };
+    return {
+      ...token,
+      accessToken: data.accessToken,
+      refreshToken: data.refreshToken ?? token.refreshToken,
+      accessTokenExpires: Date.now() + ACCESS_TOKEN_MS,
+      error: undefined,
+    };
+  } catch {
+    return { ...token, error: "RefreshAccessTokenError" as const };
+  }
+}
+
+export const { handlers, signIn, signOut, auth } = NextAuth({
+  ...authConfig,
+  secret: process.env.AUTH_SECRET,
   providers: [
-    // Standard email/password login via Spring Boot
     Credentials({
       id: "credentials",
       credentials: {
@@ -61,7 +90,6 @@ export const config: NextAuthConfig = {
       },
     }),
 
-    // Admin cross-app SSO — validates a pre-existing Spring Boot token via /profile
     Credentials({
       id: "admin-token",
       credentials: {
@@ -102,16 +130,14 @@ export const config: NextAuthConfig = {
       },
     }),
   ],
-
   callbacks: {
+    ...authConfig.callbacks,
     async jwt({ token, user, trigger, session }) {
-      // Profile update from settings page
       if (trigger === "update" && session?.user) {
         if (session.user.name !== undefined) token.name = session.user.name;
         if (session.user.image !== undefined) token.picture = session.user.image;
       }
 
-      // Initial sign-in — attach Spring Boot tokens to the NextAuth JWT
       if (user) {
         return {
           ...token,
@@ -123,7 +149,6 @@ export const config: NextAuthConfig = {
         };
       }
 
-      // Return existing token if the access token has not yet expired
       const expires = token.accessTokenExpires as number | undefined;
       if (
         expires != null &&
@@ -134,7 +159,6 @@ export const config: NextAuthConfig = {
         return token;
       }
 
-      // Access token expired — attempt a silent refresh
       return refreshAccessToken(token);
     },
 
@@ -153,42 +177,4 @@ export const config: NextAuthConfig = {
       };
     },
   },
-
-  pages: {
-    signIn: "/login",
-    error: "/login",
-  },
-
-  session: {
-    strategy: "jwt",
-    maxAge: 7 * 24 * 60 * 60, // 7 days — matches Spring Boot refresh token lifetime
-  },
-
-  trustHost: true,
-};
-
-async function refreshAccessToken(token: Record<string, unknown>) {
-  try {
-    const res = await fetch(`${JAVA_API}/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken: token.refreshToken }),
-    });
-    if (!res.ok) throw new Error("Refresh failed");
-    const data = (await res.json()) as {
-      accessToken: string;
-      refreshToken?: string;
-    };
-    return {
-      ...token,
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken ?? token.refreshToken,
-      accessTokenExpires: Date.now() + ACCESS_TOKEN_MS,
-      error: undefined,
-    };
-  } catch {
-    return { ...token, error: "RefreshAccessTokenError" as const };
-  }
-}
-
-export const { handlers, signIn, signOut, auth } = NextAuth(config);
+});

@@ -1,29 +1,12 @@
-import { auth } from "@/auth";
-import { NextResponse } from "next/server";
+import NextAuth from "next-auth";
 
-export default auth((req) => {
-  const { nextUrl } = req;
-  const isAuthenticated = !!req.auth?.user;
-  const path = nextUrl.pathname;
+import authConfig from "@/auth.config";
 
-  // Redirect already-authenticated users away from auth pages
-  if ((path === "/login" || path === "/register") && isAuthenticated) {
-    return NextResponse.redirect(new URL("/", nextUrl));
-  }
+const { auth: proxy } = NextAuth(authConfig);
 
-  // Settings page requires authentication
-  if (path.startsWith("/settings") && !isAuthenticated) {
-    const callbackUrl = encodeURIComponent(nextUrl.href);
-    return NextResponse.redirect(
-      new URL(`/login?callbackUrl=${callbackUrl}`, nextUrl),
-    );
-  }
-
-  return NextResponse.next();
-});
+export default proxy;
 
 export const config = {
-  // Never wrap NextAuth routes with auth() — it breaks GET /api/auth/session (500).
   matcher: [
     "/((?!api/auth|_next/static|_next/image|favicon.ico|images/).*)",
   ],
