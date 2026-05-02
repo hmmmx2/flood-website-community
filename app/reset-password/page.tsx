@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import { CheckCircleIcon } from "@/components/icons";
 
 type Step = "verify" | "reset" | "done";
 
@@ -76,7 +77,9 @@ function ResetPasswordForm() {
 
         {step === "done" ? (
           <div className="text-center">
-            <div className="text-4xl mb-4">✅</div>
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-500/15 text-emerald-600 mb-4 mx-auto">
+              <CheckCircleIcon className="h-10 w-10" />
+            </div>
             <h2 className="text-xl font-bold mb-2" style={{ color: "var(--color-text)" }}>Password Reset!</h2>
             <p className="text-sm mb-4" style={{ color: "var(--color-muted)" }}>
               Your password has been updated. Redirecting to sign in…

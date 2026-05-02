@@ -3,6 +3,7 @@
 import { useState, FormEvent } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { MailIcon } from "@/components/icons";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -41,7 +42,9 @@ export default function ForgotPasswordPage() {
 
         {sent ? (
           <div className="text-center">
-            <div className="text-4xl mb-4">📧</div>
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[var(--color-brand)]/15 text-[var(--color-brand)] mb-4 mx-auto">
+              <MailIcon className="h-10 w-10" />
+            </div>
             <h2 className="text-xl font-bold mb-2" style={{ color: "var(--color-text)" }}>Check your email</h2>
             <p className="text-sm mb-6" style={{ color: "var(--color-muted)" }}>
               We sent a password reset code to <strong>{email}</strong>. Use it on the reset page.

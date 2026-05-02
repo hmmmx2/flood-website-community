@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
+import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
 import { sessionToAuthUser, timeAgo } from "@/lib/auth";
+import { StarIcon, ClockIcon, NewspaperIcon, ArrowLeftIcon, ArrowRightIcon } from "@/components/icons";
 
 type BlogDto = {
   id: string;
@@ -25,7 +28,7 @@ function categoryColor(cat: string): string {
     case "Community": return "bg-purple-100 text-purple-700";
     case "Updates": return "bg-blue-100 text-blue-700";
     case "Research": return "bg-emerald-100 text-emerald-700";
-    default: return "bg-gray-100 text-gray-600";
+    default: return "bg-[var(--color-bg)] text-[var(--color-muted)]";
   }
 }
 
@@ -56,85 +59,89 @@ export default function BlogDetailPage() {
     })();
   }, [id]);
 
+  const shell = (
+    children: ReactNode,
+    opts?: { showNav?: boolean }
+  ) => (
+    <div className="min-h-screen bg-[var(--color-bg)] flex flex-col">
+      {opts?.showNav !== false && (
+        <Navbar user={user} onLogout={() => void signOut({ callbackUrl: "/login" })} activeLink="blog" />
+      )}
+      {children}
+      <Footer />
+    </div>
+  );
+
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin w-8 h-8 rounded-full border-2 border-[var(--color-brand)] border-t-transparent" />
-      </div>
+    return shell(
+      <div className="flex-1 flex items-center justify-center py-24">
+        <div className="animate-spin w-8 h-8 rounded-full border-2 border-[var(--color-brand)] border-t-transparent" aria-label="Loading" />
+      </div>,
+      { showNav: true }
     );
   }
 
   if (error || !blog) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <header className="bg-white border-b border-gray-200">
-          <div className="max-w-3xl mx-auto px-4 h-14 flex items-center gap-4">
-            <Link href="/blog" className="text-gray-600 hover:text-[var(--color-brand)] transition-colors">← Back to Blog</Link>
-          </div>
-        </header>
-        <div className="max-w-3xl mx-auto px-4 py-16 text-center">
-          <p className="text-5xl mb-4">📰</p>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Article Not Found</h2>
-          <p className="text-gray-500">{error ?? "This article may have been removed."}</p>
-          <Link href="/blog" className="mt-6 inline-block px-6 py-2 bg-[var(--color-brand)] text-white rounded-lg font-medium hover:bg-[var(--color-brand-dark)] transition-colors">
+    return shell(
+      <>
+        <main className="max-w-3xl mx-auto px-4 py-8 flex-1 w-full">
+          <Link href="/blog" className="inline-flex items-center gap-2 text-sm text-[var(--color-muted)] hover:text-[var(--color-brand)] transition-colors mb-8 font-medium">
+            <ArrowLeftIcon className="h-4 w-4 shrink-0" />
             Back to Blog
           </Link>
-        </div>
-      </div>
+          <div className="text-center py-12">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[var(--color-brand)]/15 text-[var(--color-brand)] mb-4 mx-auto">
+              <NewspaperIcon className="h-8 w-8" />
+            </div>
+            <h2 className="text-xl font-bold text-[var(--color-text)] mb-2">Article Not Found</h2>
+            <p className="text-[var(--color-muted)]">{error ?? "This article may have been removed."}</p>
+            <Link href="/blog" className="mt-6 inline-block px-6 py-2.5 bg-[var(--color-brand)] text-white rounded-full font-semibold hover:bg-[var(--color-brand-dark)] transition-colors">
+              Back to Blog
+            </Link>
+          </div>
+        </main>
+      </>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <Link href="/blog" className="text-gray-500 hover:text-[var(--color-brand)] transition-colors flex items-center gap-1 text-sm">
-              ← Blog
-            </Link>
-            <span className="text-gray-300">|</span>
-            <Link href="/" className="font-bold text-[var(--color-brand)] text-sm">FloodWatch</Link>
-          </div>
-          {user ? (
-            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-[var(--color-brand)] font-bold text-sm">
-              {user.displayName?.charAt(0).toUpperCase() ?? "U"}
-            </div>
-          ) : (
-            <Link href="/login" className="text-sm font-medium text-gray-600 hover:text-[var(--color-brand)]">Sign in</Link>
-          )}
-        </div>
-      </header>
+  return shell(
+    <>
+      <main className="max-w-3xl mx-auto px-4 py-6 flex-1 w-full">
+        <Link href="/blog" className="inline-flex items-center gap-2 text-sm text-[var(--color-muted)] hover:text-[var(--color-brand)] mb-6 transition-colors font-medium">
+          <ArrowLeftIcon className="h-4 w-4 shrink-0" />
+          Back to Blog
+        </Link>
 
-      <main className="max-w-3xl mx-auto px-4 py-8">
-        <article className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-          {/* Cover image */}
+        <article className="bg-white rounded-2xl border border-[var(--color-border)] overflow-hidden">
           {blog.imageUrl && (
-            <div className="h-64 bg-gray-100 overflow-hidden">
+            <div className="h-64 bg-[var(--color-bg)] overflow-hidden">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={blog.imageUrl} alt={blog.title} className="w-full h-full object-cover" />
             </div>
           )}
 
           <div className="p-6 sm:p-8">
-            {/* Category + featured badge */}
-            <div className="flex items-center gap-2 mb-4">
+            <div className="flex items-center gap-2 mb-4 flex-wrap">
               <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${categoryColor(blog.category)}`}>
                 {blog.category}
               </span>
               {blog.isFeatured && (
-                <span className="text-xs font-semibold text-[var(--color-brand)] bg-blue-50 px-2.5 py-1 rounded-full">★ Featured</span>
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--color-brand)] bg-[var(--color-brand)]/10 px-2.5 py-1 rounded-full">
+                  <StarIcon className="h-3.5 w-3.5 shrink-0" />
+                  Featured
+                </span>
               )}
             </div>
 
-            {/* Title */}
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 leading-tight mb-4">
+            <h1 className="text-2xl sm:text-3xl font-bold text-[var(--color-text)] leading-tight mb-4">
               {blog.title}
             </h1>
 
-            {/* Meta */}
-            <div className="flex items-center gap-4 text-sm text-gray-400 mb-6 pb-6 border-b border-gray-100">
-              <span>🕐 {readingTime(blog.body)}</span>
+            <div className="flex items-center gap-4 text-sm text-[var(--color-muted)] mb-6 pb-6 border-b border-[var(--color-border)] flex-wrap">
+              <span className="inline-flex items-center gap-1.5">
+                <ClockIcon className="h-4 w-4 shrink-0 opacity-80" />
+                {readingTime(blog.body)}
+              </span>
               <span>·</span>
               <span>Published {timeAgo(blog.createdAt)}</span>
               {blog.updatedAt && blog.updatedAt !== blog.createdAt && (
@@ -145,25 +152,25 @@ export default function BlogDetailPage() {
               )}
             </div>
 
-            {/* Body — strip any HTML tags before rendering as plain text */}
-            <div className="prose prose-sm sm:prose max-w-none text-gray-700 leading-relaxed">
+            <div className="text-[var(--color-text)] leading-relaxed text-[15px] sm:text-base space-y-4">
               {blog.body.replace(/<[^>]+>/g, "").split("\n").filter(Boolean).map((para, i) => (
-                <p key={i} className="mb-4">{para}</p>
+                <p key={i}>{para}</p>
               ))}
             </div>
 
-            {/* Footer */}
-            <div className="mt-8 pt-6 border-t border-gray-100 flex items-center justify-between">
-              <Link href="/blog" className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-[var(--color-brand)] transition-colors font-medium">
-                ← All articles
+            <div className="mt-8 pt-6 border-t border-[var(--color-border)] flex flex-wrap items-center justify-between gap-4">
+              <Link href="/blog" className="inline-flex items-center gap-2 text-sm text-[var(--color-muted)] hover:text-[var(--color-brand)] transition-colors font-medium">
+                <ArrowLeftIcon className="h-4 w-4 shrink-0" />
+                All articles
               </Link>
-              <Link href="/" className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-[var(--color-brand)] transition-colors font-medium">
-                Community →
+              <Link href="/" className="inline-flex items-center gap-2 text-sm text-[var(--color-muted)] hover:text-[var(--color-brand)] transition-colors font-medium">
+                Community
+                <ArrowRightIcon className="h-4 w-4 shrink-0" />
               </Link>
             </div>
           </div>
         </article>
       </main>
-    </div>
+    </>
   );
 }

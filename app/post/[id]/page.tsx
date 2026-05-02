@@ -9,6 +9,7 @@ import { useSession } from "next-auth/react";
 import { sessionToAuthUser } from "@/lib/auth";
 import { authFetch } from "@/lib/authFetch";
 import type { Post } from "@/lib/types";
+import { WaveIcon } from "@/components/icons";
 
 export default function PostPage() {
   const { id } = useParams<{ id: string }>();
@@ -99,7 +100,9 @@ export default function PostPage() {
 
         {error && (
           <div className="bg-white border border-[var(--color-border)] rounded-2xl p-12 text-center">
-            <div className="text-4xl mb-3">🌊</div>
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[var(--color-brand)]/15 text-[var(--color-brand)] mb-3 mx-auto">
+              <WaveIcon className="h-8 w-8" />
+            </div>
             <h3 className="font-bold text-[var(--color-text)] mb-1">{error}</h3>
             <Link href="/" className="text-sm text-[var(--color-brand)] hover:underline">Go back to feed</Link>
           </div>

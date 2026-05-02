@@ -10,6 +10,7 @@ import { useSession, signOut } from "next-auth/react";
 import { sessionToAuthUser, getInitials } from "@/lib/auth";
 import { authFetch } from "@/lib/authFetch";
 import type { Post, PagedPosts, Group } from "@/lib/types";
+import { WaveIcon, AlertIcon, InboxIcon } from "@/components/icons";
 
 type SortKey = "new" | "top";
 
@@ -115,7 +116,9 @@ export default function GroupPage() {
   if (notFound) {
     return (
       <div className="min-h-screen bg-[var(--color-bg)] flex flex-col items-center justify-center gap-4">
-        <div className="text-6xl">🌊</div>
+        <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-[var(--color-brand)]/15 text-[var(--color-brand)]">
+          <WaveIcon className="h-12 w-12" />
+        </div>
         <h1 className="text-2xl font-bold text-[var(--color-text)]">Community not found</h1>
         <p className="text-[var(--color-muted)]">g/{slug} doesn&apos;t exist.</p>
         <Link href="/" className="rounded-full bg-[var(--color-brand)] px-6 py-2.5 text-sm font-bold text-white hover:bg-[var(--color-brand-dark)] transition">
@@ -128,7 +131,9 @@ export default function GroupPage() {
   if (fetchError) {
     return (
       <div className="min-h-screen bg-[var(--color-bg)] flex flex-col items-center justify-center gap-4">
-        <div className="text-5xl">⚠️</div>
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-500/15 text-amber-600">
+          <AlertIcon className="h-10 w-10" />
+        </div>
         <h1 className="text-xl font-bold text-[var(--color-text)]">Failed to load community</h1>
         <p className="text-[var(--color-muted)]">The server may be unavailable. Please try again.</p>
         <button type="button" onClick={() => { setFetchError(false); setGroupLoading(true); }}
@@ -241,7 +246,9 @@ export default function GroupPage() {
             </div>
           ) : postsError ? (
             <div className="bg-white border border-[var(--color-border)] rounded-2xl p-12 text-center">
-              <div className="text-4xl mb-3">⚠️</div>
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-amber-500/15 text-amber-600 mb-3 mx-auto">
+                <AlertIcon className="h-8 w-8" />
+              </div>
               <h3 className="font-bold text-[var(--color-text)] mb-1">Could not load posts</h3>
               <p className="text-sm text-[var(--color-muted)] mb-4">The server may be starting up. Please try again.</p>
               <button type="button" onClick={() => fetchPosts(0, sort, true)}
@@ -251,7 +258,9 @@ export default function GroupPage() {
             </div>
           ) : posts.length === 0 ? (
             <div className="bg-white border border-[var(--color-border)] rounded-2xl p-12 text-center">
-              <div className="text-4xl mb-3">📭</div>
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[var(--color-brand)]/15 text-[var(--color-muted)] mb-3 mx-auto">
+                <InboxIcon className="h-8 w-8" />
+              </div>
               <h3 className="font-bold text-[var(--color-text)] mb-1">No posts yet</h3>
               <p className="text-sm text-[var(--color-muted)]">Be the first to post in this community!</p>
             </div>

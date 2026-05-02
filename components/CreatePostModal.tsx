@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Group } from "@/lib/types";
 import { authFetch } from "@/lib/authFetch";
+import { CloseIcon } from "@/components/icons";
 
 type Props = {
   onClose: () => void;
@@ -129,8 +130,9 @@ export default function CreatePostModal({ onClose, onCreated, defaultGroupSlug }
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={imageUrl} alt="Preview" className="w-full max-h-64 object-cover" />
               <button type="button" onClick={() => setImageUrl(null)}
-                className="absolute top-2 right-2 h-7 w-7 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition text-xs font-bold">
-                ✕
+                aria-label="Remove image"
+                className="absolute top-2 right-2 h-7 w-7 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition">
+                <CloseIcon className="h-4 w-4" />
               </button>
             </div>
           ) : (

@@ -7,6 +7,7 @@ import PostCard from "@/components/PostCard";
 import CreatePostModal from "@/components/CreatePostModal";
 import SearchModal from "@/components/SearchModal";
 import Footer from "@/components/Footer";
+import { AlertIcon, WaveIcon } from "@/components/icons";
 import { useSession, signOut } from "next-auth/react";
 import { sessionToAuthUser, getInitials } from "@/lib/auth";
 import { authFetch } from "@/lib/authFetch";
@@ -232,7 +233,9 @@ export default function HomePage() {
             </div>
           ) : fetchError ? (
             <div className="bg-white border border-[var(--color-border)] rounded-2xl p-12 text-center">
-              <div className="text-4xl mb-3">⚠️</div>
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-amber-500/15 text-amber-600 mb-3 mx-auto">
+                <AlertIcon className="h-8 w-8" />
+              </div>
               <h3 className="font-bold text-[var(--color-text)] mb-1">Could not load posts</h3>
               <p className="text-sm text-[var(--color-muted)] mb-4">The server may still be starting up. Please try again.</p>
               <button type="button" onClick={() => fetchPosts(0, sort, true)}
@@ -242,7 +245,9 @@ export default function HomePage() {
             </div>
           ) : posts.length === 0 ? (
             <div className="bg-white border border-[var(--color-border)] rounded-2xl p-12 text-center">
-              <div className="text-4xl mb-3">🌊</div>
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[var(--color-brand)]/15 text-[var(--color-brand)] mb-3 mx-auto">
+                <WaveIcon className="h-8 w-8" />
+              </div>
               <h3 className="font-bold text-[var(--color-text)] mb-1">No posts yet</h3>
               <p className="text-sm text-[var(--color-muted)]">Be the first to share a flood update!</p>
             </div>
