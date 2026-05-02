@@ -23,8 +23,8 @@ export default auth((req) => {
 });
 
 export const config = {
-  // Run on all routes except Next.js internals, static files, and images
+  // Never wrap NextAuth routes with auth() — it breaks GET /api/auth/session (500).
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|images/).*)",
+    "/((?!api/auth|_next/static|_next/image|favicon.ico|images/).*)",
   ],
 };

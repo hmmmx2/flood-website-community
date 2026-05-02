@@ -11,6 +11,9 @@ const JAVA_API = normaliseUrl(process.env.JAVA_API_URL ?? "http://localhost:4001
 const ACCESS_TOKEN_MS = 15 * 60 * 1000; // 15 min — matches Spring Boot access token expiry
 
 export const config: NextAuthConfig = {
+  // Required in production (Vercel). Without it JWT/session routes return 500.
+  secret: process.env.AUTH_SECRET,
+
   providers: [
     // Standard email/password login via Spring Boot
     Credentials({
@@ -121,7 +124,13 @@ export const config: NextAuthConfig = {
       }
 
       // Return existing token if the access token has not yet expired
-      if (Date.now() < (token.accessTokenExpires as number)) {
+      const expires = token.accessTokenExpires as number | undefined;
+      if (
+        expires != null &&
+        typeof expires === "number" &&
+        !Number.isNaN(expires) &&
+        Date.now() < expires
+      ) {
         return token;
       }
 
@@ -130,15 +139,16 @@ export const config: NextAuthConfig = {
     },
 
     async session({ session, token }) {
+      const baseUser = session.user ?? { name: null, email: null, image: null };
       return {
         ...session,
         user: {
-          ...session.user,
-          id: token.sub as string,
-          role: token.role as string,
+          ...baseUser,
+          id: (token.sub ?? "") as string,
+          role: (token.role ?? "") as string,
         },
-        accessToken: token.accessToken as string,
-        refreshToken: token.refreshToken as string,
+        accessToken: (token.accessToken as string | undefined) ?? "",
+        refreshToken: (token.refreshToken as string | undefined) ?? "",
         error: token.error as string | undefined,
       };
     },
