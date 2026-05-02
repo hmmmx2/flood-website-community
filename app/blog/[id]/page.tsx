@@ -8,6 +8,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { sessionToAuthUser, timeAgo } from "@/lib/auth";
 import { StarIcon, ClockIcon, NewspaperIcon, ArrowLeftIcon, ArrowRightIcon } from "@/components/icons";
+import { fetchJson } from "@/lib/fetchJson";
 
 type BlogDto = {
   id: string;
@@ -28,6 +29,7 @@ function categoryColor(cat: string): string {
     case "Community": return "bg-purple-100 text-purple-700";
     case "Updates": return "bg-blue-100 text-blue-700";
     case "Research": return "bg-emerald-100 text-emerald-700";
+    case "General": return "bg-gray-100 text-gray-700";
     default: return "bg-[var(--color-bg)] text-[var(--color-muted)]";
   }
 }
@@ -50,11 +52,11 @@ export default function BlogDetailPage() {
     void (async () => {
       setLoading(true);
       try {
-        const res = await fetch(`/api/blogs/${id}`);
-        if (!res.ok) { setError("Article not found"); return; }
-        const data: BlogDto = await res.json();
+        const data = await fetchJson<BlogDto>(`/api/blogs/${id}`);
         setBlog(data);
-      } catch { setError("Failed to load article"); }
+      } catch {
+        setError("Article not found");
+      }
       finally { setLoading(false); }
     })();
   }, [id]);

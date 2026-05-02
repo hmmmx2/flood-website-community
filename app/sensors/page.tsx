@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Navbar from "@/components/Navbar";
 import NodeMap, { type MapNode, type FloodLevel, getMarkerColor, STATUS_HEX } from "@/components/NodeMap";
-import { useSession, signOut } from "next-auth/react";
+import toast from "react-hot-toast";
+import { useSession, signOut, signIn } from "next-auth/react";
 import { sessionToAuthUser } from "@/lib/auth";
-import { authFetch } from "@/lib/authFetch";
+import { fetchJson, authFetchJson } from "@/lib/fetchJson";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type NodeStatus = "active" | "warning" | "critical" | "inactive";
@@ -193,9 +194,7 @@ export default function SensorsPage() {
     if (isFirstFetch.current) setLoading(true);
     setFetchError(false);
     try {
-      const res = await authFetch("/api/sensors", { signal });
-      if (!res.ok) { setFetchError(true); return; }
-      const data: SensorNodeDto[] = await res.json();
+      const data = await fetchJson<SensorNodeDto[]>("/api/sensors", { signal });
       setNodes(Array.isArray(data) ? data : []);
       setLastFetch(new Date());
       isFirstFetch.current = false;
@@ -210,12 +209,12 @@ export default function SensorsPage() {
   const fetchFavourites = useCallback(async () => {
     if (!session) return;
     try {
-      const res = await authFetch("/api/favourites");
-      if (!res.ok) return;
-      const data: FavouriteNodeDto[] = await res.json();
-      setFavIds(new Set(data.map(f => f.nodeId)));
-    } catch { /* non-critical */ }
-  }, []);
+      const data = await authFetchJson<FavouriteNodeDto[]>("/api/favourites");
+      setFavIds(new Set(data.map((f) => f.nodeId)));
+    } catch {
+      /* non-critical */
+    }
+  }, [session]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -244,37 +243,53 @@ export default function SensorsPage() {
   // ── Favourite toggle ───────────────────────────────────────────────────────
   const [pendingFavs, setPendingFavs] = useState<Set<string>>(new Set());
 
-  const toggleFav = useCallback(async (sensorNodeId: string) => {
-    if (!session) return;
-    if (pendingFavs.has(sensorNodeId)) return;
-    setPendingFavs(prev => new Set([...prev, sensorNodeId]));
-
-    const isFav = favIds.has(sensorNodeId);
-    setFavIds(prev => {
-      const next = new Set(prev);
-      if (isFav) next.delete(sensorNodeId); else next.add(sensorNodeId);
-      return next;
-    });
-    try {
-      if (isFav) {
-        await authFetch(`/api/favourites/${sensorNodeId}`, { method: "DELETE" });
-      } else {
-        await authFetch("/api/favourites", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ nodeId: sensorNodeId }),
-        });
+  const toggleFav = useCallback(
+    async (sensorNodeId: string) => {
+      if (!session) {
+        toast("Please sign in to continue.");
+        void signIn(undefined, { callbackUrl: typeof window !== "undefined" ? window.location.href : "/" });
+        return;
       }
-    } catch {
-      setFavIds(prev => {
+      if (pendingFavs.has(sensorNodeId)) return;
+      setPendingFavs((prev) => new Set([...prev, sensorNodeId]));
+
+      const isFav = favIds.has(sensorNodeId);
+      setFavIds((prev) => {
         const next = new Set(prev);
-        if (isFav) next.add(sensorNodeId); else next.delete(sensorNodeId);
+        if (isFav) next.delete(sensorNodeId);
+        else next.add(sensorNodeId);
         return next;
       });
-    } finally {
-      setPendingFavs(prev => { const next = new Set(prev); next.delete(sensorNodeId); return next; });
-    }
-  }, [favIds, pendingFavs]);
+      try {
+        if (isFav) {
+          await authFetchJson(`/api/favourites/${sensorNodeId}`, { method: "DELETE" });
+          toast.success("Removed from favourites");
+        } else {
+          await authFetchJson("/api/favourites", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ nodeId: sensorNodeId }),
+          });
+          toast.success("Added to favourites");
+        }
+      } catch (e) {
+        setFavIds((prev) => {
+          const next = new Set(prev);
+          if (isFav) next.add(sensorNodeId);
+          else next.delete(sensorNodeId);
+          return next;
+        });
+        toast.error(e instanceof Error ? e.message : "Failed to update favourites.");
+      } finally {
+        setPendingFavs((prev) => {
+          const next = new Set(prev);
+          next.delete(sensorNodeId);
+          return next;
+        });
+      }
+    },
+    [session, favIds, pendingFavs],
+  );
 
   // ── Derived: dropdown options ──────────────────────────────────────────────
   const availableStates = useMemo(() => {

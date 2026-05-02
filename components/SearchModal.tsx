@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { Post, Group } from "@/lib/types";
+import type { Post, Group, PagedPosts } from "@/lib/types";
+import { fetchJson } from "@/lib/fetchJson";
 
 type Props = {
   onClose: () => void;
@@ -33,8 +34,17 @@ export default function SearchModal({ onClose }: Props) {
       const q = query.toLowerCase();
       try {
         const [postsRes, groupsRes] = await Promise.all([
-          fetch(`/api/posts?page=0&size=50`).then(r => r.ok ? r.json() : { content: [] }),
-          fetch(`/api/groups`).then(r => r.ok ? r.json() : []),
+          fetchJson<PagedPosts>("/api/posts?page=0&size=50").catch(
+            () =>
+              ({
+                content: [],
+                totalPages: 0,
+                totalElements: 0,
+                number: 0,
+                last: true,
+              }) as PagedPosts,
+          ),
+          fetchJson<Group[]>("/api/groups").catch(() => [] as Group[]),
         ]);
         const matchPosts = (postsRes.content as Post[]).filter(p =>
           p.title.toLowerCase().includes(q) || p.content.toLowerCase().includes(q) || p.authorName.toLowerCase().includes(q)

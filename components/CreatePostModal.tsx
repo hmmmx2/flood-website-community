@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Group } from "@/lib/types";
-import { authFetch } from "@/lib/authFetch";
+import { fetchJson, authFetchJson } from "@/lib/fetchJson";
 import { CloseIcon } from "@/components/icons";
 
 type Props = {
@@ -23,10 +23,14 @@ export default function CreatePostModal({ onClose, onCreated, defaultGroupSlug }
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    authFetch("/api/groups")
-      .then(r => r.ok ? r.json() : [])
-      .then((data: Group[]) => setGroups(data))
-      .catch(() => {});
+    void (async () => {
+      try {
+        const data = await fetchJson<Group[]>("/api/groups");
+        setGroups(Array.isArray(data) ? data : []);
+      } catch {
+        setGroups([]);
+      }
+    })();
   }, []);
 
   function handleFile(file: File) {
@@ -44,7 +48,7 @@ export default function CreatePostModal({ onClose, onCreated, defaultGroupSlug }
     setError(null);
     setLoading(true);
     try {
-      const res = await authFetch("/api/posts", {
+      const data = await authFetchJson<Record<string, unknown>>("/api/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -54,12 +58,13 @@ export default function CreatePostModal({ onClose, onCreated, defaultGroupSlug }
           groupSlug: groupSlug || null,
         }),
       });
-      let data: Record<string, unknown> | null;
-      try { data = await res.json(); } catch { data = null; }
-      if (!res.ok) { setError((data && typeof data.error === "string" ? data.error : null) || "Failed to create post"); setLoading(false); return; }
       onCreated(data);
       onClose();
-    } catch { setError("Connection error"); setLoading(false); }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create post");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (

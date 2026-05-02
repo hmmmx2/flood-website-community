@@ -9,13 +9,16 @@ import type { AuthUser } from "@/lib/auth";
 
 type View = "login" | "register";
 
+const FALLBACK_CRM = "http://localhost:3000";
+
 async function getCrmUrl(): Promise<string> {
   try {
     const res = await fetch("/api/auth/crm-url");
-    const data = await res.json();
-    return data.url || "http://localhost:3000";
+    if (!res.ok) return FALLBACK_CRM;
+    const data = (await res.json()) as { url?: string };
+    return typeof data.url === "string" && data.url.length > 0 ? data.url : FALLBACK_CRM;
   } catch {
-    return "http://localhost:3000";
+    return FALLBACK_CRM;
   }
 }
 

@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import PostCard from "@/components/PostCard";
 import CreatePostModal from "@/components/CreatePostModal";
-import { useSession, signOut } from "next-auth/react";
+import { useSession, signOut, signIn } from "next-auth/react";
+import toast from "react-hot-toast";
 import { sessionToAuthUser, getInitials } from "@/lib/auth";
-import { authFetch } from "@/lib/authFetch";
+import { authFetchJson, CommunityRequestError } from "@/lib/fetchJson";
 import type { Post, PagedPosts, Group } from "@/lib/types";
 import { WaveIcon, AlertIcon, InboxIcon } from "@/components/icons";
 
@@ -17,7 +18,6 @@ type SortKey = "new" | "top";
 export default function GroupPage() {
   const params = useParams();
   const slug = params.slug as string;
-  const router = useRouter();
 
   const [group, setGroup] = useState<Group | null>(null);
   const [groupLoading, setGroupLoading] = useState(true);
@@ -37,31 +37,35 @@ export default function GroupPage() {
   const { data: session } = useSession();
   const user = session?.user ? sessionToAuthUser(session.user) : null;
 
-  // Fetch group info — authFetch ensures the token is refreshed so joinedByMe is accurate
   useEffect(() => {
     setGroupLoading(true);
     setFetchError(false);
-    authFetch(`/api/groups/${slug}`)
-      .then(r => {
-        if (r.status === 404) { setNotFound(true); return null; }
-        if (!r.ok) { setFetchError(true); return null; }
-        return r.json();
-      })
-      .then((data: Group | null) => {
-        if (data) setGroup(data);
-      })
-      .catch(() => setFetchError(true))
-      .finally(() => setGroupLoading(false));
+    void (async () => {
+      try {
+        const data = await authFetchJson<Group>(`/api/groups/${slug}`);
+        setGroup(data);
+      } catch (e) {
+        if (e instanceof CommunityRequestError && e.status === 404) setNotFound(true);
+        else setFetchError(true);
+      } finally {
+        setGroupLoading(false);
+      }
+    })();
   }, [slug]);
 
   const fetchPosts = useCallback(async (p: number, s: SortKey, replace: boolean) => {
     if (replace) { setLoading(true); setPostsError(false); } else setLoadingMore(true);
     try {
-      // authFetch auto-refreshes the access token on 401/403 so likedByMe is accurate
-      const res = await authFetch(`/api/posts?page=${p}&size=10&sort=${s}&group=${encodeURIComponent(slug)}`);
-      if (!res.ok) { if (replace) setPostsError(true); return; }
-      const data: PagedPosts = await res.json();
-      setPosts(prev => replace ? (Array.isArray(data.content) ? data.content : []) : [...prev, ...(Array.isArray(data.content) ? data.content : [])]);
+      const data = await authFetchJson<PagedPosts>(
+        `/api/posts?page=${p}&size=10&sort=${s}&group=${encodeURIComponent(slug)}`,
+      );
+      setPosts((prev) =>
+        replace
+          ? Array.isArray(data.content)
+            ? data.content
+            : []
+          : [...prev, ...(Array.isArray(data.content) ? data.content : [])],
+      );
       setHasMore(!data.last);
       setPage(p);
     } catch {
@@ -77,39 +81,64 @@ export default function GroupPage() {
   }, [sort, fetchPosts]);
 
   async function handleJoinToggle() {
-    if (!session) { router.push("/login"); return; }
+    if (!session) {
+      toast("Please sign in to continue.");
+      void signIn(undefined, { callbackUrl: typeof window !== "undefined" ? window.location.href : "/" });
+      return;
+    }
     setJoinLoading(true);
     try {
-      const method = group?.joinedByMe ? "DELETE" : "POST";
-      const res = await authFetch(`/api/groups/${slug}/membership`, { method });
-      if (!res.ok) return;
-      if (res.status !== 204) {
-        const data: Group = await res.json();
-        setGroup(data);
+      if (group?.joinedByMe) {
+        await authFetchJson(`/api/groups/${slug}/membership`, { method: "DELETE" });
+        setGroup((prev) =>
+          prev ? { ...prev, joinedByMe: false, membersCount: Math.max(0, prev.membersCount - 1) } : prev,
+        );
+        toast.success("Left community");
       } else {
-        setGroup(prev => prev ? { ...prev, joinedByMe: false, membersCount: Math.max(0, prev.membersCount - 1) } : prev);
+        const data = await authFetchJson<Group>(`/api/groups/${slug}/membership`, { method: "POST" });
+        setGroup(data);
+        toast.success("Joined community");
       }
-    } finally { setJoinLoading(false); }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not update membership.");
+    } finally {
+      setJoinLoading(false);
+    }
   }
 
   async function handleLike(postId: string) {
-    if (!session) { router.push("/login"); return; }
-    const res = await authFetch(`/api/posts/${postId}/like`, { method: "POST" });
-    if (!res.ok) return;
-    const data: { liked: boolean; likesCount: number } = await res.json();
-    setPosts(prev => prev.map(p => p.id === postId
-      ? { ...p, likedByMe: data.liked, likesCount: Math.max(0, data.likesCount) }
-      : p));
+    if (!session) {
+      toast("Please sign in to continue.");
+      void signIn(undefined, { callbackUrl: typeof window !== "undefined" ? window.location.href : "/" });
+      return;
+    }
+    try {
+      const data = await authFetchJson<{ liked: boolean; likesCount: number }>(`/api/posts/${postId}/like`, {
+        method: "POST",
+      });
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId ? { ...p, likedByMe: data.liked, likesCount: Math.max(0, data.likesCount) } : p,
+        ),
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update like.");
+    }
   }
 
   async function handleDelete(postId: string) {
-    // WEB-013: two-step inline confirmation
-    if (deletingPostId !== postId) { setDeletingPostId(postId); return; }
+    if (deletingPostId !== postId) {
+      setDeletingPostId(postId);
+      return;
+    }
     setDeletingPostId(null);
     if (!session) return;
-    const res = await authFetch(`/api/posts/${postId}`, { method: "DELETE" });
-    if (res.ok || res.status === 204) {
-      setPosts(prev => prev.filter(p => p.id !== postId));
+    try {
+      await authFetchJson(`/api/posts/${postId}`, { method: "DELETE" });
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
+      toast.success("Post deleted");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete post.");
     }
   }
 
@@ -306,7 +335,7 @@ export default function GroupPage() {
               </div>
               <button
                 type="button"
-                onClick={user ? handleJoinToggle : () => router.push("/login")}
+                onClick={user ? handleJoinToggle : () => { toast("Please sign in to continue."); void signIn(undefined, { callbackUrl: typeof window !== "undefined" ? window.location.href : "/" }); }}
                 disabled={joinLoading}
                 className={`w-full rounded-full py-2 text-sm font-bold transition disabled:opacity-50 ${
                   group.joinedByMe

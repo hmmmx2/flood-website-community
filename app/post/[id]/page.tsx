@@ -5,9 +5,10 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import PostCard from "@/components/PostCard";
-import { useSession } from "next-auth/react";
+import { useSession, signIn } from "next-auth/react";
+import toast from "react-hot-toast";
 import { sessionToAuthUser } from "@/lib/auth";
-import { authFetch } from "@/lib/authFetch";
+import { authFetchJson } from "@/lib/fetchJson";
 import type { Post } from "@/lib/types";
 import { WaveIcon } from "@/components/icons";
 
@@ -25,35 +26,48 @@ export default function PostPage() {
   const fetchPost = useCallback(async () => {
     setLoading(true);
     try {
-      // authFetch ensures the token is refreshed so likedByMe is accurate
-      const res = await authFetch(`/api/posts/${id}`);
-      if (!res.ok) { setError("Post not found"); setLoading(false); return; }
-      const data: Post = await res.json();
+      const data = await authFetchJson<Post>(`/api/posts/${id}`);
       setPost(data);
-    } catch { setError("Failed to load post"); }
-    finally { setLoading(false); }
+    } catch {
+      setError("Post not found");
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
 
   useEffect(() => { fetchPost(); }, [fetchPost]);
 
   async function handleLike(postId: string) {
-    if (!session) { router.push("/login"); return; }
-    const res = await authFetch(`/api/posts/${postId}/like`, { method: "POST" });
-    if (!res.ok) return;
-    const data: { liked: boolean; likesCount: number } = await res.json();
-    setPost(prev => prev ? { ...prev, likedByMe: data.liked, likesCount: Math.max(0, data.likesCount) } : prev);
+    if (!session) {
+      toast("Please sign in to continue.");
+      void signIn(undefined, { callbackUrl: typeof window !== "undefined" ? window.location.href : "/" });
+      return;
+    }
+    try {
+      const data = await authFetchJson<{ liked: boolean; likesCount: number }>(`/api/posts/${postId}/like`, {
+        method: "POST",
+      });
+      setPost((prev) =>
+        prev ? { ...prev, likedByMe: data.liked, likesCount: Math.max(0, data.likesCount) } : prev,
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update like.");
+    }
   }
 
   async function handleDelete(postId: string) {
-    // UX-POST01: first call arms confirmation; second call confirms the delete
-    if (!confirmingDelete) { setConfirmingDelete(true); return; }
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      return;
+    }
     setConfirmingDelete(false);
     if (!session) return;
-    const res = await authFetch(`/api/posts/${postId}`, { method: "DELETE" });
-    if (res.ok || res.status === 204) {
+    try {
+      await authFetchJson(`/api/posts/${postId}`, { method: "DELETE" });
+      toast.success("Post deleted");
       router.push("/");
-    } else {
-      setError("Failed to delete post. Please try again.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete post.");
     }
   }
 

@@ -3,10 +3,11 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import toast from "react-hot-toast";
 import Navbar from "@/components/Navbar";
 import { useSession, signOut } from "next-auth/react";
 import { sessionToAuthUser, getInitials } from "@/lib/auth";
-import { authFetch } from "@/lib/authFetch";
+import { authFetchJson } from "@/lib/fetchJson";
 import {
   isPushSupported,
   getSubscriptionState,
@@ -28,14 +29,12 @@ export default function SettingsPage() {
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const [pushPermission, setPushPermission] = useState<NotificationPermission>("default");
   const [pushLoading, setPushLoading] = useState(false);
-  const [pushMsg, setPushMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // Profile form
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
-  const [profileMsg, setProfileMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // Password form
   const [currentPw, setCurrentPw] = useState("");
@@ -43,7 +42,6 @@ export default function SettingsPage() {
   const [confirmPw, setConfirmPw] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [pwSaving, setPwSaving] = useState(false);
-  const [pwMsg, setPwMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     if (!session) return;
@@ -65,27 +63,26 @@ export default function SettingsPage() {
 
   async function handlePushToggle() {
     setPushLoading(true);
-    setPushMsg(null);
     try {
       if (pushSubscribed) {
         await unsubscribeFromPush();
         setPushSubscribed(false);
-        setPushMsg({ type: "success", text: "Push notifications disabled." });
+        toast.success("Push notifications disabled.");
       } else {
         const result = await subscribeToPush();
         if (result === "subscribed") {
           setPushSubscribed(true);
           setPushPermission("granted");
-          setPushMsg({ type: "success", text: "Push notifications enabled! You will now receive flood alerts." });
+          toast.success("Push notifications enabled. You will receive flood alerts.");
         } else if (result === "denied") {
           setPushPermission("denied");
-          setPushMsg({ type: "error", text: "Notification permission denied. Please allow notifications in your browser settings." });
+          toast.error("Notification permission denied. Allow notifications in your browser settings.");
         } else {
-          setPushMsg({ type: "error", text: "Push notifications are not supported in this browser." });
+          toast.error("Push notifications are not supported in this browser.");
         }
       }
-    } catch {
-      setPushMsg({ type: "error", text: "Failed to update notification settings. Please try again." });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update notification settings.");
     } finally {
       setPushLoading(false);
     }
@@ -93,10 +90,13 @@ export default function SettingsPage() {
 
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
-    if (!firstName.trim()) { setProfileMsg({ type: "error", text: "First name is required." }); return; }
-    setProfileSaving(true); setProfileMsg(null);
+    if (!firstName.trim()) {
+      toast.error("First name is required.");
+      return;
+    }
+    setProfileSaving(true);
     try {
-      const res = await authFetch("/api/auth/profile", {
+      const updated = await authFetchJson<{ displayName?: string; avatarUrl?: string | null }>("/api/auth/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -105,20 +105,13 @@ export default function SettingsPage() {
           avatarUrl: avatarUrl.trim() || null,
         }),
       });
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        setProfileMsg({ type: "error", text: d.error || "Failed to save profile." });
-        return;
-      }
-      const updated = await res.json();
       const newName = updated.displayName || `${firstName.trim()} ${lastName.trim()}`.trim();
       const newImage = (updated.avatarUrl ?? avatarUrl.trim()) || null;
 
-      // Update the NextAuth session so Navbar and other components reflect the new name/avatar
       await update({ user: { name: newName, image: newImage } });
-      setProfileMsg({ type: "success", text: "Profile updated successfully." });
-    } catch {
-      setProfileMsg({ type: "error", text: "Connection error. Please try again." });
+      toast.success("Profile updated successfully.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Connection error. Please try again.");
     } finally {
       setProfileSaving(false);
     }
@@ -126,25 +119,28 @@ export default function SettingsPage() {
 
   async function changePassword(e: React.FormEvent) {
     e.preventDefault();
-    if (newPw.length < 8) { setPwMsg({ type: "error", text: "New password must be at least 8 characters." }); return; }
-    if (newPw !== confirmPw) { setPwMsg({ type: "error", text: "Passwords do not match." }); return; }
-    setPwSaving(true); setPwMsg(null);
+    if (newPw.length < 8) {
+      toast.error("New password must be at least 8 characters.");
+      return;
+    }
+    if (newPw !== confirmPw) {
+      toast.error("Passwords do not match.");
+      return;
+    }
+    setPwSaving(true);
     try {
-      const res = await authFetch("/api/auth/change-password", {
+      await authFetchJson("/api/auth/change-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ currentPassword: currentPw, newPassword: newPw }),
       });
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        setPwMsg({ type: "error", text: d.error || d.message || "Failed to change password." });
-        return;
-      }
-      setPwMsg({ type: "success", text: "Password changed successfully. Please sign in again." });
-      setCurrentPw(""); setNewPw(""); setConfirmPw("");
+      toast.success("Password changed successfully. Signing you out…");
+      setCurrentPw("");
+      setNewPw("");
+      setConfirmPw("");
       setTimeout(() => signOut({ callbackUrl: "/login" }), 2000);
-    } catch {
-      setPwMsg({ type: "error", text: "Connection error. Please try again." });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Connection error. Please try again.");
     } finally {
       setPwSaving(false);
     }
@@ -227,13 +223,6 @@ export default function SettingsPage() {
               <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-6">
                 <h2 className="font-bold text-[var(--color-text)] text-lg mb-1">Profile Information</h2>
                 <p className="text-sm text-[var(--color-muted)] mb-6">Update your display name and avatar.</p>
-                {profileMsg && (
-                  <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
-                    profileMsg.type === "success"
-                      ? "bg-green-50 border-green-200 text-green-700"
-                      : "bg-red-50 border-red-200 text-red-600"
-                  }`}>{profileMsg.text}</div>
-                )}
                 <form onSubmit={saveProfile} className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -271,13 +260,6 @@ export default function SettingsPage() {
               <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-6">
                 <h2 className="font-bold text-[var(--color-text)] text-lg mb-1">Change Password</h2>
                 <p className="text-sm text-[var(--color-muted)] mb-6">You&apos;ll be signed out after changing your password.</p>
-                {pwMsg && (
-                  <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
-                    pwMsg.type === "success"
-                      ? "bg-green-50 border-green-200 text-green-700"
-                      : "bg-red-50 border-red-200 text-red-600"
-                  }`}>{pwMsg.text}</div>
-                )}
                 <form onSubmit={changePassword} className="space-y-4">
                   <div>
                     <label className="block text-xs font-semibold text-[var(--color-muted)] mb-1.5 uppercase tracking-wide">Current Password</label>
@@ -319,14 +301,6 @@ export default function SettingsPage() {
                   <p className="text-sm text-[var(--color-muted)] mb-6">
                     Receive real-time push notifications in your browser when sensor nodes report warning or critical flood levels.
                   </p>
-
-                  {pushMsg && (
-                    <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
-                      pushMsg.type === "success"
-                        ? "bg-green-50 border-green-200 text-green-700"
-                        : "bg-red-50 border-red-200 text-red-600"
-                    }`}>{pushMsg.text}</div>
-                  )}
 
                   {!pushSupported ? (
                     <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-700">

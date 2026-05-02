@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { StarIcon, ClockIcon, NewspaperIcon } from "@/components/icons";
 import { useSession, signOut } from "next-auth/react";
 import { sessionToAuthUser, timeAgo } from "@/lib/auth";
+import { fetchJson } from "@/lib/fetchJson";
 
 type BlogDto = {
   id: string;
@@ -27,16 +28,32 @@ type PagedBlogs = {
   last: boolean;
 };
 
-const CATEGORIES = ["All", "Flood Alert", "Safety Tips", "Community", "Updates", "Research"];
+const CATEGORIES = [
+  "All",
+  "General",
+  "Flood Alert",
+  "Safety Tips",
+  "Community",
+  "Updates",
+  "Research",
+];
 
 function categoryColor(cat: string): string {
   switch (cat) {
-    case "Flood Alert": return "bg-blue-100 text-blue-700";
-    case "Safety Tips": return "bg-amber-100 text-amber-700";
-    case "Community": return "bg-purple-100 text-purple-700";
-    case "Updates": return "bg-blue-100 text-blue-700";
-    case "Research": return "bg-emerald-100 text-emerald-700";
-    default: return "bg-[var(--color-bg)] text-[var(--color-muted)]";
+    case "General":
+      return "bg-gray-100 text-gray-700";
+    case "Flood Alert":
+      return "bg-blue-100 text-blue-700";
+    case "Safety Tips":
+      return "bg-amber-100 text-amber-700";
+    case "Community":
+      return "bg-purple-100 text-purple-700";
+    case "Updates":
+      return "bg-blue-100 text-blue-700";
+    case "Research":
+      return "bg-emerald-100 text-emerald-700";
+    default:
+      return "bg-[var(--color-bg)] text-[var(--color-muted)]";
   }
 }
 
@@ -48,7 +65,9 @@ function readingTime(body: string): string {
 function BlogCard({ blog, featured = false }: { blog: BlogDto; featured?: boolean }) {
   return (
     <Link href={`/blog/${blog.id}`} className="block group">
-      <article className={`bg-white rounded-2xl border border-[var(--color-border)] overflow-hidden hover:border-[var(--color-brand)] hover:shadow-md transition-all duration-200 ${featured ? "mb-4" : ""}`}>
+      <article
+        className={`bg-white rounded-2xl border border-[var(--color-border)] overflow-hidden hover:border-[var(--color-brand)] hover:shadow-md transition-all duration-200 ${featured ? "mb-4" : ""}`}
+      >
         {featured && blog.imageUrl && (
           <div className="relative h-48 bg-[var(--color-bg)] overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -74,7 +93,9 @@ function BlogCard({ blog, featured = false }: { blog: BlogDto; featured?: boolea
               </span>
             )}
           </div>
-          <h2 className={`font-bold text-[var(--color-text)] group-hover:text-[var(--color-brand)] transition-colors leading-snug mb-1 ${featured ? "text-xl" : "text-base"}`}>
+          <h2
+            className={`font-bold text-[var(--color-text)] group-hover:text-[var(--color-brand)] transition-colors leading-snug mb-1 ${featured ? "text-xl" : "text-base"}`}
+          >
             {blog.title}
           </h2>
           <p className="text-sm text-[var(--color-muted)] line-clamp-2 mb-3">
@@ -106,34 +127,65 @@ export default function BlogPage() {
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
 
-  const fetchBlogs = useCallback(async (p = 0, category = activeCategory, reset = false) => {
-    if (p === 0) { setLoading(true); setError(null); } else setLoadingMore(true);
-    try {
-      const params = new URLSearchParams({ page: String(p), size: "20" });
-      if (category !== "All") params.set("category", category);
-      const res = await fetch(`/api/blogs?${params}`);
-      if (!res.ok) { setError("Failed to load blogs"); return; }
-      const data: PagedBlogs = await res.json();
-      const content = Array.isArray(data.content) ? data.content : [];
-      setBlogs(prev => reset || p === 0 ? content : [...prev, ...content]);
-      setHasMore(!data.last);
-      setPage(p);
-    } catch { setError("Failed to load blogs"); } finally {
-      setLoading(false);
-      setLoadingMore(false);
+  const heroBlog = activeCategory === "All" && featured.length > 0 ? featured[0] : null;
+
+  const listBlogs = useMemo(() => {
+    if (activeCategory === "All" && heroBlog) {
+      return blogs.filter((b) => b.id !== heroBlog.id);
     }
-  }, [activeCategory]);
+    return blogs;
+  }, [blogs, activeCategory, heroBlog]);
+
+  const showEmpty =
+    !loading &&
+    listBlogs.length === 0 &&
+    (activeCategory !== "All" || !heroBlog);
+
+  const fetchBlogs = useCallback(
+    async (p = 0, category = activeCategory, reset = false) => {
+      if (p === 0) {
+        setLoading(true);
+        setError(null);
+      } else setLoadingMore(true);
+      try {
+        const params = new URLSearchParams({ page: String(p), size: "20" });
+        if (category !== "All") params.set("category", category);
+        const data = await fetchJson<PagedBlogs>(`/api/blogs?${params}`);
+        const content = Array.isArray(data.content) ? data.content : [];
+        setBlogs((prev) => (reset || p === 0 ? content : [...prev, ...content]));
+        setHasMore(!data.last);
+        setPage(p);
+      } catch {
+        setError("Failed to load blogs");
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    [activeCategory],
+  );
 
   const fetchFeatured = useCallback(async () => {
     try {
       const res = await fetch("/api/blogs/featured");
+      if (!res.ok) {
+        setFeatured([]);
+        return;
+      }
       const data: BlogDto[] = await res.json();
-      setFeatured(data ?? []);
-    } catch { /* ignore */ }
+      setFeatured(Array.isArray(data) ? data : []);
+    } catch {
+      setFeatured([]);
+    }
   }, []);
 
-  useEffect(() => { void fetchFeatured(); }, [fetchFeatured]);
-  useEffect(() => { void fetchBlogs(0, activeCategory, true); }, [activeCategory]);
+  useEffect(() => {
+    void fetchFeatured();
+  }, [fetchFeatured]);
+
+  useEffect(() => {
+    void fetchBlogs(0, activeCategory, true);
+  }, [activeCategory, fetchBlogs]);
 
   const handleCategoryChange = (cat: string) => {
     setActiveCategory(cat);
@@ -150,13 +202,16 @@ export default function BlogPage() {
           <div className="flex-1 min-w-0">
             <div className="mb-6">
               <h1 className="text-2xl font-bold text-[var(--color-text)]">Blog & News</h1>
-              <p className="text-sm text-[var(--color-muted)] mt-1">Official updates, safety guides, and flood monitoring insights</p>
+              <p className="text-sm text-[var(--color-muted)] mt-1">
+                Official updates, safety guides, and flood monitoring insights
+              </p>
             </div>
 
             <div className="flex gap-2 overflow-x-auto pb-2 mb-6 scrollbar-hide">
-              {CATEGORIES.map(cat => (
+              {CATEGORIES.map((cat) => (
                 <button
                   key={cat}
+                  type="button"
                   onClick={() => handleCategoryChange(cat)}
                   className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap border transition-all ${
                     activeCategory === cat
@@ -169,25 +224,28 @@ export default function BlogPage() {
               ))}
             </div>
 
-            {featured.length > 0 && activeCategory === "All" && (
+            {heroBlog && (
               <div className="mb-2">
                 <p className="text-xs font-semibold text-[var(--color-muted)] uppercase tracking-wide mb-2">Featured</p>
-                <BlogCard blog={featured[0]} featured />
+                <BlogCard blog={heroBlog} featured />
               </div>
             )}
 
             {error && !loading && (
               <div className="bg-white rounded-2xl border border-red-200 p-8 text-center mb-4">
                 <p className="text-red-600 font-medium mb-3">{error}</p>
-                <button onClick={() => void fetchBlogs(0, activeCategory, true)}
-                  className="px-4 py-2 rounded-full bg-[var(--color-brand)] text-white text-sm font-semibold hover:bg-[var(--color-brand-dark)] transition-colors">
+                <button
+                  type="button"
+                  onClick={() => void fetchBlogs(0, activeCategory, true)}
+                  className="px-4 py-2 rounded-full bg-[var(--color-brand)] text-white text-sm font-semibold hover:bg-[var(--color-brand-dark)] transition-colors"
+                >
                   Retry
                 </button>
               </div>
             )}
             {loading ? (
               <div className="space-y-3">
-                {[1, 2, 3].map(i => (
+                {[1, 2, 3].map((i) => (
                   <div key={i} className="bg-white rounded-2xl border border-[var(--color-border)] p-4 animate-pulse">
                     <div className="h-3 w-16 bg-[var(--color-border)] rounded mb-3" />
                     <div className="h-5 w-3/4 bg-[var(--color-border)] rounded mb-2" />
@@ -199,11 +257,11 @@ export default function BlogPage() {
             ) : (
               <>
                 <div className="space-y-3">
-                  {blogs
-                    .filter(b => !b.isFeatured || activeCategory !== "All")
-                    .map(blog => <BlogCard key={blog.id} blog={blog} />)}
+                  {listBlogs.map((blog) => (
+                    <BlogCard key={blog.id} blog={blog} />
+                  ))}
                 </div>
-                {blogs.length === 0 && (
+                {showEmpty && (
                   <div className="text-center py-16">
                     <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[var(--color-brand)]/15 text-[var(--color-brand)] mb-3">
                       <NewspaperIcon className="h-8 w-8" />
@@ -211,9 +269,10 @@ export default function BlogPage() {
                     <p className="text-[var(--color-muted)] font-medium">No articles in this category yet.</p>
                   </div>
                 )}
-                {hasMore && (
+                {hasMore && listBlogs.length > 0 && (
                   <div className="mt-6 text-center">
                     <button
+                      type="button"
                       onClick={() => void fetchBlogs(page + 1)}
                       disabled={loadingMore}
                       className="px-6 py-2 rounded-2xl border border-[var(--color-border)] text-sm font-medium text-[var(--color-brand)] hover:bg-white disabled:opacity-50 transition-colors bg-white"
@@ -233,7 +292,10 @@ export default function BlogPage() {
                 Official news, safety guides, and flood monitoring insights from the FloodWatch team.
               </p>
               <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
-                <Link href="/" className="block text-center w-full py-2 rounded-full bg-[var(--color-brand)] hover:bg-[var(--color-brand-dark)] text-white text-sm font-semibold transition-colors">
+                <Link
+                  href="/"
+                  className="block text-center w-full py-2 rounded-full bg-[var(--color-brand)] hover:bg-[var(--color-brand-dark)] text-white text-sm font-semibold transition-colors"
+                >
                   Back to Community
                 </Link>
               </div>
@@ -241,9 +303,10 @@ export default function BlogPage() {
             <div className="bg-white rounded-2xl border border-[var(--color-border)] p-4">
               <h3 className="font-semibold text-[var(--color-text)] mb-3 text-sm">Categories</h3>
               <div className="space-y-1">
-                {CATEGORIES.map(cat => (
+                {CATEGORIES.map((cat) => (
                   <button
                     key={cat}
+                    type="button"
                     onClick={() => handleCategoryChange(cat)}
                     className={`w-full text-left px-3 py-1.5 rounded-xl text-sm transition-colors ${
                       activeCategory === cat

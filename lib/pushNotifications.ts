@@ -1,3 +1,7 @@
+'use client';
+
+import { authFetchJson } from '@/lib/fetchJson';
+
 /**
  * Web Push Notification utilities for the FloodWatch Community website.
  *
@@ -11,6 +15,7 @@
 
 /** VAPID public key — must match the key used by the Java backend to sign pushes. */
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+
 if (!VAPID_PUBLIC_KEY) {
   throw new Error(
     '[FloodWatch] NEXT_PUBLIC_VAPID_PUBLIC_KEY is not set. ' +
@@ -89,14 +94,11 @@ export async function subscribeToPush(): Promise<'subscribed' | 'denied' | 'unsu
   });
 
   // 4. Send subscription to Java backend (auth handled server-side via auth())
-  const res = await fetch('/api/push/subscribe', {
+  await authFetchJson('/api/push/subscribe', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(subscription.toJSON()),
   });
-  if (!res.ok) {
-    throw new Error('Failed to save subscription');
-  }
 
   return 'subscribed';
 }
@@ -117,13 +119,11 @@ export async function unsubscribeFromPush(): Promise<void> {
   const sub = await reg.pushManager.getSubscription();
   if (!sub) return;
 
-  // Remove from backend first (auth handled server-side via auth())
-  await fetch('/api/push/subscribe', {
+  await authFetchJson('/api/push/subscribe', {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ endpoint: sub.endpoint }),
   });
 
-  // Unsubscribe from browser
   await sub.unsubscribe();
 }

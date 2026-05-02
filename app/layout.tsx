@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { SessionProvider } from "next-auth/react";
+import { Toaster } from "react-hot-toast";
 
 export const metadata: Metadata = {
   title: "FloodWatch Community",
@@ -19,6 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </a>
         <SessionProvider>
           <div id="main-content">{children}</div>
+          <Toaster position="top-center" toastOptions={{ duration: 3500 }} />
         </SessionProvider>
       </body>
     </html>

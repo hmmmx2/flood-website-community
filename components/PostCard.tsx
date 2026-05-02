@@ -2,10 +2,11 @@
 
 import { useState, useRef } from "react";
 import Link from "next/link";
+import toast from "react-hot-toast";
 import ShareModal from "./ShareModal";
 import type { Post } from "@/lib/types";
 import { getInitials, timeAgo } from "@/lib/auth";
-import { authFetch } from "@/lib/authFetch";
+import { authFetchJson } from "@/lib/fetchJson";
 
 type Props = {
   post: Post;
@@ -24,6 +25,7 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
   const [showComments, setShowComments] = useState(!compact);
   const [submitting, setSubmitting] = useState(false);
   const [commentError, setCommentError] = useState<string | null>(null);
+  const [pendingCommentDelete, setPendingCommentDelete] = useState<string | null>(null);
   const [localCommentCount, setLocalCommentCount] = useState(post.commentsCount ?? 0);
 
   // Edit state
@@ -43,34 +45,45 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
     setSubmitting(true);
     setCommentError(null);
     try {
-      const res = await authFetch(`/api/posts/${post.id}/comments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: commentText.trim() }),
-      });
-      if (!res.ok) { setCommentError("Failed to post comment. Please try again."); return; }
-      const c = await res.json();
-      setComments(prev => [...prev, c]);
+      const c = await authFetchJson<{ id: string; authorName: string; authorId: string; content: string; createdAt: string }>(
+        `/api/posts/${post.id}/comments`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: commentText.trim() }),
+        },
+      );
+      setComments((prev) => [...prev, c]);
       setCommentText("");
       const newCount = localCommentCount + 1;
       setLocalCommentCount(newCount);
       onEdit?.(post.id, { commentsCount: newCount });
-    } finally { setSubmitting(false); }
+      toast.success("Comment posted");
+    } catch (err) {
+      setCommentError(err instanceof Error ? err.message : "Failed to post comment.");
+      toast.error(err instanceof Error ? err.message : "Failed to post comment.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
-  async function deleteComment(commentId: string) {
+  async function executeDeleteComment(commentId: string) {
     if (!currentUserId) return;
-    const res = await authFetch(`/api/posts/${post.id}/comments/${commentId}`, {
-      method: "DELETE",
-    });
-    if (res.ok || res.status === 204) {
-      setComments(prev => prev.filter(c => c.id !== commentId));
+    try {
+      await authFetchJson(`/api/posts/${post.id}/comments/${commentId}`, { method: "DELETE" });
+      setComments((prev) => prev.filter((c) => c.id !== commentId));
       const newCount = Math.max(0, localCommentCount - 1);
       setLocalCommentCount(newCount);
       onEdit?.(post.id, { commentsCount: newCount });
-    } else {
-      setCommentError("Failed to delete comment. Please try again.");
+      setPendingCommentDelete(null);
+      toast.success("Comment deleted");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete comment.");
     }
+  }
+
+  function requestDeleteComment(commentId: string) {
+    setPendingCommentDelete(commentId);
   }
 
   function handleImageFile(file: File) {
@@ -98,24 +111,18 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
         removeImage,
       };
       if (editImageBase64) body.imageUrl = editImageBase64;
-      const res = await authFetch(`/api/posts/${post.id}`, {
+      const updated = await authFetchJson<Post>(`/api/posts/${post.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        const msg = (res.status === 401 || res.status === 403)
-          ? "Session expired. Please sign out and sign in again."
-          : (d.error || "Failed to save.");
-        setEditError(msg);
-        setSaving(false);
-        return;
-      }
-      const updated = await res.json();
-      onEdit?.(post.id, { title: updated.title, content: updated.content, imageUrl: updated.imageUrl ?? null });
+      onEdit?.(post.id, { title: updated.title, content: updated.content, imageUrl: updated.imageUrl ?? undefined });
       setEditOpen(false);
-    } catch { setEditError("Connection error."); }
+      toast.success("Post updated");
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Connection error.");
+      toast.error(err instanceof Error ? err.message : "Failed to save.");
+    }
     setSaving(false);
   }
 
@@ -123,6 +130,25 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
 
   return (
     <>
+      {pendingCommentDelete && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 rounded-2xl bg-white border border-red-200 shadow-xl px-5 py-3 animate-in slide-in-from-bottom-4">
+          <span className="text-sm font-medium text-gray-700 max-w-xs truncate">Delete this comment?</span>
+          <button
+            type="button"
+            onClick={() => void executeDeleteComment(pendingCommentDelete)}
+            className="text-sm font-bold text-red-600 hover:text-red-700 transition-colors"
+          >
+            Delete
+          </button>
+          <button
+            type="button"
+            onClick={() => setPendingCommentDelete(null)}
+            className="text-sm font-medium text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
       <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl overflow-hidden hover:border-[var(--color-muted)]/50 transition-colors">
         {/* Vote + content layout */}
         <div className="flex gap-0">
@@ -274,8 +300,11 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
                           <span className="text-xs font-semibold text-[var(--color-text)]">{c.authorName}</span>
                           <span className="text-[10px] text-[var(--color-muted)]">{timeAgo(c.createdAt)}</span>
                           {(currentUserId === c.authorId) && (
-                            <button type="button" onClick={() => deleteComment(c.id)}
-                              className="ml-auto text-[10px] text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              type="button"
+                              onClick={() => requestDeleteComment(c.id)}
+                              className="ml-auto text-[10px] text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
                               Delete
                             </button>
                           )}

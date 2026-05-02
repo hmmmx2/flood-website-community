@@ -8,9 +8,10 @@ import CreatePostModal from "@/components/CreatePostModal";
 import SearchModal from "@/components/SearchModal";
 import Footer from "@/components/Footer";
 import { AlertIcon, WaveIcon } from "@/components/icons";
-import { useSession, signOut } from "next-auth/react";
+import { useSession, signOut, signIn } from "next-auth/react";
+import toast from "react-hot-toast";
 import { sessionToAuthUser, getInitials } from "@/lib/auth";
-import { authFetch } from "@/lib/authFetch";
+import { fetchJson, authFetchJson } from "@/lib/fetchJson";
 import type { Post, PagedPosts, Group } from "@/lib/types";
 
 type SortKey = "new" | "top";
@@ -30,9 +31,6 @@ export default function HomePage() {
   const [searchOpen, setSearchOpen] = useState(false);
   // UX-POST01: inline delete confirmation (replaces native confirm())
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  // FEAT-03: login-gating snackbar for unauthenticated action attempts
-  const [showLoginSnack, setShowLoginSnack] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
 
   // WEB-029: auto-open create modal when ?create=1
   useEffect(() => {
@@ -53,10 +51,14 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    authFetch("/api/groups")
-      .then(r => r.ok ? r.json() : [])
-      .then((data: Group[]) => setGroups(data))
-      .catch(() => {});
+    void (async () => {
+      try {
+        const data = await fetchJson<Group[]>("/api/groups");
+        setGroups(Array.isArray(data) ? data : []);
+      } catch {
+        setGroups([]);
+      }
+    })();
   }, []);
 
   const fetchPosts = useCallback(async (p: number, s: SortKey, replace: boolean) => {
@@ -64,12 +66,10 @@ export default function HomePage() {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10_000);
     try {
-      // authFetch automatically refreshes the access token on 401/403 so that
-      // likedByMe / joinedByMe are always resolved against the correct viewer.
-      const res = await authFetch(`/api/posts?page=${p}&size=10&sort=${s}`, { signal: controller.signal });
-      if (!res.ok) { if (replace) setFetchError(true); return; }
-      const data: PagedPosts = await res.json();
-      setPosts(prev => replace ? data.content : [...prev, ...data.content]);
+      const data = await authFetchJson<PagedPosts>(`/api/posts?page=${p}&size=10&sort=${s}`, {
+        signal: controller.signal,
+      });
+      setPosts((prev) => (replace ? data.content : [...prev, ...data.content]));
       setHasMore(!data.last);
       setPage(p);
     } catch {
@@ -85,37 +85,39 @@ export default function HomePage() {
     fetchPosts(0, sort, true);
   }, [sort, fetchPosts]);
 
-  function showLoginHint() {
-    setShowLoginSnack(true);
-    setTimeout(() => setShowLoginSnack(false), 3500);
-  }
-
-  function showActionError(msg: string) {
-    setActionError(msg);
-    setTimeout(() => setActionError(null), 3500);
-  }
-
   async function handleLike(postId: string) {
-    // FEAT-03: show snackbar instead of redirecting so the user keeps context
-    if (!session) { showLoginHint(); return; }
-    const res = await authFetch(`/api/posts/${postId}/like`, { method: "POST" });
-    if (!res.ok) { showActionError("Failed to update like. Please try again."); return; }
-    const data: { liked: boolean; likesCount: number } = await res.json();
-    setPosts(prev => prev.map(p => p.id === postId
-      ? { ...p, likedByMe: data.liked, likesCount: Math.max(0, data.likesCount) }
-      : p));
+    if (!session) {
+      toast("Please sign in to continue.");
+      void signIn(undefined, { callbackUrl: typeof window !== "undefined" ? window.location.href : "/" });
+      return;
+    }
+    try {
+      const data = await authFetchJson<{ liked: boolean; likesCount: number }>(`/api/posts/${postId}/like`, {
+        method: "POST",
+      });
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId ? { ...p, likedByMe: data.liked, likesCount: Math.max(0, data.likesCount) } : p,
+        ),
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update like.");
+    }
   }
 
   async function handleDelete(postId: string) {
-    // UX-POST01: two-step inline confirmation — first call arms it, second confirms
-    if (pendingDeleteId !== postId) { setPendingDeleteId(postId); return; }
+    if (pendingDeleteId !== postId) {
+      setPendingDeleteId(postId);
+      return;
+    }
     setPendingDeleteId(null);
     if (!session) return;
-    const res = await authFetch(`/api/posts/${postId}`, { method: "DELETE" });
-    if (res.ok || res.status === 204) {
-      setPosts(prev => prev.filter(p => p.id !== postId));
-    } else {
-      showActionError("Failed to delete post. Please try again.");
+    try {
+      await authFetchJson(`/api/posts/${postId}`, { method: "DELETE" });
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
+      toast.success("Post deleted");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete post.");
     }
   }
 
@@ -143,24 +145,6 @@ export default function HomePage() {
           >
             Cancel
           </button>
-        </div>
-      )}
-      {/* Action error snackbar */}
-      {actionError && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-2xl bg-red-600 text-white shadow-xl px-5 py-3 animate-in slide-in-from-bottom-4">
-          <span className="text-sm">{actionError}</span>
-        </div>
-      )}
-      {/* FEAT-03 — login-gating snackbar for guest interactions */}
-      {showLoginSnack && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-2xl bg-gray-900 text-white shadow-xl px-5 py-3 animate-in slide-in-from-bottom-4">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 flex-shrink-0 text-[var(--color-brand)]">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-          </svg>
-          <span className="text-sm">Sign in to like, comment and post</span>
-          <Link href="/login" className="text-sm font-bold text-[var(--color-brand)] hover:text-[var(--color-brand-dark)] transition-colors flex-shrink-0">
-            Sign In →
-          </Link>
         </div>
       )}
       <Navbar
