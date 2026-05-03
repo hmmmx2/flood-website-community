@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { ThemeToggle } from "@/lib/theme/ThemeToggle";
 import { useRef, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
@@ -134,7 +135,7 @@ export default function Navbar({
   const showNavLinks = activeLink !== undefined && !breadcrumb;
 
   return (
-    <header className="sticky top-0 z-40 bg-white border-b border-[var(--color-border)] shadow-sm">
+    <header className="sticky top-0 z-40 bg-[var(--color-card)] border-b border-[var(--color-border)] shadow-sm">
       <div className="mx-auto max-w-5xl flex items-center gap-3 h-14 px-4">
 
         {/* ── Logo ───────────────────────────────────────────────────────── */}
@@ -142,7 +143,7 @@ export default function Navbar({
           href="/"
           className="flex items-center gap-2 font-bold text-[var(--color-text)] flex-shrink-0"
         >
-          <div className="h-8 w-8 rounded-xl bg-white border border-[var(--color-border)] flex items-center justify-center p-0.5 flex-shrink-0">
+          <div className="h-8 w-8 rounded-xl bg-[var(--color-card)] border border-[var(--color-border)] flex items-center justify-center p-0.5 flex-shrink-0">
             <Image src="/images/logo.png" alt="Pop Up Advertising And Information Enterprise" width={28} height={28} priority />
           </div>
           <span className="hidden sm:block text-base">FloodWatch</span>
@@ -193,7 +194,7 @@ export default function Navbar({
             <button
               type="button"
               onClick={onSearchOpen}
-              className="hidden sm:flex flex-1 min-w-0 items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-2 text-sm text-[var(--color-muted)] hover:border-[var(--color-brand)] hover:bg-white transition text-left max-w-xs"
+              className="hidden sm:flex flex-1 min-w-0 items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-2 text-sm text-[var(--color-muted)] hover:border-[var(--color-brand)] hover:bg-[var(--color-hover)] transition text-left max-w-xs"
             >
               <SearchIcon />
               <span className="truncate">Search posts and communities…</span>
@@ -215,6 +216,10 @@ export default function Navbar({
 
         {/* Flex spacer when there is no search bar */}
         {!onSearchOpen && <div className="flex-1" />}
+
+        <div className="flex-shrink-0">
+          <ThemeToggle compact />
+        </div>
 
         {/* ── Desktop auth ─────────────────────────────────────────────── */}
         {user ? (
@@ -258,7 +263,7 @@ export default function Navbar({
             </button>
 
             {userMenuOpen && (
-              <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl border border-[var(--color-border)] shadow-lg overflow-hidden z-50">
+              <div className="absolute right-0 top-full mt-1 w-48 bg-[var(--color-card)] rounded-xl border border-[var(--color-border)] shadow-lg overflow-hidden z-50">
                 <Link
                   href="/settings"
                   onClick={() => setUserMenuOpen(false)}
@@ -309,7 +314,7 @@ export default function Navbar({
           </button>
 
           {mobileOpen && (
-            <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-2xl border border-[var(--color-border)] shadow-xl overflow-hidden z-50">
+            <div className="absolute right-0 top-full mt-1 w-64 bg-[var(--color-card)] rounded-2xl border border-[var(--color-border)] shadow-xl overflow-hidden z-50">
               {/* Nav links section */}
               {showNavLinks && (
                 <div className="p-2 border-b border-[var(--color-border)]">

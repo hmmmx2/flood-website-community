@@ -1,10 +1,27 @@
+export type CommentSort = "top" | "new" | "old";
+
 export type Comment = {
   id: string;
+  parentId: string | null;
   authorId: string;
   authorName: string;
   authorAvatar?: string;
   content: string;
+  score: number;
+  myVote: -1 | 0 | 1;
   createdAt: string;
+  updatedAt?: string;
+  deleted: boolean;
+  replyCount: number;
+};
+
+export type CommentNode = Comment & { children: CommentNode[] };
+
+export type CommentsPage = {
+  comments: Comment[];
+  totalTopLevel: number;
+  page: number;
+  size: number;
 };
 
 export type Post = {
@@ -43,6 +60,6 @@ export type PagedPosts = {
   content: Post[];
   totalPages: number;
   totalElements: number;
-  number: number;   // current page (0-based)
+  number: number;
   last: boolean;
 };

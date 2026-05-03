@@ -1,0 +1,118 @@
+/* Shared Flood design tokens — imported after `@import "tailwindcss"` in each app. */
+
+:root {
+  --background: #f0f4ff;
+  --foreground: #1e293b;
+}
+
+html.dark {
+  --background: #0f172a;
+  --foreground: #e2e8f0;
+}
+
+@theme inline {
+  --color-primary-blue: #1d4ed8;
+  --color-primary-blue-hover: #1e40af;
+  --color-light-blue: #dbeafe;
+  --color-navy: #1e3a8a;
+  --color-teal: #0891b2;
+  --color-cyan-accent: #06b6d4;
+
+  --color-dark-charcoal: #1e293b;
+  --color-light-grey: #cbd5e1;
+  --color-very-light-grey: #f8fafc;
+  --color-inactive-light-grey: #f1f5f9;
+  --color-pure-white: #ffffff;
+
+  --color-status-green: #22c55e;
+  --color-status-warning-1: #fbbf24;
+  --color-status-warning-2: #f97316;
+  --color-status-danger: #ef4444;
+
+  --color-light-purple: #e9d5ff;
+  --color-purple: #a855f7;
+  --color-primary-red: #dc2626;
+
+  --color-dark-bg: #060d1a;
+  --color-dark-card: #0d1f3d;
+  --color-dark-card-alt: #0f2347;
+  --color-dark-border: #1e3a5f;
+  --color-dark-text: #e8edf5;
+  --color-dark-text-secondary: #8899b8;
+  --color-dark-text-muted: #8899b8;
+  --color-dark-input-bg: #0a1628;
+
+  /* Community + charts */
+  --color-brand: #1d4ed8;
+  --color-brand-dark: #1e40af;
+  --color-brand-light: #dbeafe;
+  --color-upvote: #2563eb;
+  --color-bg: #eef2ff;
+  --color-card: #ffffff;
+  --color-border: #e2e8f0;
+  --color-text: #1e293b;
+  --color-muted: #64748b;
+  --color-pill-bg: #f1f5f9;
+  --color-hover: #eff6ff;
+  --color-input-bg: #f8fafc;
+
+  --color-chart-grid: #e5e5e5;
+  --color-chart-text: #4e4b4b;
+
+  --font-sans: var(--font-geist-sans, "Inter"), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+:root {
+  --color-brand: #1d4ed8;
+  --color-brand-dark: #1e40af;
+  --color-brand-light: #dbeafe;
+  --color-navy: #1e3a8a;
+  --color-teal: #0891b2;
+  --color-upvote: #2563eb;
+  --color-bg: #eef2ff;
+  --color-card: #ffffff;
+  --color-border: #e2e8f0;
+  --color-text: #1e293b;
+  --color-muted: #64748b;
+  --color-pill-bg: #f1f5f9;
+  --color-hover: #eff6ff;
+  --color-input-bg: #f8fafc;
+  --color-chart-grid: #e5e5e5;
+  --color-chart-text: #4e4b4b;
+}
+
+html.dark {
+  --color-bg: var(--color-dark-bg);
+  --color-card: var(--color-dark-card);
+  --color-border: var(--color-dark-border);
+  --color-text: var(--color-dark-text);
+  --color-muted: var(--color-dark-text-muted);
+  --color-input-bg: var(--color-dark-input-bg);
+  --color-pill-bg: var(--color-dark-card-alt);
+  --color-hover: rgba(29, 78, 216, 0.15);
+  --color-chart-grid: #2d3a5a;
+  --color-chart-text: #a0a0a0;
+}
+
+/* CRM legacy alias → canonical */
+:root {
+  --color-bg-elevated: var(--color-card);
+}
+
+html.dark body {
+  background: var(--color-dark-bg);
+  color: var(--color-dark-text);
+}
+
+body {
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+:root.theme-anim body,
+:root.theme-anim header {
+  transition:
+    background-color 200ms ease,
+    color 200ms ease,
+    border-color 200ms ease;
+}

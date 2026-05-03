@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import PostCard from "@/components/PostCard";
+import CommentSection from "@/components/comments/CommentSection";
 import { useSession, signIn } from "next-auth/react";
 import toast from "react-hot-toast";
 import { sessionToAuthUser } from "@/lib/auth";
@@ -75,7 +76,7 @@ export default function PostPage() {
     <div className="min-h-screen bg-[var(--color-bg)]">
       {/* UX-POST01 — inline delete confirmation (replaces browser confirm()) */}
       {confirmingDelete && post && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 rounded-2xl bg-white border border-red-200 shadow-xl px-5 py-3">
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 rounded-2xl bg-[var(--color-card)] border border-red-200 shadow-xl px-5 py-3">
           <span className="text-sm font-medium text-gray-700">Delete this post?</span>
           <button
             type="button"
@@ -109,11 +110,11 @@ export default function PostPage() {
         </button>
 
         {loading && (
-          <div className="bg-white border border-[var(--color-border)] rounded-2xl h-64 animate-pulse" />
+          <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl h-64 animate-pulse" />
         )}
 
         {error && (
-          <div className="bg-white border border-[var(--color-border)] rounded-2xl p-12 text-center">
+          <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-12 text-center">
             <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[var(--color-brand)]/15 text-[var(--color-brand)] mb-3 mx-auto">
               <WaveIcon className="h-8 w-8" />
             </div>
@@ -123,13 +124,18 @@ export default function PostPage() {
         )}
 
         {post && !loading && (
-          <PostCard
-            post={post}
-            currentUserId={user?.id}
-            onLike={handleLike}
-            onDelete={handleDelete}
-            compact={false}
-          />
+          <>
+            <PostCard
+              post={post}
+              currentUserId={user?.id}
+              onLike={handleLike}
+              onDelete={handleDelete}
+              compact={false}
+            />
+            <div className="mt-8">
+              <CommentSection postId={post.id} currentUserId={user?.id} />
+            </div>
+          </>
         )}
       </main>
     </div>

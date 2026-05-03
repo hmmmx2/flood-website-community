@@ -20,13 +20,6 @@ type Props = {
 
 export default function PostCard({ post, currentUserId, token, onLike, onDelete, onEdit, compact = true }: Props) {
   const [shareOpen, setShareOpen] = useState(false);
-  const [commentText, setCommentText] = useState("");
-  const [comments, setComments] = useState(post.comments ?? []);
-  const [showComments, setShowComments] = useState(!compact);
-  const [submitting, setSubmitting] = useState(false);
-  const [commentError, setCommentError] = useState<string | null>(null);
-  const [pendingCommentDelete, setPendingCommentDelete] = useState<string | null>(null);
-  const [localCommentCount, setLocalCommentCount] = useState(post.commentsCount ?? 0);
 
   // Edit state
   const [editOpen, setEditOpen] = useState(false);
@@ -38,53 +31,6 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  async function submitComment(e: React.FormEvent) {
-    e.preventDefault();
-    if (!commentText.trim() || !currentUserId) return;
-    setSubmitting(true);
-    setCommentError(null);
-    try {
-      const c = await authFetchJson<{ id: string; authorName: string; authorId: string; content: string; createdAt: string }>(
-        `/api/posts/${post.id}/comments`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: commentText.trim() }),
-        },
-      );
-      setComments((prev) => [...prev, c]);
-      setCommentText("");
-      const newCount = localCommentCount + 1;
-      setLocalCommentCount(newCount);
-      onEdit?.(post.id, { commentsCount: newCount });
-      toast.success("Comment posted");
-    } catch (err) {
-      setCommentError(err instanceof Error ? err.message : "Failed to post comment.");
-      toast.error(err instanceof Error ? err.message : "Failed to post comment.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function executeDeleteComment(commentId: string) {
-    if (!currentUserId) return;
-    try {
-      await authFetchJson(`/api/posts/${post.id}/comments/${commentId}`, { method: "DELETE" });
-      setComments((prev) => prev.filter((c) => c.id !== commentId));
-      const newCount = Math.max(0, localCommentCount - 1);
-      setLocalCommentCount(newCount);
-      onEdit?.(post.id, { commentsCount: newCount });
-      setPendingCommentDelete(null);
-      toast.success("Comment deleted");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete comment.");
-    }
-  }
-
-  function requestDeleteComment(commentId: string) {
-    setPendingCommentDelete(commentId);
-  }
 
   function handleImageFile(file: File) {
     if (!file.type.startsWith("image/")) { setEditError("Please select an image file."); return; }
@@ -130,25 +76,6 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
 
   return (
     <>
-      {pendingCommentDelete && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 rounded-2xl bg-white border border-red-200 shadow-xl px-5 py-3 animate-in slide-in-from-bottom-4">
-          <span className="text-sm font-medium text-gray-700 max-w-xs truncate">Delete this comment?</span>
-          <button
-            type="button"
-            onClick={() => void executeDeleteComment(pendingCommentDelete)}
-            className="text-sm font-bold text-red-600 hover:text-red-700 transition-colors"
-          >
-            Delete
-          </button>
-          <button
-            type="button"
-            onClick={() => setPendingCommentDelete(null)}
-            className="text-sm font-medium text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            Cancel
-          </button>
-        </div>
-      )}
       <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl overflow-hidden hover:border-[var(--color-muted)]/50 transition-colors">
         {/* Vote + content layout */}
         <div className="flex gap-0">
@@ -218,14 +145,16 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
 
             {/* Action bar */}
             <div className="flex items-center gap-1 flex-wrap">
-              {/* Comments */}
-              <button type="button" onClick={() => setShowComments(p => !p)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-[var(--color-muted)] hover:bg-[var(--color-pill-bg)] hover:text-[var(--color-text)] transition-colors">
+              {/* Comments — discuss on post page */}
+              <Link
+                href={`/post/${post.id}#comments`}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-[var(--color-muted)] hover:bg-[var(--color-pill-bg)] hover:text-[var(--color-text)] transition-colors"
+              >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
                 </svg>
-                {localCommentCount} Comments
-              </button>
+                {post.commentsCount} Comments
+              </Link>
 
               {/* Share */}
               <button type="button" onClick={() => setShareOpen(true)}
@@ -259,66 +188,6 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
               )}
             </div>
 
-            {/* Comments section */}
-            {showComments && (
-              <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
-                {/* Comment input */}
-                {currentUserId ? (
-                  <div className="mb-3">
-                    <form onSubmit={submitComment} className="flex gap-2">
-                      <input
-                        type="text"
-                        value={commentText}
-                        onChange={e => setCommentText(e.target.value)}
-                        placeholder="Add a comment..."
-                        className="flex-1 rounded-full border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-2 text-sm outline-none focus:border-[var(--color-brand)] focus:ring-2 focus:ring-[var(--color-brand)]/10"
-                      />
-                      <button type="submit" disabled={!commentText.trim() || submitting}
-                        className="rounded-full bg-[var(--color-brand)] px-4 py-2 text-xs font-bold text-white transition hover:bg-[var(--color-brand-dark)] disabled:opacity-50">
-                        Post
-                      </button>
-                    </form>
-                    {commentError && (
-                      <p className="mt-1.5 text-xs text-red-500 px-1">{commentError}</p>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-xs text-[var(--color-muted)] mb-3">
-                    <Link href="/login" className="text-[var(--color-brand)] font-semibold hover:underline">Sign in</Link> to comment
-                  </p>
-                )}
-
-                {/* Comment list */}
-                <div className="space-y-2.5">
-                  {comments.map(c => (
-                    <div key={c.id} className="flex gap-2 group">
-                      <div className="h-6 w-6 rounded-full bg-[var(--color-brand)]/20 flex items-center justify-center text-[10px] font-bold text-[var(--color-brand)] flex-shrink-0 mt-0.5">
-                        {getInitials(c.authorName)}
-                      </div>
-                      <div className="flex-1 bg-[var(--color-pill-bg)] rounded-xl px-3 py-2">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <span className="text-xs font-semibold text-[var(--color-text)]">{c.authorName}</span>
-                          <span className="text-[10px] text-[var(--color-muted)]">{timeAgo(c.createdAt)}</span>
-                          {(currentUserId === c.authorId) && (
-                            <button
-                              type="button"
-                              onClick={() => requestDeleteComment(c.id)}
-                              className="ml-auto text-[10px] text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              Delete
-                            </button>
-                          )}
-                        </div>
-                        <p className="text-sm text-[var(--color-text)] leading-snug">{c.content}</p>
-                      </div>
-                    </div>
-                  ))}
-                  {comments.length === 0 && (
-                    <p className="text-xs text-[var(--color-muted)] text-center py-2">No comments yet. Be the first!</p>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>
