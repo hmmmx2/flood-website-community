@@ -1,13 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import SearchModal from "@/components/SearchModal";
+import { SearchField } from "@/components/ui/search-field";
 import { StarIcon, ClockIcon, NewspaperIcon } from "@/components/icons";
 import { useSession, signOut } from "next-auth/react";
 import { sessionToAuthUser, timeAgo } from "@/lib/auth";
 import { fetchJson } from "@/lib/fetchJson";
+import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
 
 type BlogDto = {
   id: string;
@@ -28,8 +31,8 @@ type PagedBlogs = {
   last: boolean;
 };
 
-const CATEGORIES = [
-  "All",
+/** Canonical order — aligned with CRM blog form options; merged with live API categories. */
+const CANONICAL_CATEGORY_ORDER: string[] = [
   "General",
   "Flood Alert",
   "Safety Tips",
@@ -37,6 +40,16 @@ const CATEGORIES = [
   "Updates",
   "Research",
 ];
+
+function mergeCategoryTabs(fromApi: string[]): string[] {
+  const list = fromApi.filter((c) => c != null && String(c).trim() !== "");
+  const set = new Set(list);
+  const ordered = CANONICAL_CATEGORY_ORDER.filter((c) => set.has(c));
+  const extras = list
+    .filter((c) => !CANONICAL_CATEGORY_ORDER.includes(c))
+    .sort((a, b) => a.localeCompare(b));
+  return ["All", ...ordered, ...extras];
+}
 
 function categoryColor(cat: string): string {
   switch (cat) {
@@ -119,6 +132,10 @@ export default function BlogPage() {
   const { data: session } = useSession();
   const user = session?.user ? sessionToAuthUser(session.user) : null;
   const [activeCategory, setActiveCategory] = useState("All");
+  const activeCategoryRef = useRef(activeCategory);
+  activeCategoryRef.current = activeCategory;
+  const listFetchGen = useRef(0);
+  const [categoryTabs, setCategoryTabs] = useState<string[]>(() => ["All", ...CANONICAL_CATEGORY_ORDER]);
   const [blogs, setBlogs] = useState<BlogDto[]>([]);
   const [featured, setFeatured] = useState<BlogDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,8 +143,11 @@ export default function BlogPage() {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
+  const [articleQuery, setArticleQuery] = useState("");
+  const { searchOpen, openSearch, closeSearch } = useSiteSearchModal();
 
-  const heroBlog = activeCategory === "All" && featured.length > 0 ? featured[0] : null;
+  const heroBlog =
+    activeCategory === "All" && featured.length > 0 && !articleQuery.trim() ? featured[0] : null;
 
   const listBlogs = useMemo(() => {
     if (activeCategory === "All" && heroBlog) {
@@ -136,34 +156,54 @@ export default function BlogPage() {
     return blogs;
   }, [blogs, activeCategory, heroBlog]);
 
+  const listBlogsFiltered = useMemo(() => {
+    const q = articleQuery.trim().toLowerCase();
+    if (!q) return listBlogs;
+    return listBlogs.filter((b) => {
+      const plain = b.body.replace(/<[^>]+>/g, "").toLowerCase();
+      return (
+        b.title.toLowerCase().includes(q) ||
+        plain.includes(q) ||
+        b.category.toLowerCase().includes(q)
+      );
+    });
+  }, [listBlogs, articleQuery]);
+
   const showEmpty =
     !loading &&
-    listBlogs.length === 0 &&
+    listBlogsFiltered.length === 0 &&
     (activeCategory !== "All" || !heroBlog);
 
-  const fetchBlogs = useCallback(
-    async (p = 0, category = activeCategory, reset = false) => {
+  const fetchBlogs = useCallback(async (p = 0, category = activeCategory, reset = false) => {
+    const genAtStart = p === 0 ? ++listFetchGen.current : listFetchGen.current;
+    if (p === 0) {
+      setLoading(true);
+      setError(null);
+    } else setLoadingMore(true);
+    try {
+      const params = new URLSearchParams({ page: String(p), size: "20" });
+      if (category !== "All") params.set("category", category);
+      const data = await fetchJson<PagedBlogs>(`/api/blogs?${params}`);
+      if (category !== activeCategoryRef.current) return;
+      if (p === 0 && genAtStart !== listFetchGen.current) return;
+      const content = Array.isArray(data.content) ? data.content : [];
+      setBlogs((prev) => (reset || p === 0 ? content : [...prev, ...content]));
+      setHasMore(!data.last);
+      setPage(p);
+    } catch {
+      if (p === 0 && genAtStart !== listFetchGen.current) return;
+      if (category !== activeCategoryRef.current) return;
+      setError("Failed to load blogs");
+    } finally {
+      if (p === 0 && genAtStart !== listFetchGen.current) return;
       if (p === 0) {
-        setLoading(true);
-        setError(null);
-      } else setLoadingMore(true);
-      try {
-        const params = new URLSearchParams({ page: String(p), size: "20" });
-        if (category !== "All") params.set("category", category);
-        const data = await fetchJson<PagedBlogs>(`/api/blogs?${params}`);
-        const content = Array.isArray(data.content) ? data.content : [];
-        setBlogs((prev) => (reset || p === 0 ? content : [...prev, ...content]));
-        setHasMore(!data.last);
-        setPage(p);
-      } catch {
-        setError("Failed to load blogs");
-      } finally {
         setLoading(false);
         setLoadingMore(false);
+      } else {
+        setLoadingMore(false);
       }
-    },
-    [activeCategory],
-  );
+    }
+  }, [activeCategory]);
 
   const fetchFeatured = useCallback(async () => {
     try {
@@ -184,6 +224,23 @@ export default function BlogPage() {
   }, [fetchFeatured]);
 
   useEffect(() => {
+    void (async () => {
+      try {
+        const data = await fetchJson<string[]>("/api/blogs/categories");
+        if (Array.isArray(data)) setCategoryTabs(mergeCategoryTabs(data));
+      } catch {
+        /* keep canonical fallback tabs */
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (activeCategory !== "All" && !categoryTabs.includes(activeCategory)) {
+      setActiveCategory("All");
+    }
+  }, [categoryTabs, activeCategory]);
+
+  useEffect(() => {
     void fetchBlogs(0, activeCategory, true);
   }, [activeCategory, fetchBlogs]);
 
@@ -191,11 +248,18 @@ export default function BlogPage() {
     setActiveCategory(cat);
     setPage(0);
     setHasMore(true);
+    setArticleQuery("");
   };
 
   return (
     <div className="min-h-screen bg-[var(--color-bg)] flex flex-col">
-      <Navbar user={user} onLogout={() => void signOut({ callbackUrl: "/login" })} activeLink="blog" />
+      <Navbar
+        user={user}
+        onLogout={() => void signOut({ callbackUrl: "/login" })}
+        onSearchOpen={openSearch}
+        searchPlaceholder="Search articles & community posts…"
+        activeLink="blog"
+      />
 
       <main className="max-w-5xl mx-auto px-4 py-6 flex-1 w-full">
         <div className="flex gap-6">
@@ -208,7 +272,7 @@ export default function BlogPage() {
             </div>
 
             <div className="flex gap-2 overflow-x-auto pb-2 mb-6 scrollbar-hide">
-              {CATEGORIES.map((cat) => (
+              {categoryTabs.map((cat) => (
                 <button
                   key={cat}
                   type="button"
@@ -222,6 +286,16 @@ export default function BlogPage() {
                   {cat}
                 </button>
               ))}
+            </div>
+
+            <div className="mb-6">
+              <SearchField
+                value={articleQuery}
+                onValueChange={setArticleQuery}
+                placeholder="Search articles by title or keyword…"
+                label="Search articles"
+                className="max-w-xl"
+              />
             </div>
 
             {heroBlog && (
@@ -257,7 +331,7 @@ export default function BlogPage() {
             ) : (
               <>
                 <div className="space-y-3">
-                  {listBlogs.map((blog) => (
+                  {listBlogsFiltered.map((blog) => (
                     <BlogCard key={blog.id} blog={blog} />
                   ))}
                 </div>
@@ -266,14 +340,18 @@ export default function BlogPage() {
                     <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[var(--color-brand)]/15 text-[var(--color-brand)] mb-3">
                       <NewspaperIcon className="h-8 w-8" />
                     </div>
-                    <p className="text-[var(--color-muted)] font-medium">No articles in this category yet.</p>
+                    <p className="text-[var(--color-muted)] font-medium">
+                      {articleQuery.trim()
+                        ? `No articles match “${articleQuery.trim()}”.`
+                        : "No articles in this category yet."}
+                    </p>
                   </div>
                 )}
                 {hasMore && listBlogs.length > 0 && (
                   <div className="mt-6 text-center">
                     <button
                       type="button"
-                      onClick={() => void fetchBlogs(page + 1)}
+                      onClick={() => void fetchBlogs(page + 1, activeCategory, false)}
                       disabled={loadingMore}
                       className="px-6 py-2 rounded-2xl border border-[var(--color-border)] text-sm font-medium text-[var(--color-brand)] hover:bg-[var(--color-hover)] disabled:opacity-50 transition-colors bg-[var(--color-card)]"
                     >
@@ -303,7 +381,7 @@ export default function BlogPage() {
             <div className="bg-[var(--color-card)] rounded-2xl border border-[var(--color-border)] p-4">
               <h3 className="font-semibold text-[var(--color-text)] mb-3 text-sm">Categories</h3>
               <div className="space-y-1">
-                {CATEGORIES.map((cat) => (
+                {categoryTabs.map((cat) => (
                   <button
                     key={cat}
                     type="button"
@@ -324,6 +402,10 @@ export default function BlogPage() {
       </main>
 
       <Footer />
+
+      {searchOpen && (
+        <SearchModal onClose={closeSearch} placeholder="Search posts, communities, articles…" />
+      )}
     </div>
   );
 }
