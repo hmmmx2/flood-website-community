@@ -11,9 +11,12 @@ function normaliseUrl(raw: string): string {
 const JAVA_API = normaliseUrl(process.env.JAVA_API_URL ?? "http://localhost:4001");
 const ACCESS_TOKEN_MS = 15 * 60 * 1000; // 15 min — matches Spring Boot access token expiry
 
-if (process.env.NODE_ENV === "production" && !process.env.AUTH_SECRET) {
-  throw new Error(
-    "AUTH_SECRET is not set. Add it in Vercel → Project → Settings → Environment Variables, then redeploy.",
+/** Used by Credentials authorize(); never throw at module load (that breaks Vercel build). */
+const AUTH_SECRET = process.env.AUTH_SECRET;
+
+if (process.env.NODE_ENV === "production" && !AUTH_SECRET) {
+  console.warn(
+    "[auth] AUTH_SECRET is not set in production — sessions will fail. Set it in Vercel → Settings → Environment Variables (all scopes used for build/deploy) and redeploy.",
   );
 }
 
@@ -97,6 +100,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         refreshToken: {},
       },
       async authorize(credentials) {
+        if (!AUTH_SECRET) return null;
         if (!credentials?.accessToken) return null;
         try {
           const res = await fetch(`${JAVA_API}/profile`, {
