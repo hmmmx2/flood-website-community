@@ -4,7 +4,7 @@ import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { signIn, getSession } from "next-auth/react";
+import { signIn } from "next-auth/react";
 import type { AuthUser } from "@/lib/auth";
 
 type View = "login" | "register";
@@ -58,6 +58,63 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: loginEmail,
+          password: loginPassword,
+        }),
+      });
+
+      const body = (await res.json().catch(() => ({}))) as
+        | {
+            session: { accessToken: string; refreshToken: string };
+            user: {
+              id: string;
+              email: string;
+              displayName: string;
+              avatarUrl?: string;
+              role: string;
+            };
+          }
+        | { error?: string };
+
+      if (!res.ok) {
+        throw new Error(
+          "error" in body && typeof body.error === "string"
+            ? body.error
+            : "Invalid email or password.",
+        );
+      }
+
+      const payload = body as {
+        session: { accessToken: string; refreshToken: string };
+        user: {
+          id: string;
+          email: string;
+          displayName: string;
+          avatarUrl?: string;
+          role: string;
+        };
+      };
+
+      if (payload.user.role?.toLowerCase() === "admin") {
+        const adminUser: AuthUser = {
+          id: payload.user.id,
+          email: payload.user.email,
+          displayName: payload.user.displayName,
+          avatarUrl: payload.user.avatarUrl,
+          role: payload.user.role,
+        };
+        await redirectToAdmin(
+          payload.session.accessToken,
+          payload.session.refreshToken,
+          adminUser,
+        );
+        return;
+      }
+
       const result = await signIn("credentials", {
         email: loginEmail,
         password: loginPassword,
@@ -65,30 +122,13 @@ export default function LoginPage() {
       });
 
       if (result?.error) {
-        throw new Error("Invalid email or password.");
-      }
-
-      // Fetch the session to check user role
-      const session = await getSession();
-      if (!session?.user) {
         throw new Error("Login failed. Please try again.");
       }
 
-      if (session.user.role?.toLowerCase() === "admin") {
-        const adminUser: AuthUser = {
-          id: session.user.id,
-          email: session.user.email ?? "",
-          displayName: session.user.name ?? "",
-          avatarUrl: session.user.image ?? undefined,
-          role: session.user.role,
-        };
-        await redirectToAdmin(session.accessToken, session.refreshToken, adminUser);
-      } else {
-        const callbackUrl = new URLSearchParams(window.location.search).get(
-          "callbackUrl",
-        );
-        router.push(callbackUrl ?? "/");
-      }
+      const callbackUrl = new URLSearchParams(window.location.search).get(
+        "callbackUrl",
+      );
+      router.push(callbackUrl ?? "/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed.");
     } finally {

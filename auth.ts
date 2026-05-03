@@ -15,8 +15,8 @@ const ACCESS_TOKEN_MS = 15 * 60 * 1000; // 15 min — matches Spring Boot access
 const AUTH_SECRET = process.env.AUTH_SECRET;
 
 if (process.env.NODE_ENV === "production" && !AUTH_SECRET) {
-  throw new Error(
-    "[auth] AUTH_SECRET is not set in production. Add it to Vercel → Settings → Environment Variables (all scopes) and redeploy.",
+  console.warn(
+    "[auth] AUTH_SECRET is not set in production — sessions will fail. Add it in Vercel → Settings → Environment Variables (all scopes) and redeploy.",
   );
 }
 
@@ -46,7 +46,7 @@ async function refreshAccessToken(token: Record<string, unknown>) {
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
-  secret: process.env.AUTH_SECRET,
+  secret: AUTH_SECRET,
   providers: [
     Credentials({
       id: "credentials",
@@ -55,6 +55,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
+        if (!AUTH_SECRET) return null;
         if (!credentials?.email || !credentials?.password) return null;
         try {
           const res = await fetch(`${JAVA_API}/auth/login`, {
@@ -77,6 +78,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               role: string;
             };
           };
+          if (String(user.role ?? "").toLowerCase() === "admin") return null;
           return {
             id: user.id,
             email: user.email,
@@ -118,6 +120,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             avatarUrl?: string;
             role: string;
           };
+          if (String(user.role ?? "").toLowerCase() === "admin") return null;
           return {
             id: user.id,
             email: user.email,
