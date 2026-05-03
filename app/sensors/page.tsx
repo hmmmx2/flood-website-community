@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Navbar from "@/components/Navbar";
+import SearchModal from "@/components/SearchModal";
+import { SearchField } from "@/components/ui/search-field";
 import NodeMap, { type MapNode, type FloodLevel, getMarkerColor, STATUS_HEX } from "@/components/NodeMap";
 import toast from "react-hot-toast";
 import { useSession, signOut, signIn } from "next-auth/react";
 import { sessionToAuthUser } from "@/lib/auth";
 import { fetchJson, authFetchJson } from "@/lib/fetchJson";
+import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type NodeStatus = "active" | "warning" | "critical" | "inactive";
@@ -121,13 +124,6 @@ function XIcon(p: React.SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
-function SearchIcon(p: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-    </svg>
-  );
-}
 function ActivityIcon(p: React.SVGProps<SVGSVGElement>) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
@@ -160,9 +156,10 @@ function AlertTriangleIcon(p: React.SVGProps<SVGSVGElement>) {
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
-export default function SensorsPage() {
+export default function FloodMapPage() {
   const { data: session } = useSession();
   const user = session?.user ? sessionToAuthUser(session.user) : null;
+  const { searchOpen, openSearch, closeSearch } = useSiteSearchModal();
   const [nodes, setNodes]             = useState<SensorNodeDto[]>([]);
   const [favIds, setFavIds]           = useState<Set<string>>(new Set());
   const [pendingFavs, setPendingFavs] = useState<Set<string>>(new Set());
@@ -211,7 +208,13 @@ export default function SensorsPage() {
     if (!session) return;
     try {
       const data = await authFetchJson<FavouriteNodeDto[]>("/api/favourites");
-      setFavIds(new Set(data.map((f) => f.nodeId)));
+      setFavIds(
+        new Set(
+          data
+            .map((f) => f.nodeId)
+            .filter((id): id is string => typeof id === "string" && id.length > 0),
+        ),
+      );
     } catch {
       /* non-critical */
     }
@@ -397,16 +400,22 @@ export default function SensorsPage() {
 
   return (
     <div className="min-h-screen bg-[var(--color-bg)]">
-      <Navbar user={user} onLogout={() => void signOut({ callbackUrl: "/login" })} activeLink="sensors" />
+      <Navbar
+        user={user}
+        onLogout={() => void signOut({ callbackUrl: "/login" })}
+        onSearchOpen={openSearch}
+        searchPlaceholder="Search posts & communities…"
+        activeLink="sensors"
+      />
 
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-5">
 
         {/* ── Page header ──────────────────────────────────────────────────── */}
         <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-[var(--color-text)]">Flood Sensors</h1>
+            <h1 className="text-2xl font-bold text-[var(--color-text)]">Flood Map</h1>
             <p className="text-sm text-[var(--color-muted)] mt-0.5">
-              Real-time IoT sensor locations across Sarawak. Filter by state, city, or status.
+              Live map and node list — real-time IoT water levels across Sarawak. Filter by state, city, or status.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -493,25 +502,14 @@ export default function SensorsPage() {
 
                 {/* Search */}
                 <div>
-                  <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-                    Search
-                  </label>
-                  <div className="relative">
-                    <SearchIcon className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 pointer-events-none text-[var(--color-muted)]" />
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={e => setSearchQuery(e.target.value)}
-                      placeholder="Node ID, location, area…"
-                      className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] py-2.5 pl-9 pr-8 text-sm text-[var(--color-text)] placeholder-[var(--color-muted)] focus:border-[var(--color-brand)] focus:outline-none transition"
-                    />
-                    {searchQuery && (
-                      <button type="button" onClick={() => setSearchQuery("")}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)] hover:text-[var(--color-brand)]">
-                        <XIcon className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
+                  <SearchField
+                    label="Search"
+                    showLabel
+                    value={searchQuery}
+                    onValueChange={setSearchQuery}
+                    placeholder="Node ID, location, area…"
+                    size="sm"
+                  />
                 </div>
 
                 {/* State */}
@@ -642,7 +640,7 @@ export default function SensorsPage() {
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                   <div>
                     <p className="text-xs uppercase tracking-wide text-[var(--color-muted)]">Live View</p>
-                    <h2 className="text-lg font-semibold text-[var(--color-text)]">IoT Sensor Nodes</h2>
+                    <h2 className="text-lg font-semibold text-[var(--color-text)]">Live map</h2>
                   </div>
                   <div className="flex flex-wrap items-center gap-4 text-sm font-semibold text-[var(--color-text)]">
                     <span>Online: <span className="text-green-600">{stats.online}</span></span>
@@ -727,18 +725,26 @@ export default function SensorsPage() {
                   <div className="flex flex-col items-center gap-3 rounded-2xl bg-[var(--color-input-bg)] py-12">
                     <FilterIcon className="h-10 w-10 text-[var(--color-border)]" />
                     <div className="text-center">
-                      <p className="text-sm font-semibold text-[var(--color-text)]">No nodes match your filters</p>
+                      <p className="text-sm font-semibold text-[var(--color-text)]">
+                        {nodes.length === 0
+                          ? "No sensor nodes in the database yet"
+                          : "No nodes match your filters"}
+                      </p>
                       <p className="mt-1 text-xs text-[var(--color-muted)]">
-                        Try broadening your criteria or clearing all filters.
+                        {nodes.length === 0
+                          ? "Nodes appear after the first device ingest, or once your administrator has registered them."
+                          : "Try broadening your criteria or clearing all filters."}
                       </p>
                     </div>
-                    <button type="button" onClick={clearAllFilters}
-                      className="rounded-lg bg-[var(--color-brand)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--color-brand-dark)] transition">
-                      Clear Filters
-                    </button>
+                    {nodes.length > 0 && (
+                      <button type="button" onClick={clearAllFilters}
+                        className="rounded-lg bg-[var(--color-brand)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--color-brand-dark)] transition">
+                        Clear Filters
+                      </button>
+                    )}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                     {filteredNodes.map(node => {
                       const isFav = favIds.has(node.nodeId);
                       return (
@@ -945,6 +951,10 @@ export default function SensorsPage() {
           </div>
         )}
       </main>
+
+      {searchOpen && (
+        <SearchModal onClose={closeSearch} placeholder="Search posts & communities…" />
+      )}
     </div>
   );
 }

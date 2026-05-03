@@ -41,7 +41,8 @@ export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> 
   }
 
   if (res.status === 204) return undefined as T;
-  if (!ct.includes("application/json")) return undefined as T;
+  const looksJson = ct.includes("application/json") || ct.includes("+json");
+  if (!looksJson) return undefined as T;
   return res.json() as Promise<T>;
 }
 
@@ -68,6 +69,7 @@ export async function authFetchJson<T>(url: string, init?: RequestInit): Promise
   }
 
   if (res.status === 204) return undefined as T;
-  if (!ct.includes("application/json")) return undefined as T;
+  const looksJson = ct.includes("application/json") || ct.includes("+json");
+  if (!looksJson) return undefined as T;
   return res.json() as Promise<T>;
 }
