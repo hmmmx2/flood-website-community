@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 3002",
+    "prebuild": "node -e \"if(process.env.VERCEL){try{require('fs').rmSync('.next',{recursive:true,force:true});}catch{}}\"",
     "build": "next build --webpack",
     "start": "next start --port 3002",
     "lint": "eslint",
