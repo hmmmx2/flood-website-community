@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { CheckCircleIcon } from "@/components/icons";
+import { AuthFooter, AuthTopNav } from "@/components/auth/AuthChrome";
 
 type Step = "verify" | "reset" | "done";
 
@@ -69,7 +70,9 @@ function ResetPasswordForm() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center p-6" style={{ background: "var(--color-bg)" }}>
+    <div className="flex min-h-screen flex-col" style={{ background: "var(--color-bg)" }}>
+      <AuthTopNav />
+      <div className="flex flex-1 flex-col items-center justify-center p-6 pt-20 sm:pt-24">
       <div className="w-full max-w-md rounded-3xl border p-8 shadow-lg" style={{ background: "var(--color-card)", borderColor: "var(--color-border)" }}>
         <div className="flex justify-center mb-6">
           <Image src="/images/logo.png" alt="Pop Up Advertising And Information Enterprise" width={64} height={64} />
@@ -172,6 +175,8 @@ function ResetPasswordForm() {
           </>
         )}
       </div>
+      </div>
+      <AuthFooter />
     </div>
   );
 }

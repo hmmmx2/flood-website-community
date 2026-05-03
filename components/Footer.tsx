@@ -69,7 +69,7 @@ export default function Footer() {
           {/* Brand */}
           <div className="lg:col-span-1">
             <div className="flex items-center gap-3 mb-3">
-              <div className="h-10 w-10 rounded-xl bg-white border border-[var(--color-border)] flex items-center justify-center p-1 flex-shrink-0">
+              <div className="h-10 w-10 rounded-xl bg-[var(--color-card)] border border-[var(--color-border)] flex items-center justify-center p-1 flex-shrink-0">
                 <Image src="/images/logo.png" alt="Pop Up Advertising And Information Enterprise" width={32} height={32} />
               </div>
               <div>

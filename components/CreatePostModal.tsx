@@ -70,7 +70,7 @@ export default function CreatePostModal({ onClose, onCreated, defaultGroupSlug }
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+      <div className="w-full max-w-2xl bg-[var(--color-card)] rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
           <h2 className="font-bold text-[var(--color-text)] text-lg">Create Post</h2>
@@ -147,7 +147,7 @@ export default function CreatePostModal({ onClose, onCreated, defaultGroupSlug }
               onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
               onClick={() => fileRef.current?.click()}
               className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed py-8 transition-colors ${
-                dragOver ? "border-[var(--color-brand)] bg-blue-50" : "border-[var(--color-border)] bg-[var(--color-pill-bg)] hover:border-[var(--color-brand)]/50"
+                dragOver ? "border-[var(--color-brand)] bg-[var(--color-hover)]" : "border-[var(--color-border)] bg-[var(--color-pill-bg)] hover:border-[var(--color-brand)]/50"
               }`}
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-8 w-8 text-[var(--color-muted)]">

@@ -41,19 +41,19 @@ const CATEGORIES = [
 function categoryColor(cat: string): string {
   switch (cat) {
     case "General":
-      return "bg-gray-100 text-gray-700";
+      return "bg-[var(--color-pill-bg)] text-[var(--color-text)]";
     case "Flood Alert":
-      return "bg-blue-100 text-blue-700";
+      return "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300";
     case "Safety Tips":
-      return "bg-amber-100 text-amber-700";
+      return "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200";
     case "Community":
-      return "bg-purple-100 text-purple-700";
+      return "bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-200";
     case "Updates":
-      return "bg-blue-100 text-blue-700";
+      return "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300";
     case "Research":
-      return "bg-emerald-100 text-emerald-700";
+      return "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200";
     default:
-      return "bg-[var(--color-bg)] text-[var(--color-muted)]";
+      return "bg-[var(--color-pill-bg)] text-[var(--color-muted)]";
   }
 }
 
@@ -66,7 +66,7 @@ function BlogCard({ blog, featured = false }: { blog: BlogDto; featured?: boolea
   return (
     <Link href={`/blog/${blog.id}`} className="block group">
       <article
-        className={`bg-white rounded-2xl border border-[var(--color-border)] overflow-hidden hover:border-[var(--color-brand)] hover:shadow-md transition-all duration-200 ${featured ? "mb-4" : ""}`}
+        className={`bg-[var(--color-card)] rounded-2xl border border-[var(--color-border)] overflow-hidden hover:border-[var(--color-brand)] hover:shadow-md transition-all duration-200 ${featured ? "mb-4" : ""}`}
       >
         {featured && blog.imageUrl && (
           <div className="relative h-48 bg-[var(--color-bg)] overflow-hidden">
@@ -216,7 +216,7 @@ export default function BlogPage() {
                   className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap border transition-all ${
                     activeCategory === cat
                       ? "bg-[var(--color-brand)] text-white border-[var(--color-brand)]"
-                      : "bg-white text-[var(--color-muted)] border-[var(--color-border)] hover:border-[var(--color-brand)] hover:text-[var(--color-brand)]"
+                      : "bg-[var(--color-card)] text-[var(--color-muted)] border-[var(--color-border)] hover:border-[var(--color-brand)] hover:text-[var(--color-brand)]"
                   }`}
                 >
                   {cat}
@@ -232,7 +232,7 @@ export default function BlogPage() {
             )}
 
             {error && !loading && (
-              <div className="bg-white rounded-2xl border border-red-200 p-8 text-center mb-4">
+              <div className="bg-[var(--color-card)] rounded-2xl border border-red-200 dark:border-red-900/50 p-8 text-center mb-4">
                 <p className="text-red-600 font-medium mb-3">{error}</p>
                 <button
                   type="button"
@@ -246,7 +246,7 @@ export default function BlogPage() {
             {loading ? (
               <div className="space-y-3">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="bg-white rounded-2xl border border-[var(--color-border)] p-4 animate-pulse">
+                  <div key={i} className="bg-[var(--color-card)] rounded-2xl border border-[var(--color-border)] p-4 animate-pulse">
                     <div className="h-3 w-16 bg-[var(--color-border)] rounded mb-3" />
                     <div className="h-5 w-3/4 bg-[var(--color-border)] rounded mb-2" />
                     <div className="h-3 w-full bg-[var(--color-bg)] rounded mb-1" />
@@ -275,7 +275,7 @@ export default function BlogPage() {
                       type="button"
                       onClick={() => void fetchBlogs(page + 1)}
                       disabled={loadingMore}
-                      className="px-6 py-2 rounded-2xl border border-[var(--color-border)] text-sm font-medium text-[var(--color-brand)] hover:bg-white disabled:opacity-50 transition-colors bg-white"
+                      className="px-6 py-2 rounded-2xl border border-[var(--color-border)] text-sm font-medium text-[var(--color-brand)] hover:bg-[var(--color-hover)] disabled:opacity-50 transition-colors bg-[var(--color-card)]"
                     >
                       {loadingMore ? "Loading..." : "Load more"}
                     </button>
@@ -286,7 +286,7 @@ export default function BlogPage() {
           </div>
 
           <aside className="hidden lg:block w-64 flex-shrink-0">
-            <div className="bg-white rounded-2xl border border-[var(--color-border)] p-4 mb-4">
+            <div className="bg-[var(--color-card)] rounded-2xl border border-[var(--color-border)] p-4 mb-4">
               <h3 className="font-semibold text-[var(--color-text)] mb-2 text-sm">About Blog</h3>
               <p className="text-xs text-[var(--color-muted)] leading-relaxed">
                 Official news, safety guides, and flood monitoring insights from the FloodWatch team.
@@ -300,7 +300,7 @@ export default function BlogPage() {
                 </Link>
               </div>
             </div>
-            <div className="bg-white rounded-2xl border border-[var(--color-border)] p-4">
+            <div className="bg-[var(--color-card)] rounded-2xl border border-[var(--color-border)] p-4">
               <h3 className="font-semibold text-[var(--color-text)] mb-3 text-sm">Categories</h3>
               <div className="space-y-1">
                 {CATEGORIES.map((cat) => (

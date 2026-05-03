@@ -24,13 +24,13 @@ type BlogDto = {
 
 function categoryColor(cat: string): string {
   switch (cat) {
-    case "Flood Alert": return "bg-blue-100 text-blue-700";
-    case "Safety Tips": return "bg-amber-100 text-amber-700";
-    case "Community": return "bg-purple-100 text-purple-700";
-    case "Updates": return "bg-blue-100 text-blue-700";
-    case "Research": return "bg-emerald-100 text-emerald-700";
-    case "General": return "bg-gray-100 text-gray-700";
-    default: return "bg-[var(--color-bg)] text-[var(--color-muted)]";
+    case "Flood Alert": return "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300";
+    case "Safety Tips": return "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200";
+    case "Community": return "bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-200";
+    case "Updates": return "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300";
+    case "Research": return "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200";
+    case "General": return "bg-[var(--color-pill-bg)] text-[var(--color-text)]";
+    default: return "bg-[var(--color-pill-bg)] text-[var(--color-muted)]";
   }
 }
 
@@ -114,7 +114,7 @@ export default function BlogDetailPage() {
           Back to Blog
         </Link>
 
-        <article className="bg-white rounded-2xl border border-[var(--color-border)] overflow-hidden">
+        <article className="bg-[var(--color-card)] rounded-2xl border border-[var(--color-border)] overflow-hidden">
           {blog.imageUrl && (
             <div className="h-64 bg-[var(--color-bg)] overflow-hidden">
               {/* eslint-disable-next-line @next/next/no-img-element */}

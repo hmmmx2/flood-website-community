@@ -276,7 +276,7 @@ export default function Navbar({
                 <button
                   type="button"
                   onClick={logout}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition font-semibold"
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-500 hover:bg-red-500/10 dark:hover:bg-red-950/40 transition font-semibold"
                 >
                   <SignOutIcon />
                   Sign Out
@@ -288,7 +288,7 @@ export default function Navbar({
           <div className="hidden sm:flex items-center gap-2 flex-shrink-0">
             <Link
               href="/login"
-              className="rounded-full border border-[var(--color-brand)] px-4 py-1.5 text-sm font-bold text-[var(--color-brand)] hover:bg-blue-50 transition"
+              className="rounded-full border border-[var(--color-brand)] px-4 py-1.5 text-sm font-bold text-[var(--color-brand)] hover:bg-[var(--color-hover)] transition"
             >
               Log In
             </Link>
@@ -325,7 +325,7 @@ export default function Navbar({
                       onClick={() => setMobileOpen(false)}
                       className={`flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
                         activeLink === link.key
-                          ? "text-[var(--color-brand)] bg-blue-50 font-semibold"
+                          ? "text-[var(--color-brand)] bg-[var(--color-pill-bg)] font-semibold"
                           : "text-[var(--color-text)] hover:bg-[var(--color-hover)]"
                       }`}
                     >
@@ -370,7 +370,7 @@ export default function Navbar({
                   <button
                     type="button"
                     onClick={logout}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-red-500 hover:bg-red-50 transition font-semibold rounded-xl"
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-red-500 hover:bg-red-500/10 dark:hover:bg-red-950/40 transition font-semibold rounded-xl"
                   >
                     <SignOutIcon />
                     Sign Out
@@ -381,7 +381,7 @@ export default function Navbar({
                   <Link
                     href="/login"
                     onClick={() => setMobileOpen(false)}
-                    className="block w-full rounded-xl border border-[var(--color-brand)] px-4 py-2.5 text-sm font-bold text-[var(--color-brand)] hover:bg-blue-50 transition text-center"
+                    className="block w-full rounded-xl border border-[var(--color-brand)] px-4 py-2.5 text-sm font-bold text-[var(--color-brand)] hover:bg-[var(--color-hover)] transition text-center"
                   >
                     Log In
                   </Link>

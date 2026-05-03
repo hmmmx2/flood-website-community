@@ -4,6 +4,7 @@ import { useState, FormEvent } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { MailIcon } from "@/components/icons";
+import { AuthFooter, AuthTopNav } from "@/components/auth/AuthChrome";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -34,7 +35,9 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center p-6" style={{ background: "var(--color-bg)" }}>
+    <div className="flex min-h-screen flex-col" style={{ background: "var(--color-bg)" }}>
+      <AuthTopNav />
+      <div className="flex flex-1 flex-col items-center justify-center p-6 pt-20 sm:pt-24">
       <div className="w-full max-w-md rounded-3xl border p-8 shadow-lg" style={{ background: "var(--color-card)", borderColor: "var(--color-border)" }}>
         <div className="flex justify-center mb-6">
           <Image src="/images/logo.png" alt="Pop Up Advertising And Information Enterprise" width={64} height={64} priority />
@@ -108,6 +111,8 @@ export default function ForgotPasswordPage() {
           </>
         )}
       </div>
+      </div>
+      <AuthFooter />
     </div>
   );
 }

@@ -76,8 +76,8 @@ export default function PostPage() {
     <div className="min-h-screen bg-[var(--color-bg)]">
       {/* UX-POST01 — inline delete confirmation (replaces browser confirm()) */}
       {confirmingDelete && post && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 rounded-2xl bg-[var(--color-card)] border border-red-200 shadow-xl px-5 py-3">
-          <span className="text-sm font-medium text-gray-700">Delete this post?</span>
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 rounded-2xl bg-[var(--color-card)] border border-red-200 dark:border-red-900/50 shadow-xl px-5 py-3">
+          <span className="text-sm font-medium text-[var(--color-text)]">Delete this post?</span>
           <button
             type="button"
             onClick={() => handleDelete(post.id)}
@@ -88,7 +88,7 @@ export default function PostPage() {
           <button
             type="button"
             onClick={() => setConfirmingDelete(false)}
-            className="text-sm font-medium text-gray-400 hover:text-gray-600 transition-colors"
+            className="text-sm font-medium text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors"
           >
             Cancel
           </button>

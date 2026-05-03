@@ -393,7 +393,7 @@ export default function SensorsPage() {
   );
 
   // ── Shared card class ──────────────────────────────────────────────────────
-  const card = "bg-white rounded-2xl border border-[var(--color-border)] shadow-sm";
+  const card = "bg-[var(--color-card)] rounded-2xl border border-[var(--color-border)] shadow-sm";
 
   return (
     <div className="min-h-screen bg-[var(--color-bg)]">

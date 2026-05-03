@@ -217,7 +217,7 @@ export default function NodeMap({
 
         <div className="relative z-10 mt-4 flex flex-wrap justify-center gap-2 px-4">
           {nodes.slice(0, 4).map(node => (
-            <div key={node.id} className="flex items-center gap-2 rounded-lg bg-white/80 px-2 py-1 text-xs shadow-sm">
+            <div key={node.id} className="flex items-center gap-2 rounded-lg bg-[var(--color-card)]/95 backdrop-blur-sm px-2 py-1 text-xs shadow-sm border border-[var(--color-border)]/80">
               <span className="h-2 w-2 rounded-full" style={{ backgroundColor: getMarkerColor(node) }} />
               <span className="font-medium text-[var(--color-text)]">{node.nodeId}</span>
               <span className="text-[var(--color-muted)]">

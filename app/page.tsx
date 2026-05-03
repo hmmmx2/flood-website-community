@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import PostCard from "@/components/PostCard";
@@ -31,6 +31,7 @@ export default function HomePage() {
   const [searchOpen, setSearchOpen] = useState(false);
   // UX-POST01: inline delete confirmation (replaces native confirm())
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const groupsFetchedRef = useRef(false);
 
   // WEB-029: auto-open create modal when ?create=1
   useEffect(() => {
@@ -50,28 +51,28 @@ export default function HomePage() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const data = await fetchJson<Group[]>("/api/groups");
-        setGroups(Array.isArray(data) ? data : []);
-      } catch {
-        setGroups([]);
-      }
-    })();
-  }, []);
-
   const fetchPosts = useCallback(async (p: number, s: SortKey, replace: boolean) => {
     if (replace) { setLoading(true); setFetchError(false); } else setLoadingMore(true);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10_000);
+    const fetchGroupsWithFeed = replace && p === 0 && !groupsFetchedRef.current;
+    if (fetchGroupsWithFeed) groupsFetchedRef.current = true;
     try {
-      const data = await authFetchJson<PagedPosts>(`/api/posts?page=${p}&size=10&sort=${s}`, {
+      const postsPromise = authFetchJson<PagedPosts>(`/api/posts?page=${p}&size=10&sort=${s}`, {
         signal: controller.signal,
       });
+      const groupsPromise = fetchGroupsWithFeed
+        ? fetchJson<Group[]>("/api/groups").catch(() => [] as Group[])
+        : Promise.resolve(null as Group[] | null);
+
+      const [data, groupsData] = await Promise.all([postsPromise, groupsPromise]);
+
       setPosts((prev) => (replace ? data.content : [...prev, ...data.content]));
       setHasMore(!data.last);
       setPage(p);
+      if (groupsData !== null) {
+        setGroups(Array.isArray(groupsData) ? groupsData : []);
+      }
     } catch {
       if (replace) setFetchError(true);
     } finally {
@@ -129,8 +130,8 @@ export default function HomePage() {
     <div className="min-h-screen bg-[var(--color-bg)]">
       {/* UX-POST01 — inline delete confirmation toast */}
       {pendingDeleteId && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 rounded-2xl bg-white border border-red-200 shadow-xl px-5 py-3 animate-in slide-in-from-bottom-4">
-          <span className="text-sm font-medium text-gray-700">Delete this post?</span>
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 rounded-2xl bg-[var(--color-card)] border border-red-200 dark:border-red-900/50 shadow-xl px-5 py-3 animate-in slide-in-from-bottom-4">
+          <span className="text-sm font-medium text-[var(--color-text)]">Delete this post?</span>
           <button
             type="button"
             onClick={() => handleDelete(pendingDeleteId)}
@@ -141,7 +142,7 @@ export default function HomePage() {
           <button
             type="button"
             onClick={() => setPendingDeleteId(null)}
-            className="text-sm font-medium text-gray-400 hover:text-gray-600 transition-colors"
+            className="text-sm font-medium text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors"
           >
             Cancel
           </button>
@@ -159,12 +160,12 @@ export default function HomePage() {
         <div className="flex-1 min-w-0">
           {/* Create post bar */}
           {user ? (
-            <div className="bg-white border border-[var(--color-border)] rounded-2xl flex items-center gap-3 p-3 mb-4">
+            <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl flex items-center gap-3 p-3 mb-4">
               <div className="h-9 w-9 rounded-full bg-[var(--color-brand)] flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
                 {getInitials(user.displayName)}
               </div>
               <button type="button" onClick={() => setCreateOpen(true)}
-                className="flex-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-2 text-sm text-[var(--color-muted)] text-left hover:border-[var(--color-brand)] hover:bg-white transition">
+                className="flex-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-2 text-sm text-[var(--color-muted)] text-left hover:border-[var(--color-brand)] hover:bg-[var(--color-hover)] transition">
                 Share a flood update…
               </button>
               <button type="button" onClick={() => setCreateOpen(true)}
@@ -176,17 +177,17 @@ export default function HomePage() {
               </button>
             </div>
           ) : (
-            <div className="bg-white border border-[var(--color-border)] rounded-2xl p-4 mb-4 text-center">
+            <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-4 mb-4 text-center">
               <p className="text-sm text-[var(--color-muted)] mb-3">Join the community to share flood updates and stay informed.</p>
               <div className="flex gap-2 justify-center">
-                <Link href="/login" className="rounded-full border border-[var(--color-brand)] px-5 py-2 text-sm font-bold text-[var(--color-brand)] hover:bg-blue-50 transition">Log In</Link>
+                <Link href="/login" className="rounded-full border border-[var(--color-brand)] px-5 py-2 text-sm font-bold text-[var(--color-brand)] hover:bg-[var(--color-hover)] transition">Log In</Link>
                 <Link href="/register" className="rounded-full bg-[var(--color-brand)] px-5 py-2 text-sm font-bold text-white hover:bg-[var(--color-brand-dark)] transition">Sign Up</Link>
               </div>
             </div>
           )}
 
           {/* Sort tabs */}
-          <div className="bg-white border border-[var(--color-border)] rounded-2xl flex items-center gap-1 p-1.5 mb-4">
+          <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl flex items-center gap-1 p-1.5 mb-4">
             {(["new", "top"] as const).map(s => (
               <button key={s} type="button" onClick={() => setSort(s)}
                 className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-colors capitalize ${
@@ -212,12 +213,12 @@ export default function HomePage() {
           {loading ? (
             <div className="flex flex-col gap-3">
               {[1,2,3].map(i => (
-                <div key={i} className="bg-white border border-[var(--color-border)] rounded-2xl h-40 animate-pulse" />
+                <div key={i} className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl h-40 animate-pulse" />
               ))}
             </div>
           ) : fetchError ? (
-            <div className="bg-white border border-[var(--color-border)] rounded-2xl p-12 text-center">
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-amber-500/15 text-amber-600 mb-3 mx-auto">
+            <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-12 text-center">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 mb-3 mx-auto">
                 <AlertIcon className="h-8 w-8" />
               </div>
               <h3 className="font-bold text-[var(--color-text)] mb-1">Could not load posts</h3>
@@ -228,7 +229,7 @@ export default function HomePage() {
               </button>
             </div>
           ) : posts.length === 0 ? (
-            <div className="bg-white border border-[var(--color-border)] rounded-2xl p-12 text-center">
+            <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-12 text-center">
               <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[var(--color-brand)]/15 text-[var(--color-brand)] mb-3 mx-auto">
                 <WaveIcon className="h-8 w-8" />
               </div>
@@ -249,7 +250,7 @@ export default function HomePage() {
               ))}
               {hasMore && (
                 <button type="button" onClick={() => fetchPosts(page + 1, sort, false)} disabled={loadingMore}
-                  className="w-full py-3 rounded-2xl bg-white border border-[var(--color-border)] text-sm font-semibold text-[var(--color-brand)] hover:bg-blue-50 transition disabled:opacity-50">
+                  className="w-full py-3 rounded-2xl bg-[var(--color-card)] border border-[var(--color-border)] text-sm font-semibold text-[var(--color-brand)] hover:bg-[var(--color-hover)] transition disabled:opacity-50">
                   {loadingMore ? "Loading…" : "Load more"}
                 </button>
               )}
@@ -282,7 +283,7 @@ export default function HomePage() {
 
           {/* Groups */}
           {groups.length > 0 && (
-            <div className="bg-white border border-[var(--color-border)] rounded-2xl p-4">
+            <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-4">
               <h3 className="font-bold text-[var(--color-text)] mb-3 flex items-center justify-between">
                 <span>Communities</span>
                 <span className="text-xs font-normal text-[var(--color-muted)]">{groups.length} groups</span>
@@ -302,7 +303,7 @@ export default function HomePage() {
                       <p className="text-xs text-[var(--color-muted)]">{g.membersCount.toLocaleString()} members</p>
                     </div>
                     {g.joinedByMe && (
-                      <span className="text-[10px] font-bold text-[var(--color-brand)] bg-blue-50 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                      <span className="text-[10px] font-bold text-[var(--color-brand)] bg-[var(--color-pill-bg)] px-1.5 py-0.5 rounded-full flex-shrink-0">
                         Joined
                       </span>
                     )}
@@ -318,7 +319,7 @@ export default function HomePage() {
           )}
 
           {/* Community rules */}
-          <div className="bg-white border border-[var(--color-border)] rounded-2xl p-4">
+          <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-4">
             <h3 className="font-bold text-[var(--color-text)] mb-3">Community Rules</h3>
             <ol className="space-y-2 text-sm text-[var(--color-muted)]">
               {[
@@ -337,7 +338,7 @@ export default function HomePage() {
           </div>
 
           {/* Emergency contacts */}
-          <div className="bg-white border border-[var(--color-border)] rounded-2xl p-4">
+          <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-4">
             <h3 className="font-bold text-[var(--color-text)] mb-3">Emergency Contacts</h3>
             <div className="space-y-2 text-sm">
               {[

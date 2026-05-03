@@ -87,7 +87,7 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
               className={`flex flex-col items-center p-1 rounded-lg transition-all ${
                 post.likedByMe
                   ? "text-[var(--color-brand)]"
-                  : "text-[var(--color-muted)] hover:text-[var(--color-upvote)] hover:bg-blue-50"
+                  : "text-[var(--color-muted)] hover:text-[var(--color-upvote)] hover:bg-[var(--color-hover)]"
               }`}
               title={post.likedByMe ? "Unlike" : "Like"}
             >
@@ -177,7 +177,7 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
                   </button>
                   {onDelete && (
                     <button type="button" onClick={() => onDelete(post.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors">
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-red-400 hover:bg-red-500/10 dark:hover:bg-red-950/40 hover:text-red-600 transition-colors">
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
                       </svg>
@@ -207,7 +207,7 @@ export default function PostCard({ post, currentUserId, token, onLike, onDelete,
               </button>
             </div>
             <form onSubmit={saveEdit} className="p-5 space-y-4">
-              {editError && <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">{editError}</div>}
+              {editError && <div className="rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 px-4 py-3 text-sm text-red-600 dark:text-red-400">{editError}</div>}
               <div>
                 <label className="block text-xs font-semibold text-[var(--color-muted)] mb-1.5 uppercase tracking-wide">Title</label>
                 <input type="text" value={editTitle} onChange={e => setEditTitle(e.target.value)} required maxLength={500}

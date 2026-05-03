@@ -94,7 +94,7 @@ export default function ShareModal({ postId, title, onClose }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4"
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl overflow-hidden">
+      <div className="w-full max-w-sm bg-[var(--color-card)] rounded-2xl shadow-xl overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
           <h3 className="font-bold text-[var(--color-text)]">Share Post</h3>
           <button type="button" onClick={onClose} className="text-[var(--color-muted)] hover:text-[var(--color-text)] transition">

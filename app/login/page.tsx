@@ -2,9 +2,9 @@
 
 import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import Image from "next/image";
 import { signIn } from "next-auth/react";
+import { AuthFooter, AuthTopNav } from "@/components/auth/AuthChrome";
 import type { AuthUser } from "@/lib/auth";
 
 type View = "login" | "register";
@@ -181,20 +181,7 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen flex-col" style={{ background: "var(--color-bg)" }}>
 
-      {/* Navbar */}
-      <nav
-        className="fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-md"
-        style={{ borderColor: "var(--color-border)", background: "rgba(255,255,255,0.8)" }}
-      >
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
-          <div className="flex items-center gap-2">
-            <Image src="/images/logo.png" alt="Pop Up Advertising And Information Enterprise" width={36} height={36} priority />
-            <span className="hidden sm:block text-sm font-semibold" style={{ color: "var(--color-text)" }}>
-              FloodWatch Community
-            </span>
-          </div>
-        </div>
-      </nav>
+      <AuthTopNav />
 
       {/* Main content */}
       <div className="flex flex-1 pt-16">
@@ -493,22 +480,7 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* Footer */}
-      <footer
-        className="border-t py-4"
-        style={{ borderColor: "var(--color-border)", background: "rgba(255,255,255,0.5)" }}
-      >
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <p className="text-xs" style={{ color: "var(--color-muted)" }}>
-            © {new Date().getFullYear()} FloodWatch Community. All rights reserved.
-          </p>
-          <div className="flex items-center gap-4">
-            <a href="#" className="text-xs transition hover:opacity-80" style={{ color: "var(--color-muted)" }}>Privacy Policy</a>
-            <a href="#" className="text-xs transition hover:opacity-80" style={{ color: "var(--color-muted)" }}>Terms of Service</a>
-            <a href="#" className="text-xs transition hover:opacity-80" style={{ color: "var(--color-muted)" }}>Contact</a>
-          </div>
-        </div>
-      </footer>
+      <AuthFooter />
     </div>
   );
 }
