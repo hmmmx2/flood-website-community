@@ -133,9 +133,12 @@ export default function BlogPage() {
   const user = session?.user ? sessionToAuthUser(session.user) : null;
   const [activeCategory, setActiveCategory] = useState("All");
   const activeCategoryRef = useRef(activeCategory);
-  activeCategoryRef.current = activeCategory;
   const listFetchGen = useRef(0);
   const [categoryTabs, setCategoryTabs] = useState<string[]>(() => ["All", ...CANONICAL_CATEGORY_ORDER]);
+
+  useEffect(() => {
+    activeCategoryRef.current = activeCategory;
+  }, [activeCategory]);
   const [blogs, setBlogs] = useState<BlogDto[]>([]);
   const [featured, setFeatured] = useState<BlogDto[]>([]);
   const [loading, setLoading] = useState(true);

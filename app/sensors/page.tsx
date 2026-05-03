@@ -10,6 +10,7 @@ import { useSession, signOut, signIn } from "next-auth/react";
 import { sessionToAuthUser } from "@/lib/auth";
 import { fetchJson, authFetchJson } from "@/lib/fetchJson";
 import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
+import { useSensorStream } from "@/components/providers/SensorStreamProvider";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type NodeStatus = "active" | "warning" | "critical" | "inactive";
@@ -157,6 +158,7 @@ function AlertTriangleIcon(p: React.SVGProps<SVGSVGElement>) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function FloodMapPage() {
+  const { subscribeSensorUpdates } = useSensorStream();
   const { data: session } = useSession();
   const user = session?.user ? sessionToAuthUser(session.user) : null;
   const { searchOpen, openSearch, closeSearch } = useSiteSearchModal();
@@ -225,10 +227,9 @@ export default function FloodMapPage() {
     void fetchSensors(controller.signal);
     void fetchFavourites();
 
-    const es = new EventSource("/api/sse/sensors");
-    es.addEventListener("sensor-update", (e: MessageEvent) => {
+    const unsub = subscribeSensorUpdates((raw) => {
       try {
-        const updated: SensorNodeDto = JSON.parse(e.data as string);
+        const updated = raw as unknown as SensorNodeDto;
         setNodes(prev => {
           const idx = prev.findIndex(n => n.id === updated.id);
           if (idx === -1) return [...prev, updated];
@@ -238,11 +239,16 @@ export default function FloodMapPage() {
         });
         setLastFetch(new Date());
         isFirstFetch.current = false;
-      } catch { /* malformed event — ignore */ }
+      } catch {
+        /* malformed payload — ignore */
+      }
     });
 
-    return () => { controller.abort(); es.close(); };
-  }, [fetchSensors, fetchFavourites]);
+    return () => {
+      controller.abort();
+      unsub();
+    };
+  }, [fetchSensors, fetchFavourites, subscribeSensorUpdates]);
 
   // ── Favourite toggle ───────────────────────────────────────────────────────
   const toggleFav = useCallback(
@@ -312,7 +318,8 @@ export default function FloodMapPage() {
   function toggleStatus(key: StatusKey) {
     setFilterStatuses(prev => {
       const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   }
