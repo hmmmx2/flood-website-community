@@ -8,6 +8,8 @@ import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { getInitials } from "@/lib/auth";
 import type { AuthUser } from "@/lib/auth";
+import { Kbd } from "@/components/ui/kbd";
+import { SearchTrigger } from "@/components/ui/search-field";
 
 export interface NavbarProps {
   user: AuthUser | null;
@@ -15,6 +17,8 @@ export interface NavbarProps {
   onLogout?: () => void;
   /** When provided a search icon / bar is rendered. */
   onSearchOpen?: () => void;
+  /** Placeholder for the navbar search control (per-route context). */
+  searchPlaceholder?: string;
   /** Highlights the matching nav link. Pass null to show links without highlight. */
   activeLink?: "community" | "blog" | "sensors" | null;
   /** Breadcrumb shown for inner pages (replaces nav links). */
@@ -24,20 +28,10 @@ export interface NavbarProps {
 const NAV_LINKS = [
   { key: "community" as const, href: "/", label: "Community" },
   { key: "blog" as const, href: "/blog", label: "Blog" },
-  { key: "sensors" as const, href: "/sensors", label: "Sensors" },
+  { key: "sensors" as const, href: "/sensors", label: "Flood Map" },
 ];
 
 /* ── tiny inline SVG icons ─────────────────────────────────────────────── */
-
-function SearchIcon() {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-      stroke="currentColor" strokeWidth="2" className="h-4 w-4 flex-shrink-0">
-      <circle cx="11" cy="11" r="7" />
-      <path strokeLinecap="round" d="M16.5 16.5L21 21" />
-    </svg>
-  );
-}
 
 function ChevronDownIcon() {
   return (
@@ -91,6 +85,7 @@ export default function Navbar({
   user,
   onLogout,
   onSearchOpen,
+  searchPlaceholder = "Search posts and communities…",
   activeLink,
   breadcrumb,
 }: NavbarProps) {
@@ -190,27 +185,20 @@ export default function Navbar({
         {/* ── Search ───────────────────────────────────────────────────── */}
         {onSearchOpen && (
           <>
-            {/* Expanded bar on sm+ */}
-            <button
-              type="button"
+            <div className="hidden min-w-0 flex-1 justify-center sm:flex sm:max-w-md lg:max-w-lg">
+              <SearchTrigger
+                variant="navbar"
+                placeholder={searchPlaceholder}
+                onClick={onSearchOpen}
+                shortcut={<Kbd className="hidden lg:inline-flex">Ctrl K</Kbd>}
+              />
+            </div>
+            <SearchTrigger
+              variant="icon"
+              placeholder={searchPlaceholder}
               onClick={onSearchOpen}
-              className="hidden sm:flex flex-1 min-w-0 items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-2 text-sm text-[var(--color-muted)] hover:border-[var(--color-brand)] hover:bg-[var(--color-hover)] transition text-left max-w-xs"
-            >
-              <SearchIcon />
-              <span className="truncate">Search posts and communities…</span>
-              <kbd className="ml-auto flex-shrink-0 text-xs text-[var(--color-muted)] bg-[var(--color-hover)] px-1.5 py-0.5 rounded hidden lg:block">
-                ⌘K
-              </kbd>
-            </button>
-            {/* Icon-only on mobile */}
-            <button
-              type="button"
-              onClick={onSearchOpen}
-              className="sm:hidden flex items-center justify-center h-9 w-9 rounded-full border border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-brand)] hover:text-[var(--color-brand)] transition flex-shrink-0"
-              aria-label="Search"
-            >
-              <SearchIcon />
-            </button>
+              className="sm:hidden"
+            />
           </>
         )}
 
