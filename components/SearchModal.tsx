@@ -5,12 +5,19 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Post, Group, PagedPosts } from "@/lib/types";
 import { fetchJson } from "@/lib/fetchJson";
+import { SearchField } from "@/components/ui/search-field";
+import { Kbd } from "@/components/ui/kbd";
 
 type Props = {
   onClose: () => void;
+  /** Shown in the field and empty state (global search from home). */
+  placeholder?: string;
 };
 
-export default function SearchModal({ onClose }: Props) {
+export default function SearchModal({
+  onClose,
+  placeholder = "Search posts and communities…",
+}: Props) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [posts, setPosts] = useState<Post[]>([]);
@@ -67,30 +74,34 @@ export default function SearchModal({ onClose }: Props) {
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="w-full max-w-xl bg-[var(--color-card)] rounded-2xl border border-[var(--color-border)] shadow-2xl overflow-hidden">
         {/* Search input */}
-        <div className="flex items-center gap-3 px-4 py-3.5 border-b border-[var(--color-border)]">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5 text-[var(--color-muted)] flex-shrink-0">
-            <circle cx="11" cy="11" r="7" /><path strokeLinecap="round" d="M16.5 16.5L21 21" />
-          </svg>
-          <input
+        <div className="flex items-center gap-3 border-b border-[var(--color-border)] px-3 py-3 sm:px-4">
+          <SearchField
             ref={inputRef}
-            type="text"
             value={query}
-            onChange={e => setQuery(e.target.value)}
+            onValueChange={setQuery}
+            placeholder={placeholder}
+            className="min-w-0 flex-1"
             onKeyDown={e => {
               if (e.key === "Enter") {
-                if (posts.length > 0) { router.push(`/post/${posts[0].id}`); onClose(); }
-                else if (groups.length > 0) { router.push(`/g/${groups[0].slug}`); onClose(); }
+                if (posts.length > 0) {
+                  router.push(`/post/${posts[0].id}`);
+                  onClose();
+                } else if (groups.length > 0) {
+                  router.push(`/g/${groups[0].slug}`);
+                  onClose();
+                }
               }
             }}
-            placeholder="Search posts and communities…"
-            className="flex-1 bg-transparent text-[var(--color-text)] placeholder:text-[var(--color-muted)] text-sm outline-none"
           />
           {loading && (
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--color-border)] border-t-[var(--color-brand)]" />
+            <div className="h-4 w-4 flex-shrink-0 animate-spin rounded-full border-2 border-[var(--color-border)] border-t-[var(--color-brand)]" />
           )}
-          <button type="button" onClick={onClose}
-            className="text-[var(--color-muted)] hover:text-[var(--color-text)] text-xs font-semibold px-2 py-1 rounded-lg hover:bg-[var(--color-hover)] transition-colors">
-            ESC
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex flex-shrink-0 items-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold text-[var(--color-muted)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
+          >
+            <Kbd>ESC</Kbd>
           </button>
         </div>
 
@@ -101,7 +112,8 @@ export default function SearchModal({ onClose }: Props) {
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-8 w-8 mx-auto mb-2 opacity-40">
                 <circle cx="11" cy="11" r="7" /><path strokeLinecap="round" d="M16.5 16.5L21 21" />
               </svg>
-              Search posts, communities, and more
+              <p className="font-medium text-[var(--color-text)]">Search FloodWatch</p>
+              <span className="mt-1 block text-xs">{placeholder}</span>
             </div>
           ) : !hasResults && !loading ? (
             <div className="px-4 py-8 text-center text-sm text-[var(--color-muted)]">
@@ -152,9 +164,13 @@ export default function SearchModal({ onClose }: Props) {
         </div>
 
         {/* Footer tip */}
-        <div className="px-4 py-2 border-t border-[var(--color-border)] flex items-center gap-4 text-[10px] text-[var(--color-muted)]">
-          <span><kbd className="font-mono bg-[var(--color-pill-bg)] px-1.5 py-0.5 rounded text-[10px]">↵</kbd> select</span>
-          <span><kbd className="font-mono bg-[var(--color-pill-bg)] px-1.5 py-0.5 rounded text-[10px]">ESC</kbd> close</span>
+        <div className="px-4 py-2 border-t border-[var(--color-border)] flex flex-wrap items-center gap-4 text-[10px] text-[var(--color-muted)]">
+          <span className="inline-flex items-center gap-1">
+            <Kbd>↵</Kbd> select
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <Kbd>ESC</Kbd> close
+          </span>
         </div>
       </div>
     </div>
