@@ -1,15 +1,12 @@
 // flood-service-community — default port 4001 (application.yml SERVER_PORT)
 // Server-side only — never import in client components.
 
-// Normalise the URL: if the env var was set without a protocol (e.g. in
-// Vercel's dashboard without "https://"), prefix it automatically so that
-// Node.js fetch does not throw "Failed to parse URL".
-function normaliseUrl(raw: string): string {
-  if (!raw || raw.startsWith("http://") || raw.startsWith("https://")) return raw;
-  return `https://${raw}`;
-}
+import { normaliseJavaApiBase } from "@/lib/normaliseJavaApiBase";
 
-const JAVA_API = normaliseUrl(process.env.JAVA_API_URL || "http://localhost:4001");
+const JAVA_API = normaliseJavaApiBase(
+  process.env.JAVA_API_URL,
+  "http://localhost:4001",
+);
 
 type Opts = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
@@ -26,7 +23,8 @@ export async function javaFetch<T>(path: string, opts: Opts = {}): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${JAVA_API}${path}`, {
+  const p = path.startsWith("/") ? path : `/${path}`;
+  const res = await fetch(`${JAVA_API}${p}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
@@ -44,9 +42,11 @@ export async function javaFetch<T>(path: string, opts: Opts = {}): Promise<T> {
     try {
       const json = JSON.parse(text);
       parsed = json.message || json.error;
-    } catch { /* not JSON — use raw text */ }
+    } catch {
+      /* not JSON — use raw text */
+    }
 
-    const err = new Error(parsed || `${method} ${path} → ${res.status}`) as Error & {
+    const err = new Error(parsed || `${method} ${p} → ${res.status}`) as Error & {
       status: number;
       rawBody: string;
     };

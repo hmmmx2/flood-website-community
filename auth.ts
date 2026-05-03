@@ -3,12 +3,12 @@ import Credentials from "next-auth/providers/credentials";
 
 import authConfig from "./auth.config";
 
-function normaliseUrl(raw: string): string {
-  if (!raw || raw.startsWith("http://") || raw.startsWith("https://")) return raw;
-  return `https://${raw}`;
-}
+import { normaliseJavaApiBase } from "@/lib/normaliseJavaApiBase";
 
-const JAVA_API = normaliseUrl(process.env.JAVA_API_URL ?? "http://localhost:4001");
+const JAVA_API = normaliseJavaApiBase(
+  process.env.JAVA_API_URL,
+  "http://localhost:4001",
+);
 const ACCESS_TOKEN_MS = 15 * 60 * 1000; // 15 min — matches Spring Boot access token expiry
 
 /** Used by Credentials authorize(); never throw at module load (that breaks Vercel build). */
