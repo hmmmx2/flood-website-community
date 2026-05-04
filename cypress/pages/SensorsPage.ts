@@ -1,5 +1,5 @@
 /**
- * Page Object Model — /sensors
+ * Page Object Model — /flood-map
  *
  * The sensors page shows a list of IoT water-level nodes with filter chips,
  * a favourites section, and map-view buttons.
@@ -7,7 +7,7 @@
 export class SensorsPage {
   // ── Selectors ────────────────────────────────────────────────────────────
 
-  readonly url = '/sensors';
+  readonly url = '/flood-map';
 
   get nodeCards() {
     return cy.get('[data-testid="node-card"], .node-card').filter(':visible');

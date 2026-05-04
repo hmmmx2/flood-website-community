@@ -8,6 +8,10 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: process.env.VERCEL ? undefined : "standalone",
 
+  async redirects() {
+    return [{ source: "/sensors", destination: "/flood-map", permanent: true }];
+  },
+
   webpack(config) {
     if (process.env.VERCEL) {
       config.cache = { type: "memory" };

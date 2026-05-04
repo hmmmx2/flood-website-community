@@ -5,7 +5,7 @@
  *  - Navbar brand logo link → home
  *  - Navbar Community link → /
  *  - Navbar Blog link → /blog
- *  - Navbar Sensors link → /sensors
+ *  - Navbar Flood Map link → /flood-map
  *  - Unauthenticated navbar shows Login + Sign Up
  *  - Authenticated navbar shows user avatar + menu
  *  - User menu → Settings navigates to /settings
@@ -73,13 +73,13 @@ describe('Navigation', () => {
       cy.contains('Community User').should('be.visible');
     });
 
-    it('shows nav links: Community, Blog, Sensors', () => {
+    it('shows nav links: Community, Blog, Flood Map', () => {
       cy.visit('/');
       cy.waitForPageLoad();
 
       cy.get('nav, header').contains(/community/i).should('exist');
       cy.get('nav, header').contains(/blog/i).should('exist');
-      cy.get('nav, header').contains(/sensors/i).should('exist');
+      cy.get('nav, header').contains(/flood map/i).should('exist');
     });
 
     it('navigates to /blog when Blog link is clicked', () => {
@@ -90,12 +90,12 @@ describe('Navigation', () => {
       cy.url().should('include', '/blog');
     });
 
-    it('navigates to /sensors when Sensors link is clicked', () => {
+    it('navigates to /flood-map when Flood Map link is clicked', () => {
       cy.visit('/');
       cy.waitForPageLoad();
 
-      cy.get('nav a, header a').contains(/sensors/i).first().click();
-      cy.url().should('include', '/sensors');
+      cy.get('nav a, header a').contains(/flood map/i).first().click();
+      cy.url().should('include', '/flood-map');
     });
 
     it('navigates to / when Community link is clicked', () => {

@@ -11,14 +11,14 @@ describe('Sensors Page', () => {
 
   describe('Sensor listing', () => {
     it('loads the sensors page', () => {
-      cy.visit('/sensors');
+      cy.visit('/flood-map');
       cy.waitForPageLoad();
       cy.wait('@getSensors');
       cy.get('body').should('be.visible');
     });
 
     it('displays nodes from API', () => {
-      cy.visit('/sensors');
+      cy.visit('/flood-map');
       cy.wait('@getSensors');
       cy.waitForPageLoad();
 
@@ -27,7 +27,7 @@ describe('Sensors Page', () => {
     });
 
     it('shows status badges (active, warning, inactive)', () => {
-      cy.visit('/sensors');
+      cy.visit('/flood-map');
       cy.wait('@getSensors');
       cy.waitForPageLoad();
 
@@ -36,7 +36,7 @@ describe('Sensors Page', () => {
     });
 
     it('displays stat pills at the top', () => {
-      cy.visit('/sensors');
+      cy.visit('/flood-map');
       cy.wait('@getSensors');
       cy.waitForPageLoad();
 
@@ -44,7 +44,7 @@ describe('Sensors Page', () => {
     });
 
     it('shows water level information per node', () => {
-      cy.visit('/sensors');
+      cy.visit('/flood-map');
       cy.wait('@getSensors');
       cy.waitForPageLoad();
 
@@ -54,7 +54,7 @@ describe('Sensors Page', () => {
 
   describe('Favourites', () => {
     it('displays saved favourites section', () => {
-      cy.visit('/sensors');
+      cy.visit('/flood-map');
       cy.wait('@getFavourites');
       cy.waitForPageLoad();
 
@@ -62,7 +62,7 @@ describe('Sensors Page', () => {
     });
 
     it('adds a node to favourites', () => {
-      cy.visit('/sensors');
+      cy.visit('/flood-map');
       cy.wait('@getSensors');
       cy.wait('@getFavourites');
       cy.waitForPageLoad();
@@ -72,7 +72,7 @@ describe('Sensors Page', () => {
     });
 
     it('removes a node from favourites', () => {
-      cy.visit('/sensors');
+      cy.visit('/flood-map');
       cy.wait('@getSensors');
       cy.wait('@getFavourites');
       cy.waitForPageLoad();
@@ -84,7 +84,7 @@ describe('Sensors Page', () => {
     });
 
     it('shows ★ Saved count pill', () => {
-      cy.visit('/sensors');
+      cy.visit('/flood-map');
       cy.wait('@getFavourites');
       cy.waitForPageLoad();
 
@@ -95,7 +95,7 @@ describe('Sensors Page', () => {
 
   describe('Filter chips', () => {
     it('renders filter chips for All, Favourites, status levels', () => {
-      cy.visit('/sensors');
+      cy.visit('/flood-map');
       cy.waitForPageLoad();
 
       cy.get('button, [role="tab"]').contains(/all/i).should('exist');
@@ -103,7 +103,7 @@ describe('Sensors Page', () => {
     });
 
     it('filters to show only favourite nodes', () => {
-      cy.visit('/sensors');
+      cy.visit('/flood-map');
       cy.wait('@getSensors');
       cy.wait('@getFavourites');
       cy.waitForPageLoad();
@@ -113,7 +113,7 @@ describe('Sensors Page', () => {
     });
 
     it('filters to show only warning nodes', () => {
-      cy.visit('/sensors');
+      cy.visit('/flood-map');
       cy.wait('@getSensors');
       cy.waitForPageLoad();
 
@@ -124,7 +124,7 @@ describe('Sensors Page', () => {
 
   describe('View on Map', () => {
     it('has "View on Map" buttons', () => {
-      cy.visit('/sensors');
+      cy.visit('/flood-map');
       cy.wait('@getSensors');
       cy.waitForPageLoad();
 
@@ -132,7 +132,7 @@ describe('Sensors Page', () => {
     });
 
     it('opens map modal or navigates to map on click', () => {
-      cy.visit('/sensors');
+      cy.visit('/flood-map');
       cy.wait('@getSensors');
       cy.waitForPageLoad();
 

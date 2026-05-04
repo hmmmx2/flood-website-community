@@ -28,7 +28,7 @@ export interface NavbarProps {
 const NAV_LINKS = [
   { key: "community" as const, href: "/", label: "Community" },
   { key: "blog" as const, href: "/blog", label: "Blog" },
-  { key: "sensors" as const, href: "/sensors", label: "Flood Map" },
+  { key: "sensors" as const, href: "/flood-map", label: "Flood Map" },
 ];
 
 /* ── tiny inline SVG icons ─────────────────────────────────────────────── */

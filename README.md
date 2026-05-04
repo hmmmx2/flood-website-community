@@ -169,7 +169,7 @@ flood-website-community/
 │   │   └── [id]/               # Single blog post
 │   ├── g/[slug]/               # Group detail page
 │   ├── post/                   # Community post pages
-│   ├── sensors/                # Sensor data page
+│   ├── flood-map/              # Flood Map (sensor nodes) page
 │   ├── settings/               # User settings page
 │   ├── login/                  # Login page
 │   ├── register/               # Registration page

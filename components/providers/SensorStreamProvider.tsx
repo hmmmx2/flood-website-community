@@ -85,7 +85,7 @@ function FloodAlertDock({
                 Water level {a.waterLevelFeet.toFixed(1)} ft · Zone {a.zone ?? "—"}
               </p>
               <Link
-                href="/sensors"
+                href="/flood-map"
                 className="mt-2 inline-block text-xs font-bold underline underline-offset-2 hover:opacity-90"
               >
                 View live sensors →

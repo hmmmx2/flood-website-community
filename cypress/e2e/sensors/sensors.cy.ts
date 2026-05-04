@@ -25,7 +25,7 @@ describe('Sensors Page', () => {
 
   context('Authentication guard', () => {
     it('redirects unauthenticated users to /login', () => {
-      cy.visit('/sensors');
+      cy.visit('/flood-map');
       // The sensors page may require auth — if it redirects, assert login URL
       cy.url().then((url) => {
         if (url.includes('/login')) {
@@ -55,7 +55,7 @@ describe('Sensors Page', () => {
       page.waitForData();
 
       // Assert
-      cy.url().should('include', '/sensors');
+      cy.url().should('include', '/flood-map');
       cy.get('body').should('be.visible');
     });
 
