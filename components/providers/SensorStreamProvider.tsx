@@ -173,6 +173,18 @@ export function SensorStreamProvider({ children }: { children: ReactNode }) {
       es.addEventListener("sensor-update", onSensor);
       es.addEventListener("flood-alert", onFlood);
 
+      // Backend-unavailable event: upstream unreachable (e.g. JAVA_API_URL not set in Vercel).
+      // Back off with a long delay instead of hammering every 2 s.
+      es.addEventListener("backend-unavailable", () => {
+        es?.close();
+        es = null;
+        if (closed) return;
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        // Long retry when the Java backend is known-unavailable (60 s)
+        retryMs = maxRetryMs;
+        reconnectTimer = setTimeout(connect, retryMs);
+      });
+
       es.onopen = () => {
         retryMs = 2000;
       };
