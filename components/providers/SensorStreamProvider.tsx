@@ -129,7 +129,11 @@ export function SensorStreamProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const es = new EventSource("/api/sse/sensors");
+    let closed = false;
+    let es: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let retryMs = 2000;
+    const maxRetryMs = 60_000;
 
     const onSensor = (e: MessageEvent) => {
       try {
@@ -161,17 +165,39 @@ export function SensorStreamProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    es.addEventListener("sensor-update", onSensor);
-    es.addEventListener("flood-alert", onFlood);
+    const connect = () => {
+      if (closed) return;
+      es?.close();
+      es = new EventSource("/api/sse/sensors");
 
-    es.onerror = () => {
-      /* browser auto-reconnects EventSource */
+      es.addEventListener("sensor-update", onSensor);
+      es.addEventListener("flood-alert", onFlood);
+
+      es.onopen = () => {
+        retryMs = 2000;
+      };
+
+      es.onerror = () => {
+        es?.close();
+        es = null;
+        if (closed) return;
+        /* Default EventSource reconnect hammers a failing BFF (e.g. 502) — back off. */
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(connect, retryMs);
+        retryMs = Math.min(maxRetryMs, Math.round(retryMs * 1.7));
+      };
     };
 
+    connect();
+
     return () => {
-      es.removeEventListener("sensor-update", onSensor);
-      es.removeEventListener("flood-alert", onFlood);
-      es.close();
+      closed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (es) {
+        es.removeEventListener("sensor-update", onSensor);
+        es.removeEventListener("flood-alert", onFlood);
+        es.close();
+      }
     };
   }, []);
 
