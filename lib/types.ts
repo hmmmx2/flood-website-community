@@ -22,6 +22,8 @@ export type CommentsPage = {
   totalTopLevel: number;
   page: number;
   size: number;
+  /** Total comment rows for this post (from API); aligns card count with the comments endpoint. */
+  totalComments?: number;
 };
 
 export type Post = {

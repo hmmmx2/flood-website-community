@@ -7,12 +7,14 @@ import PostCard from "@/components/PostCard";
 import CreatePostModal from "@/components/CreatePostModal";
 import SearchModal from "@/components/SearchModal";
 import Footer from "@/components/Footer";
+import { SearchField } from "@/components/ui/search-field";
 import { AlertIcon, WaveIcon } from "@/components/icons";
 import { useSession, signOut, signIn } from "next-auth/react";
 import toast from "react-hot-toast";
 import { sessionToAuthUser, getInitials } from "@/lib/auth";
 import { fetchJson, authFetchJson } from "@/lib/fetchJson";
 import type { Post, PagedPosts, Group } from "@/lib/types";
+import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
 
 type SortKey = "new" | "top";
 
@@ -28,10 +30,17 @@ export default function HomePage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [fetchError, setFetchError] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
+  const { searchOpen, openSearch, closeSearch } = useSiteSearchModal();
+  const [feedSearch, setFeedSearch] = useState("");
+  const [debouncedFeedSearch, setDebouncedFeedSearch] = useState("");
   // UX-POST01: inline delete confirmation (replaces native confirm())
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const groupsFetchedRef = useRef(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedFeedSearch(feedSearch.trim()), 350);
+    return () => clearTimeout(t);
+  }, [feedSearch]);
 
   // WEB-029: auto-open create modal when ?create=1
   useEffect(() => {
@@ -43,22 +52,16 @@ export default function HomePage() {
     }
   }, [session]);
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") { e.preventDefault(); setSearchOpen(true); }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, []);
-
-  const fetchPosts = useCallback(async (p: number, s: SortKey, replace: boolean) => {
+  const fetchPosts = useCallback(async (p: number, s: SortKey, replace: boolean, search = "") => {
     if (replace) { setLoading(true); setFetchError(false); } else setLoadingMore(true);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10_000);
     const fetchGroupsWithFeed = replace && p === 0 && !groupsFetchedRef.current;
     if (fetchGroupsWithFeed) groupsFetchedRef.current = true;
     try {
-      const postsPromise = authFetchJson<PagedPosts>(`/api/posts?page=${p}&size=10&sort=${s}`, {
+      const q = new URLSearchParams({ page: String(p), size: "10", sort: s });
+      if (search) q.set("search", search);
+      const postsPromise = authFetchJson<PagedPosts>(`/api/posts?${q}`, {
         signal: controller.signal,
       });
       const groupsPromise = fetchGroupsWithFeed
@@ -83,8 +86,8 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    fetchPosts(0, sort, true);
-  }, [sort, fetchPosts]);
+    fetchPosts(0, sort, true, debouncedFeedSearch);
+  }, [sort, debouncedFeedSearch, fetchPosts]);
 
   async function handleLike(postId: string) {
     if (!session) {
@@ -151,7 +154,8 @@ export default function HomePage() {
       <Navbar
         user={user}
         onLogout={handleLogout}
-        onSearchOpen={() => setSearchOpen(true)}
+        onSearchOpen={openSearch}
+        searchPlaceholder="Search posts & communities…"
         activeLink="community"
       />
 
@@ -185,6 +189,16 @@ export default function HomePage() {
               </div>
             </div>
           )}
+
+          <div className="mb-4">
+            <SearchField
+              value={feedSearch}
+              onValueChange={setFeedSearch}
+              placeholder="Search posts by title or keyword…"
+              label="Filter feed"
+              className="max-w-xl"
+            />
+          </div>
 
           {/* Sort tabs */}
           <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl flex items-center gap-1 p-1.5 mb-4">
@@ -223,7 +237,7 @@ export default function HomePage() {
               </div>
               <h3 className="font-bold text-[var(--color-text)] mb-1">Could not load posts</h3>
               <p className="text-sm text-[var(--color-muted)] mb-4">The server may still be starting up. Please try again.</p>
-              <button type="button" onClick={() => fetchPosts(0, sort, true)}
+              <button type="button" onClick={() => fetchPosts(0, sort, true, debouncedFeedSearch)}
                 className="rounded-full bg-[var(--color-brand)] px-5 py-2 text-sm font-bold text-white hover:bg-[var(--color-brand-dark)] transition">
                 Retry
               </button>
@@ -249,7 +263,7 @@ export default function HomePage() {
                 />
               ))}
               {hasMore && (
-                <button type="button" onClick={() => fetchPosts(page + 1, sort, false)} disabled={loadingMore}
+                <button type="button" onClick={() => fetchPosts(page + 1, sort, false, debouncedFeedSearch)} disabled={loadingMore}
                   className="w-full py-3 rounded-2xl bg-[var(--color-card)] border border-[var(--color-border)] text-sm font-semibold text-[var(--color-brand)] hover:bg-[var(--color-hover)] transition disabled:opacity-50">
                   {loadingMore ? "Loading…" : "Load more"}
                 </button>
@@ -366,7 +380,9 @@ export default function HomePage() {
         />
       )}
 
-      {searchOpen && <SearchModal onClose={() => setSearchOpen(false)} />}
+      {searchOpen && (
+        <SearchModal onClose={closeSearch} placeholder="Search posts & communities…" />
+      )}
     </div>
   );
 }

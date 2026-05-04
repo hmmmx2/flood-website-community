@@ -12,6 +12,9 @@ import { sessionToAuthUser, getInitials } from "@/lib/auth";
 import { authFetchJson, CommunityRequestError } from "@/lib/fetchJson";
 import type { Post, PagedPosts, Group } from "@/lib/types";
 import { WaveIcon, AlertIcon, InboxIcon } from "@/components/icons";
+import SearchModal from "@/components/SearchModal";
+import { SearchField } from "@/components/ui/search-field";
+import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
 
 type SortKey = "new" | "top";
 
@@ -33,6 +36,9 @@ export default function GroupPage() {
   const [fetchError, setFetchError] = useState(false);
   const [postsError, setPostsError] = useState(false);
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
+  const { searchOpen, openSearch, closeSearch } = useSiteSearchModal();
+  const [feedSearch, setFeedSearch] = useState("");
+  const [debouncedFeedSearch, setDebouncedFeedSearch] = useState("");
 
   const { data: session } = useSession();
   const user = session?.user ? sessionToAuthUser(session.user) : null;
@@ -53,12 +59,22 @@ export default function GroupPage() {
     })();
   }, [slug]);
 
-  const fetchPosts = useCallback(async (p: number, s: SortKey, replace: boolean) => {
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedFeedSearch(feedSearch.trim()), 350);
+    return () => clearTimeout(t);
+  }, [feedSearch]);
+
+  const fetchPosts = useCallback(async (p: number, s: SortKey, replace: boolean, search = "") => {
     if (replace) { setLoading(true); setPostsError(false); } else setLoadingMore(true);
     try {
-      const data = await authFetchJson<PagedPosts>(
-        `/api/posts?page=${p}&size=10&sort=${s}&group=${encodeURIComponent(slug)}`,
-      );
+      const params = new URLSearchParams({
+        page: String(p),
+        size: "10",
+        sort: s,
+        group: slug,
+      });
+      if (search) params.set("search", search);
+      const data = await authFetchJson<PagedPosts>(`/api/posts?${params}`);
       setPosts((prev) =>
         replace
           ? Array.isArray(data.content)
@@ -77,8 +93,13 @@ export default function GroupPage() {
   }, [slug]);
 
   useEffect(() => {
-    fetchPosts(0, sort, true);
-  }, [sort, fetchPosts]);
+    setFeedSearch("");
+    setDebouncedFeedSearch("");
+  }, [slug]);
+
+  useEffect(() => {
+    fetchPosts(0, sort, true, debouncedFeedSearch);
+  }, [sort, debouncedFeedSearch, fetchPosts]);
 
   async function handleJoinToggle() {
     if (!session) {
@@ -188,6 +209,8 @@ export default function GroupPage() {
       <Navbar
         user={user}
         onLogout={() => void signOut({ callbackUrl: "/login" })}
+        onSearchOpen={openSearch}
+        searchPlaceholder={`Search posts in g/${slug}…`}
         breadcrumb={{ label: `g/${slug}` }}
       />
 
@@ -243,6 +266,16 @@ export default function GroupPage() {
             </div>
           )}
 
+          <div className="mb-4">
+            <SearchField
+              value={feedSearch}
+              onValueChange={setFeedSearch}
+              placeholder={`Search posts in g/${slug}…`}
+              label={`Search posts in this community`}
+              className="max-w-xl"
+            />
+          </div>
+
           {/* Sort tabs */}
           <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl flex items-center gap-1 p-1.5 mb-4">
             {(["new", "top"] as const).map(s => (
@@ -280,7 +313,7 @@ export default function GroupPage() {
               </div>
               <h3 className="font-bold text-[var(--color-text)] mb-1">Could not load posts</h3>
               <p className="text-sm text-[var(--color-muted)] mb-4">The server may be starting up. Please try again.</p>
-              <button type="button" onClick={() => fetchPosts(0, sort, true)}
+              <button type="button" onClick={() => fetchPosts(0, sort, true, debouncedFeedSearch)}
                 className="rounded-full bg-[var(--color-brand)] px-5 py-2 text-sm font-bold text-white hover:bg-[var(--color-brand-dark)] transition">
                 Retry
               </button>
@@ -386,6 +419,10 @@ export default function GroupPage() {
           onClose={() => setCreateOpen(false)}
           onCreated={post => setPosts(prev => [post as Post, ...prev])}
         />
+      )}
+
+      {searchOpen && (
+        <SearchModal onClose={closeSearch} placeholder={`Search posts in g/${slug}…`} />
       )}
     </div>
   );

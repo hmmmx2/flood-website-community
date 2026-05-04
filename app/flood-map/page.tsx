@@ -446,7 +446,7 @@ export default function FloodMapPage() {
         </header>
 
         {/* ── Stat cards ───────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           {[
             { label: "Total",    value: stats.totalAll, cls: "text-[var(--color-text)]" },
             { label: "Online",   value: stats.online,   cls: "text-green-600" },
@@ -505,7 +505,7 @@ export default function FloodMapPage() {
           {/* Collapsible body */}
           {panelOpen && (
             <div className="border-t border-[var(--color-border)] px-5 pb-5 pt-4">
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-4 sm:grid-cols-2">
 
                 {/* Search */}
                 <div>

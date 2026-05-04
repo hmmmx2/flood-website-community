@@ -19,9 +19,18 @@ type Props = {
   depth: number;
   onPatch: (c: CommentNode) => void;
   onAdd: (c: Comment) => void;
+  onCommentMutated?: () => void;
 };
 
-export default function CommentItem({ postId, node: n, currentUserId, depth, onPatch, onAdd }: Props) {
+export default function CommentItem({
+  postId,
+  node: n,
+  currentUserId,
+  depth,
+  onPatch,
+  onAdd,
+  onCommentMutated,
+}: Props) {
   const [replyOpen, setReplyOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(n.content);
@@ -58,6 +67,7 @@ export default function CommentItem({ postId, node: n, currentUserId, depth, onP
         authorId: "",
         children: n.children,
       });
+      onCommentMutated?.();
       toast.success("Removed");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed");
@@ -169,6 +179,7 @@ export default function CommentItem({ postId, node: n, currentUserId, depth, onP
               depth={depth + 1}
               onPatch={onPatch}
               onAdd={onAdd}
+              onCommentMutated={onCommentMutated}
             />
           </div>
         )}

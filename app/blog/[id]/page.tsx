@@ -6,9 +6,11 @@ import { useParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import SearchModal from "@/components/SearchModal";
 import { sessionToAuthUser, timeAgo } from "@/lib/auth";
 import { StarIcon, ClockIcon, NewspaperIcon, ArrowLeftIcon, ArrowRightIcon } from "@/components/icons";
 import { fetchJson } from "@/lib/fetchJson";
+import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
 
 type BlogDto = {
   id: string;
@@ -46,6 +48,7 @@ export default function BlogDetailPage() {
   const [blog, setBlog] = useState<BlogDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { searchOpen, openSearch, closeSearch } = useSiteSearchModal();
 
   useEffect(() => {
     if (!id) return;
@@ -67,10 +70,19 @@ export default function BlogDetailPage() {
   ) => (
     <div className="min-h-screen bg-[var(--color-bg)] flex flex-col">
       {opts?.showNav !== false && (
-        <Navbar user={user} onLogout={() => void signOut({ callbackUrl: "/login" })} activeLink="blog" />
+        <Navbar
+          user={user}
+          onLogout={() => void signOut({ callbackUrl: "/login" })}
+          onSearchOpen={openSearch}
+          searchPlaceholder="Search articles & community posts…"
+          activeLink="blog"
+        />
       )}
       {children}
       <Footer />
+      {searchOpen && (
+        <SearchModal onClose={closeSearch} placeholder="Search posts, communities, articles…" />
+      )}
     </div>
   );
 

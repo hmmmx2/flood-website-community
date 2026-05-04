@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import SearchModal from "@/components/SearchModal";
 import PostCard from "@/components/PostCard";
 import CommentSection from "@/components/comments/CommentSection";
 import { useSession, signIn } from "next-auth/react";
@@ -12,6 +13,7 @@ import { sessionToAuthUser } from "@/lib/auth";
 import { authFetchJson } from "@/lib/fetchJson";
 import type { Post } from "@/lib/types";
 import { WaveIcon } from "@/components/icons";
+import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
 
 export default function PostPage() {
   const { id } = useParams<{ id: string }>();
@@ -21,6 +23,9 @@ export default function PostPage() {
   const [post, setPost] = useState<Post | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** Matches GET /comments totalComments so the card badge is not stale vs the list. */
+  const [commentsCountOverride, setCommentsCountOverride] = useState<number | undefined>(undefined);
+  const { searchOpen, openSearch, closeSearch } = useSiteSearchModal();
   // UX-POST01: inline delete confirmation (replaces native confirm())
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
@@ -37,6 +42,10 @@ export default function PostPage() {
   }, [id]);
 
   useEffect(() => { fetchPost(); }, [fetchPost]);
+
+  useEffect(() => {
+    setCommentsCountOverride(undefined);
+  }, [id]);
 
   async function handleLike(postId: string) {
     if (!session) {
@@ -96,6 +105,8 @@ export default function PostPage() {
       )}
       <Navbar
         user={user}
+        onSearchOpen={openSearch}
+        searchPlaceholder="Search posts & communities…"
         breadcrumb={{ label: "Community", href: "/" }}
       />
 
@@ -131,13 +142,22 @@ export default function PostPage() {
               onLike={handleLike}
               onDelete={handleDelete}
               compact={false}
+              commentsCountOverride={commentsCountOverride}
             />
             <div className="mt-8">
-              <CommentSection postId={post.id} currentUserId={user?.id} />
+              <CommentSection
+                postId={post.id}
+                currentUserId={user?.id}
+                onTotalCommentsChange={setCommentsCountOverride}
+              />
             </div>
           </>
         )}
       </main>
+
+      {searchOpen && (
+        <SearchModal onClose={closeSearch} placeholder="Search posts & communities…" />
+      )}
     </div>
   );
 }

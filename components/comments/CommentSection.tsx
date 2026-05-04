@@ -30,9 +30,11 @@ function normalizeComment(raw: unknown): Comment {
 type Props = {
   postId: string;
   currentUserId?: string;
+  /** Fired when we learn total comment rows from the comments API (load / refresh). */
+  onTotalCommentsChange?: (totalComments: number) => void;
 };
 
-export default function CommentSection({ postId, currentUserId }: Props) {
+export default function CommentSection({ postId, currentUserId, onTotalCommentsChange }: Props) {
   const [sort, setSort] = useState<CommentSort>("new");
   const [page, setPage] = useState(0);
   const [flat, setFlat] = useState<Comment[]>([]);
@@ -42,11 +44,33 @@ export default function CommentSection({ postId, currentUserId }: Props) {
 
   const tree = useMemo(() => buildCommentTree(flat), [flat]);
 
+  const publishTotal = useCallback(
+    (n: number) => {
+      onTotalCommentsChange?.(n);
+    },
+    [onTotalCommentsChange],
+  );
+
+  const refreshCommentTotal = useCallback(async () => {
+    const qs = new URLSearchParams({ sort, page: "0", size: "1" });
+    try {
+      const data = await authFetchJson<CommentsPage>(`/api/posts/${postId}/comments?${qs}`);
+      if (typeof data.totalComments === "number") {
+        publishTotal(data.totalComments);
+      }
+    } catch {
+      /* ignore — badge keeps last known value */
+    }
+  }, [postId, sort, publishTotal]);
+
   const fetchPage = useCallback(
     async (p: number, append: boolean) => {
       const qs = new URLSearchParams({ sort, page: String(p), size: "20" });
       const data = await authFetchJson<CommentsPage>(`/api/posts/${postId}/comments?${qs}`);
       const norm = data.comments.map(normalizeComment);
+      if (typeof data.totalComments === "number") {
+        publishTotal(data.totalComments);
+      }
       setFlat((prev) => {
         if (!append) return norm;
         const seen = new Set(prev.map((x) => x.id));
@@ -61,7 +85,7 @@ export default function CommentSection({ postId, currentUserId }: Props) {
       });
       setTotalTop(data.totalTopLevel);
     },
-    [postId, sort],
+    [postId, publishTotal, sort],
   );
 
   useEffect(() => {
@@ -85,6 +109,14 @@ export default function CommentSection({ postId, currentUserId }: Props) {
       return [...prev, c];
     });
   }, []);
+
+  const addComment = useCallback(
+    async (c: Comment) => {
+      upsertComment(c);
+      await refreshCommentTotal();
+    },
+    [refreshCommentTotal, upsertComment],
+  );
 
   async function loadMore() {
     const next = page + 1;
@@ -133,7 +165,11 @@ export default function CommentSection({ postId, currentUserId }: Props) {
       </div>
 
       {currentUserId ? (
-        <CommentForm postId={postId} parentId={null} onCreated={(c) => upsertComment(normalizeComment(c))} />
+        <CommentForm
+          postId={postId}
+          parentId={null}
+          onCreated={(c) => void addComment(normalizeComment(c))}
+        />
       ) : (
         <p className="text-sm text-[var(--color-muted)]">
           <Link href="/login" className="font-semibold text-[var(--color-brand)] hover:underline">
@@ -153,7 +189,8 @@ export default function CommentSection({ postId, currentUserId }: Props) {
             currentUserId={currentUserId}
             depth={0}
             onPatch={patchNode}
-            onAdd={(c) => upsertComment(normalizeComment(c))}
+            onAdd={(c) => void addComment(normalizeComment(c))}
+            onCommentMutated={refreshCommentTotal}
           />
           {flat.length === 0 && (
             <p className="text-center text-sm text-[var(--color-muted)] py-6">No comments yet.</p>

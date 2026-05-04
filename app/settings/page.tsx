@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import Navbar from "@/components/Navbar";
+import SearchModal from "@/components/SearchModal";
 import { useSession, signOut } from "next-auth/react";
 import { sessionToAuthUser, getInitials } from "@/lib/auth";
 import { authFetchJson } from "@/lib/fetchJson";
@@ -14,6 +15,7 @@ import {
   subscribeToPush,
   unsubscribeFromPush,
 } from "@/lib/pushNotifications";
+import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
 
 const CRM_URL = process.env.NEXT_PUBLIC_CRM_URL || "http://localhost:3000";
 
@@ -21,6 +23,7 @@ export default function SettingsPage() {
   const router = useRouter();
   const { data: session, update } = useSession();
   const user = session?.user ? sessionToAuthUser(session.user) : null;
+  const { searchOpen, openSearch, closeSearch } = useSiteSearchModal();
 
   const [activeTab, setActiveTab] = useState<"profile" | "password" | "notifications" | "danger">("profile");
 
@@ -158,7 +161,11 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-[var(--color-bg)]">
-      <Navbar user={user} />
+      <Navbar
+        user={user}
+        onSearchOpen={openSearch}
+        searchPlaceholder="Search posts & communities…"
+      />
 
       <main className="mx-auto max-w-3xl px-4 py-8">
         <div className="mb-6">
@@ -402,6 +409,10 @@ export default function SettingsPage() {
           </div>
         </div>
       </main>
+
+      {searchOpen && (
+        <SearchModal onClose={closeSearch} placeholder="Search posts & communities…" />
+      )}
     </div>
   );
 }

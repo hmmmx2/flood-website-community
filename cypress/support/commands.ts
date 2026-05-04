@@ -185,7 +185,7 @@ Cypress.Commands.add('interceptFeed', () => {
     body: { liked: true, likesCount: 13 },
   }).as('toggleLike');
   cy.intercept('GET', '/api/posts/*/comments*', {
-    body: { comments: [], totalTopLevel: 0, page: 0, size: 20 },
+    body: { comments: [], totalTopLevel: 0, page: 0, size: 20, totalComments: 0 },
   }).as('getComments');
   cy.intercept('POST', '/api/posts/*/comments', (req) => {
     req.reply({ statusCode: 200, body: { id: 'comment-uuid-001', content: req.body?.content ?? '' } });

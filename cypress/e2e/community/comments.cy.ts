@@ -38,6 +38,7 @@ const mockCommentsPage = {
   totalTopLevel: 1,
   page: 0,
   size: 20,
+  totalComments: 1,
 };
 
 describe("Post page — comments", () => {
