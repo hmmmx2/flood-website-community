@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { javaFetch } from "@/lib/javaApi";
+import { withCache, CACHE_TTL } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,17 @@ export async function GET(req: NextRequest) {
     if (group)  params.set("group",  encodeURIComponent(group));
     if (search) params.set("search", encodeURIComponent(search));
 
-    const data = await javaFetch<unknown>(`/community/posts?${params}`, { token });
+    const fetcher = () => javaFetch<unknown>(`/community/posts?${params}`, { token });
+
+    // Skip cache for authenticated users — response includes user-specific likedByMe field
+    let data: unknown;
+    if (token) {
+      data = await fetcher();
+    } else {
+      const cacheKey = `posts:${page}:${sort}:${group}:${search}`;
+      data = await withCache(cacheKey, CACHE_TTL.posts, fetcher);
+    }
+
     return NextResponse.json(data);
   } catch (error) {
     const status = (error as { status?: number }).status ?? 500;

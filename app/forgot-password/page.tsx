@@ -54,12 +54,12 @@ export default function ForgotPasswordPage() {
             </p>
             <Link
               href={`/reset-password?email=${encodeURIComponent(email)}`}
-              className="inline-block w-full text-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1e40af] bg-[#1d4ed8]"
+              className="inline-block w-full text-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--color-brand-dark)] bg-[var(--color-brand)]"
             >
               Enter Reset Code
             </Link>
             <p className="mt-4 text-sm" style={{ color: "var(--color-muted)" }}>
-              <Link href="/login" className="font-semibold hover:opacity-80 text-[#1d4ed8]">
+              <Link href="/login" className="font-semibold hover:opacity-80 text-[var(--color-brand)]">
                 ← Back to Sign In
               </Link>
             </p>
@@ -72,8 +72,7 @@ export default function ForgotPasswordPage() {
             </p>
 
             {error && (
-              <div className="mb-4 rounded-xl px-4 py-3 text-sm border"
-                style={{ background: "rgba(29,78,216,0.08)", borderColor: "rgba(29,78,216,0.3)", color: "#1d4ed8" }}>
+              <div className="mb-4 rounded-xl px-4 py-3 text-sm border bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">
                 {error}
               </div>
             )}
@@ -97,14 +96,14 @@ export default function ForgotPasswordPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1e40af] disabled:opacity-50 disabled:cursor-not-allowed bg-[#1d4ed8]"
+                className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--color-brand-dark)] disabled:opacity-50 disabled:cursor-not-allowed bg-[var(--color-brand)]"
               >
                 {loading ? "Sending…" : "Send Reset Code"}
               </button>
             </form>
 
             <p className="mt-6 text-sm text-center" style={{ color: "var(--color-muted)" }}>
-              <Link href="/login" className="font-semibold hover:opacity-80 text-[#1d4ed8]">
+              <Link href="/login" className="font-semibold hover:opacity-80 text-[var(--color-brand)]">
                 ← Back to Sign In
               </Link>
             </p>

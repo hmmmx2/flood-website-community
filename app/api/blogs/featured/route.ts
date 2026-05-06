@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { javaFetch } from "@/lib/javaApi";
+import { withCache, CACHE_TTL } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const data = await javaFetch("/blogs/featured");
+    const data = await withCache("blogs:featured", CACHE_TTL.blogs, () =>
+      javaFetch("/blogs/featured"),
+    );
     return NextResponse.json(data);
   } catch (err: unknown) {
     const e = err as { message?: string; status?: number };

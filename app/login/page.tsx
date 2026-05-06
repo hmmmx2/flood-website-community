@@ -197,7 +197,7 @@ export default function LoginPage() {
               className="object-cover"
               priority
             />
-            <div className="absolute inset-0" style={{ background: "linear-gradient(135deg, rgba(30,58,138,0.7) 0%, rgba(29,78,216,0.5) 50%, rgba(8,145,178,0.5) 100%)" }} />
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-900/70 via-blue-600/50 to-cyan-600/50 dark:from-zinc-900/90 dark:via-zinc-800/80 dark:to-slate-800/50" />
           </div>
           <div className="relative z-10 flex flex-1 flex-col justify-center items-center text-center px-12">
             <div className="drop-shadow-lg">
@@ -231,10 +231,7 @@ export default function LoginPage() {
                   Sign in to your account to continue
                 </p>
                 {error && (
-                  <div
-                    className="mb-4 rounded-xl px-4 py-3 text-sm border"
-                    style={{ background: "rgba(29,78,216,0.08)", borderColor: "rgba(29,78,216,0.3)", color: "#1d4ed8" }}
-                  >
+                  <div className="mb-4 rounded-xl px-4 py-3 text-sm border bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">
                     {error}
                   </div>
                 )}
@@ -295,15 +292,14 @@ export default function LoginPage() {
                         type="checkbox"
                         checked={rememberMe}
                         onChange={e => setRememberMe(e.target.checked)}
-                        className="h-4 w-4 rounded border-slate-300 text-[#1d4ed8] accent-[#1d4ed8] focus:ring-[#1d4ed8]"
-                        style={{ accentColor: "#1d4ed8" }}
+                        className="h-4 w-4 rounded border-slate-300 accent-[var(--color-brand)]"
                       />
                       <span style={{ color: "var(--color-muted)" }}>Remember me</span>
                     </label>
                     <button
                       type="button"
                       onClick={() => router.push("/forgot-password")}
-                      className="font-semibold transition hover:opacity-80 text-[#1d4ed8]"
+                      className="font-semibold transition hover:opacity-80 text-[var(--color-brand)]"
                     >
                       Forgot password?
                     </button>
@@ -311,7 +307,7 @@ export default function LoginPage() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1e40af] disabled:opacity-50 disabled:cursor-not-allowed bg-[#1d4ed8]"
+                    className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--color-brand-dark)] disabled:opacity-50 disabled:cursor-not-allowed bg-[var(--color-brand)]"
                   >
                     {loading ? "Signing in…" : "Sign In"}
                   </button>
@@ -320,7 +316,7 @@ export default function LoginPage() {
                   Don&apos;t have an account?{" "}
                   <button
                     onClick={() => { setView("register"); setError(""); }}
-                    className="font-semibold transition hover:opacity-80 text-[#1d4ed8]"
+                    className="font-semibold transition hover:opacity-80 text-[var(--color-brand)]"
                     type="button"
                   >
                     Create one
@@ -339,10 +335,7 @@ export default function LoginPage() {
                   Join the FloodWatch community
                 </p>
                 {error && (
-                  <div
-                    className="mb-4 rounded-xl px-4 py-3 text-sm border"
-                    style={{ background: "rgba(29,78,216,0.08)", borderColor: "rgba(29,78,216,0.3)", color: "#1d4ed8" }}
-                  >
+                  <div className="mb-4 rounded-xl px-4 py-3 text-sm border bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">
                     {error}
                   </div>
                 )}
@@ -459,7 +452,7 @@ export default function LoginPage() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1e40af] disabled:opacity-50 disabled:cursor-not-allowed bg-[#1d4ed8]"
+                    className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--color-brand-dark)] disabled:opacity-50 disabled:cursor-not-allowed bg-[var(--color-brand)]"
                   >
                     {loading ? "Creating account…" : "Create Account"}
                   </button>
@@ -468,7 +461,7 @@ export default function LoginPage() {
                   Already have an account?{" "}
                   <button
                     onClick={() => { setView("login"); setError(""); }}
-                    className="font-semibold transition hover:opacity-80 text-[#1d4ed8]"
+                    className="font-semibold transition hover:opacity-80 text-[var(--color-brand)]"
                     type="button"
                   >
                     Sign In

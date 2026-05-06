@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { javaFetch } from "@/lib/javaApi";
+import { withCache, CACHE_TTL } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -20,7 +21,10 @@ export async function GET(req: NextRequest) {
     let path = `/blogs?page=${page}&size=${size}`;
     if (category && category !== "All") path += `&category=${encodeURIComponent(category)}`;
 
-    const data = await javaFetch(path, { token });
+    const cat = (category && category !== "All") ? category : "all";
+    const cacheKey = `blogs:${page}:${size}:${cat}`;
+
+    const data = await withCache(cacheKey, CACHE_TTL.blogs, () => javaFetch(path, { token }));
     return NextResponse.json(data);
   } catch (err: unknown) {
     const e = err as { message?: string; status?: number };

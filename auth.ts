@@ -15,8 +15,8 @@ const ACCESS_TOKEN_MS = 15 * 60 * 1000; // 15 min — matches Spring Boot access
 const AUTH_SECRET = process.env.AUTH_SECRET;
 
 if (process.env.NODE_ENV === "production" && !AUTH_SECRET) {
-  console.warn(
-    "[auth] AUTH_SECRET is not set in production — sessions will fail. Add it in Vercel → Settings → Environment Variables (all scopes) and redeploy.",
+  throw new Error(
+    "[auth] AUTH_SECRET is not set. Add it to Vercel → Settings → Environment Variables (all scopes) and redeploy.",
   );
 }
 
