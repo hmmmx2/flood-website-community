@@ -8,6 +8,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: process.env.VERCEL ? undefined : "standalone",
 
+  // Silence Turbopack warning — empty config means "use Turbopack with defaults"
+  turbopack: {},
+
   async redirects() {
     return [{ source: "/sensors", destination: "/flood-map", permanent: true }];
   },
