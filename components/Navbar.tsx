@@ -20,7 +20,7 @@ export interface NavbarProps {
   /** Placeholder for the navbar search control (per-route context). */
   searchPlaceholder?: string;
   /** Highlights the matching nav link. Pass null to show links without highlight. */
-  activeLink?: "community" | "blog" | "sensors" | null;
+  activeLink?: "community" | "blog" | "sensors" | "feedback" | null;
   /** Breadcrumb shown for inner pages (replaces nav links). */
   breadcrumb?: { label: string; href?: string } | null;
 }
@@ -29,6 +29,7 @@ const NAV_LINKS = [
   { key: "community" as const, href: "/", label: "Community" },
   { key: "blog" as const, href: "/blog", label: "Blog" },
   { key: "sensors" as const, href: "/flood-map", label: "Flood Map" },
+  { key: "feedback" as const, href: "/feedback", label: "Feedback" },
 ];
 
 /* ── tiny inline SVG icons ─────────────────────────────────────────────── */
