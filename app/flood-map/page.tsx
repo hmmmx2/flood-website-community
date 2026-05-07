@@ -190,42 +190,43 @@ export default function FloodMapPage() {
   }
 
   // ── Data fetching ──────────────────────────────────────────────────────────
-  const fetchSensors = useCallback(async (signal?: AbortSignal) => {
+  // Track an in-flight sensor fetch so concurrent triggers (manual refresh
+  // while initial load is still pending, etc.) cancel the older one cleanly
+  // and leave only the latest result in state.
+  const inFlightSensorAbort = useRef<AbortController | null>(null);
+
+  const fetchSensors = useCallback(async () => {
+    // Abort any earlier sensor request — only the newest call wins
+    inFlightSensorAbort.current?.abort();
+    const controller = new AbortController();
+    inFlightSensorAbort.current = controller;
+
     if (isFirstFetch.current) setLoading(true);
     setFetchError(false);
     try {
-      const data = await fetchJson<SensorNodeDto[]>("/api/sensors", { signal });
+      const data = await fetchJson<SensorNodeDto[]>("/api/sensors", { signal: controller.signal });
+      // Guard: if a newer fetch superseded us, don't write stale data
+      if (inFlightSensorAbort.current !== controller) return;
       setNodes(Array.isArray(data) ? data : []);
       setLastFetch(new Date());
       isFirstFetch.current = false;
     } catch (err) {
       if ((err as { name?: string }).name === "AbortError") return;
+      if (inFlightSensorAbort.current !== controller) return;
       setFetchError(true);
     } finally {
-      setLoading(false);
+      if (inFlightSensorAbort.current === controller) {
+        inFlightSensorAbort.current = null;
+        setLoading(false);
+      }
     }
   }, []);
 
-  const fetchFavourites = useCallback(async () => {
-    if (!session) return;
-    try {
-      const data = await authFetchJson<FavouriteNodeDto[]>("/api/favourites");
-      setFavIds(
-        new Set(
-          data
-            .map((f) => f.nodeId)
-            .filter((id): id is string => typeof id === "string" && id.length > 0),
-        ),
-      );
-    } catch {
-      /* non-critical */
-    }
-  }, [session]);
-
+  // Sensor effect — runs ONCE on mount. Doesn't depend on session, so the
+  // NextAuth poll (every 5 min + on window-focus) can no longer retrigger
+  // a full /api/sensors refetch and stomp on in-flight data.
   useEffect(() => {
-    const controller = new AbortController();
-    void fetchSensors(controller.signal);
-    void fetchFavourites();
+    void fetchSensors();
 
     const unsub = subscribeSensorUpdates((raw) => {
       try {
@@ -245,10 +246,42 @@ export default function FloodMapPage() {
     });
 
     return () => {
-      controller.abort();
+      inFlightSensorAbort.current?.abort();
+      inFlightSensorAbort.current = null;
       unsub();
     };
-  }, [fetchSensors, fetchFavourites, subscribeSensorUpdates]);
+    // fetchSensors / subscribeSensorUpdates are both stable (empty-dep useCallback)
+  }, [fetchSensors, subscribeSensorUpdates]);
+
+  // Favourites effect — depends on auth state. Use a stable boolean derived
+  // from session.user.id (NOT the session object reference itself, which
+  // NextAuth replaces on every keepalive poll) to avoid spurious refetches.
+  const sessionUserId = session?.user?.id ?? null;
+  useEffect(() => {
+    if (!sessionUserId) {
+      setFavIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await authFetchJson<FavouriteNodeDto[]>("/api/favourites");
+        if (cancelled) return;
+        setFavIds(
+          new Set(
+            data
+              .map((f) => f.nodeId)
+              .filter((id): id is string => typeof id === "string" && id.length > 0),
+          ),
+        );
+      } catch {
+        /* non-critical */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionUserId]);
 
   // ── Favourite toggle ───────────────────────────────────────────────────────
   const toggleFav = useCallback(
