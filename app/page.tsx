@@ -7,6 +7,7 @@ import PostCard from "@/components/PostCard";
 import CreatePostModal from "@/components/CreatePostModal";
 import SearchModal from "@/components/SearchModal";
 import Footer from "@/components/Footer";
+import LandingPage from "@/components/landing/LandingPage";
 import { SearchField } from "@/components/ui/search-field";
 import { AlertIcon, WaveIcon } from "@/components/icons";
 import { useSession, signOut, signIn } from "next-auth/react";
@@ -19,7 +20,7 @@ import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
 type SortKey = "new" | "top";
 
 export default function HomePage() {
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const user = session?.user ? sessionToAuthUser(session.user) : null;
   const [posts, setPosts] = useState<Post[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -127,6 +128,14 @@ export default function HomePage() {
 
   function handleLogout() {
     signOut({ callbackUrl: "/login" });
+  }
+
+  // Unauthenticated visitors see the marketing landing page (Claude-
+  // editorial style) instead of the community feed. Placed AFTER all
+  // hooks above to satisfy React's Rules of Hooks — hooks must be called
+  // in the same order every render. Signed-in users keep the feed.
+  if (sessionStatus !== "loading" && !session) {
+    return <LandingPage />;
   }
 
   return (
