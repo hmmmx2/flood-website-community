@@ -27,7 +27,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Spring Boot returns 404 if email doesn't exist — surface that cleanly
+    // Spring Boot intentionally returns 200 for unknown emails (anti-enumeration),
+    // so 400 here only fires for true validation failures (e.g. invalid email format).
     if (status === 400) {
       const msg = error instanceof Error ? error.message : null;
       return NextResponse.json(

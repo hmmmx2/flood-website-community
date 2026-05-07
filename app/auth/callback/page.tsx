@@ -12,15 +12,22 @@ function CallbackContent() {
     const at = searchParams.get("at");
     const rt = searchParams.get("rt");
 
-    if (!at) {
-      router.replace("/login");
+    // Both tokens are required — without a refresh token, the resulting
+    // NextAuth session has no way to renew when the access token expires
+    // (15 min) and the user gets silently logged out.
+    if (!at || !rt) {
+      router.replace("/login?error=invalid_session");
       return;
     }
+
+    // Strip tokens from the URL bar before doing the sign-in roundtrip,
+    // so they don't linger in browser history while we wait.
+    window.history.replaceState({}, "", "/auth/callback");
 
     // Validate the provided Spring Boot token against /profile and create a NextAuth session
     signIn("admin-token", {
       accessToken: at,
-      refreshToken: rt ?? "",
+      refreshToken: rt,
       redirect: false,
     })
       .then((result) => {

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, FormEvent, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { signIn } from "next-auth/react";
 import { AuthFooter, AuthTopNav } from "@/components/auth/AuthChrome";
@@ -32,8 +32,14 @@ async function redirectToAdmin(
   window.location.href = `${crmBase}/auth/callback?at=${encodeURIComponent(accessToken)}&rt=${encodeURIComponent(refreshToken)}&u=${u}`;
 }
 
-export default function LoginPage() {
+const ERROR_MESSAGES: Record<string, string> = {
+  invalid_session: "Your session expired or was invalid. Please sign in again.",
+  CredentialsSignin: "Invalid email or password.",
+};
+
+function LoginPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [view, setView] = useState<View>("login");
 
   // Login
@@ -52,6 +58,13 @@ export default function LoginPage() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Surface the ?error=… code from /auth/callback redirects, NextAuth
+  // failures, etc. so the user sees why they got bounced back to login.
+  useEffect(() => {
+    const code = searchParams.get("error");
+    if (code) setError(ERROR_MESSAGES[code] ?? "Sign in failed. Please try again.");
+  }, [searchParams]);
 
   async function handleLogin(e: FormEvent) {
     e.preventDefault();
@@ -475,5 +488,19 @@ export default function LoginPage() {
 
       <AuthFooter />
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center" style={{ background: "var(--color-bg)" }}>
+          <p style={{ color: "var(--color-muted)" }}>Loading…</p>
+        </div>
+      }
+    >
+      <LoginPageInner />
+    </Suspense>
   );
 }

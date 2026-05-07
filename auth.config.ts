@@ -19,7 +19,16 @@ export default {
     authorized({ auth, request }) {
       const path = request.nextUrl.pathname;
       const isAuthed = !!auth?.user;
-      if ((path === "/login" || path === "/register") && isAuthed) {
+      // Authenticated users have no business on the public auth pages —
+      // bounce them home so they can't accidentally re-trigger reset flows
+      // for themselves or look at stale "create account" forms.
+      if (
+        isAuthed &&
+        (path === "/login" ||
+          path === "/register" ||
+          path === "/forgot-password" ||
+          path === "/reset-password")
+      ) {
         return Response.redirect(new URL("/", request.nextUrl));
       }
       if (path.startsWith("/settings") && !isAuthed) {

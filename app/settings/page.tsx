@@ -17,8 +17,6 @@ import {
 } from "@/lib/pushNotifications";
 import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
 
-const CRM_URL = process.env.NEXT_PUBLIC_CRM_URL || "http://localhost:3000";
-
 export default function SettingsPage() {
   const router = useRouter();
   const { data: session, update } = useSession();
@@ -150,7 +148,10 @@ export default function SettingsPage() {
   }
 
   function handleSignOut() {
-    signOut({ callbackUrl: `${CRM_URL}/login` });
+    // Customers always sign out back to the community login page.
+    // Previously this pointed at `${CRM_URL}/login`, which just bounced
+    // back here through the CRM redirect — pointless extra hop.
+    signOut({ callbackUrl: "/login" });
   }
 
   if (!user) return (
