@@ -807,7 +807,13 @@ export default function FloodMapPage() {
             <aside className="flex flex-col gap-5">
 
               {/* Live monitoring */}
-              <div className="bg-[var(--color-brand)] rounded-2xl p-4 text-white">
+              <div
+                className="rounded-2xl p-4 text-white shadow-lg ring-1 ring-white/10"
+                style={{
+                  background: "var(--gradient-hero)",
+                  boxShadow: "0 10px 30px -12px var(--color-brand-glow), 0 0 0 1px rgba(255,255,255,0.06) inset",
+                }}
+              >
                 <div className="flex items-center gap-2 mb-3">
                   <ActivityIcon className="h-5 w-5" />
                   <h3 className="font-bold text-sm">Live Monitoring</h3>
