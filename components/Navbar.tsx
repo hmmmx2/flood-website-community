@@ -117,6 +117,26 @@ export default function Navbar({
     return () => document.removeEventListener("mousedown", handler);
   }, [mobileOpen]);
 
+  // Lock body scroll while the mobile drawer is open
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [mobileOpen]);
+
+  // Close drawer on Escape
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileOpen(false);
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [mobileOpen]);
+
   function logout() {
     setUserMenuOpen(false);
     setMobileOpen(false);
@@ -289,68 +309,108 @@ export default function Navbar({
           </div>
         )}
 
-        {/* ── Mobile hamburger ─────────────────────────────────────────── */}
-        <div className="relative sm:hidden flex-shrink-0" ref={mobileRef}>
+        {/* ── Mobile hamburger button ─────────────────────────────────── */}
+        <div className="sm:hidden flex-shrink-0">
           <button
             type="button"
             onClick={() => setMobileOpen((o) => !o)}
-            className="flex items-center justify-center h-9 w-9 rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-hover)] transition"
-            aria-label="Toggle menu"
+            className="flex items-center justify-center h-10 w-10 rounded-xl text-[var(--color-text)] hover:bg-[var(--color-hover)] transition active:scale-95"
+            aria-label={mobileOpen ? "Close menu" : "Open menu"}
             aria-expanded={mobileOpen}
+            aria-controls="mobile-nav-drawer"
           >
             {mobileOpen ? <XIcon /> : <HamburgerIcon />}
           </button>
+        </div>
+      </div>
 
-          {mobileOpen && (
-            <div className="absolute right-0 top-full mt-1 w-64 bg-[var(--color-card)] rounded-2xl border border-[var(--color-border)] shadow-xl overflow-hidden z-50">
-              {/* Nav links section */}
+      {/* ── Mobile drawer (rendered outside the inner container so it
+            spans the full viewport width and isn't clipped) ──────────── */}
+      {mobileOpen && (
+        <>
+          {/* Backdrop */}
+          <button
+            type="button"
+            aria-label="Close menu"
+            onClick={() => setMobileOpen(false)}
+            className="sm:hidden fixed inset-0 top-14 z-40 bg-black/50 backdrop-blur-sm transition-opacity"
+          />
+          {/* Drawer */}
+          <div
+            ref={mobileRef}
+            id="mobile-nav-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Main menu"
+            className="sm:hidden fixed left-0 right-0 top-14 z-50 origin-top bg-[var(--color-card)] border-b border-[var(--color-border)] shadow-2xl max-h-[calc(100dvh-3.5rem)] overflow-y-auto"
+            style={{ animation: "navDrawerIn 220ms cubic-bezier(0.16, 1, 0.3, 1)" }}
+          >
+            <div className="px-4 py-4 space-y-4">
+
+              {/* Navigation section */}
               {showNavLinks && (
-                <div className="p-2 border-b border-[var(--color-border)]">
-                  {NAV_LINKS.map((link) => (
-                    <Link
-                      key={link.key}
-                      href={link.href}
-                      onClick={() => setMobileOpen(false)}
-                      className={`flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                        activeLink === link.key
-                          ? "text-[var(--color-brand)] bg-[var(--color-pill-bg)] font-semibold"
-                          : "text-[var(--color-text)] hover:bg-[var(--color-hover)]"
-                      }`}
-                    >
-                      {link.label}
-                    </Link>
-                  ))}
+                <div>
+                  <p className="px-2 mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">
+                    Navigate
+                  </p>
+                  <nav className="flex flex-col gap-0.5">
+                    {NAV_LINKS.map((link) => (
+                      <Link
+                        key={link.key}
+                        href={link.href}
+                        onClick={() => setMobileOpen(false)}
+                        className={`flex items-center justify-between px-3 py-3 rounded-xl text-base transition-colors ${
+                          activeLink === link.key
+                            ? "text-[var(--color-brand)] bg-[var(--color-brand-light)] font-semibold dark:bg-[var(--color-hover)]"
+                            : "text-[var(--color-text)] font-medium hover:bg-[var(--color-hover)] active:bg-[var(--color-hover)]"
+                        }`}
+                      >
+                        <span className="truncate">{link.label}</span>
+                        {activeLink === link.key && (
+                          <span className="h-2 w-2 rounded-full bg-[var(--color-brand)] flex-shrink-0" aria-hidden />
+                        )}
+                      </Link>
+                    ))}
+                  </nav>
                 </div>
               )}
 
-              {/* Auth section */}
+              {/* Account section */}
               {user ? (
-                <div className="p-2">
-                  <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-[var(--color-hover)] mb-1">
+                <div>
+                  <p className="px-2 mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">
+                    Account
+                  </p>
+                  <div className="flex items-center gap-3 px-3 py-3 rounded-xl bg-[var(--color-pill-bg)] mb-1">
                     {user.avatarUrl ? (
-                      <div className="h-7 w-7 rounded-full overflow-hidden flex-shrink-0 border border-[var(--color-border)]">
+                      <div className="h-9 w-9 rounded-full overflow-hidden flex-shrink-0 border border-[var(--color-border)]">
                         <Image
                           src={user.avatarUrl}
                           alt={user.displayName}
-                          width={28}
-                          height={28}
+                          width={36}
+                          height={36}
                           className="h-full w-full object-cover"
                           unoptimized
                         />
                       </div>
                     ) : (
-                      <div className="h-7 w-7 rounded-full bg-[var(--color-brand)] flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0">
+                      <div className="h-9 w-9 rounded-full bg-[var(--color-brand)] flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
                         {getInitials(user.displayName)}
                       </div>
                     )}
-                    <span className="text-sm font-semibold text-[var(--color-text)] truncate">
-                      {user.displayName}
-                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-[var(--color-text)] truncate">
+                        {user.displayName}
+                      </p>
+                      <p className="text-xs text-[var(--color-muted)] truncate">
+                        {user.email ?? "Signed in"}
+                      </p>
+                    </div>
                   </div>
                   <Link
                     href="/settings"
                     onClick={() => setMobileOpen(false)}
-                    className="flex items-center gap-2.5 px-3 py-2.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-hover)] transition font-medium rounded-xl"
+                    className="flex items-center gap-3 px-3 py-3 text-base text-[var(--color-text)] hover:bg-[var(--color-hover)] transition font-medium rounded-xl"
                   >
                     <SettingsIcon />
                     Settings
@@ -358,34 +418,39 @@ export default function Navbar({
                   <button
                     type="button"
                     onClick={logout}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-red-500 hover:bg-red-500/10 dark:hover:bg-red-950/40 transition font-semibold rounded-xl"
+                    className="w-full flex items-center gap-3 px-3 py-3 text-base text-red-500 hover:bg-red-500/10 dark:hover:bg-red-950/40 transition font-semibold rounded-xl"
                   >
                     <SignOutIcon />
                     Sign Out
                   </button>
                 </div>
               ) : (
-                <div className="p-3 flex flex-col gap-2">
-                  <Link
-                    href="/login"
-                    onClick={() => setMobileOpen(false)}
-                    className="block w-full rounded-xl border border-[var(--color-brand)] px-4 py-2.5 text-sm font-bold text-[var(--color-brand)] hover:bg-[var(--color-hover)] transition text-center"
-                  >
-                    Log In
-                  </Link>
-                  <Link
-                    href="/register"
-                    onClick={() => setMobileOpen(false)}
-                    className="block w-full rounded-xl bg-[var(--color-brand)] px-4 py-2.5 text-sm font-bold text-white hover:bg-[var(--color-brand-dark)] transition text-center"
-                  >
-                    Sign Up
-                  </Link>
+                <div>
+                  <p className="px-2 mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">
+                    Account
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    <Link
+                      href="/register"
+                      onClick={() => setMobileOpen(false)}
+                      className="block w-full rounded-xl bg-[var(--color-brand)] px-4 py-3 text-base font-bold text-white hover:bg-[var(--color-brand-dark)] transition text-center shadow-sm"
+                    >
+                      Sign Up
+                    </Link>
+                    <Link
+                      href="/login"
+                      onClick={() => setMobileOpen(false)}
+                      className="block w-full rounded-xl border border-[var(--color-border)] px-4 py-3 text-base font-semibold text-[var(--color-text)] hover:bg-[var(--color-hover)] transition text-center"
+                    >
+                      Log In
+                    </Link>
+                  </div>
                 </div>
               )}
             </div>
-          )}
-        </div>
-      </div>
+          </div>
+        </>
+      )}
     </header>
   );
 }
