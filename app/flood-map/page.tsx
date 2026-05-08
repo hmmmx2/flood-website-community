@@ -780,7 +780,7 @@ export default function FloodMapPage() {
                           </p>
                         ) : (
                           <ul
-                            className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 snap-x snap-mandatory"
+                            className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 max-h-[280px] overflow-y-auto pr-1"
                             style={{ scrollbarWidth: "thin" }}
                           >
                             {items.map(({ n, d }) => {
@@ -789,7 +789,7 @@ export default function FloodMapPage() {
                               return (
                                 <li
                                   key={n.id}
-                                  className="flex-shrink-0 w-[180px] snap-start rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-2.5 transition-colors hover:border-[var(--color-brand)]"
+                                  className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-2.5 transition-colors hover:border-[var(--color-brand)]"
                                 >
                                   <div className="flex items-start justify-between gap-1.5 mb-1.5">
                                     <span
