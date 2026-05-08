@@ -5,6 +5,7 @@ import Navbar from "@/components/Navbar";
 import SearchModal from "@/components/SearchModal";
 import { SearchField } from "@/components/ui/search-field";
 import NodeMap, { type MapNode, type FloodLevel, getMarkerColor, STATUS_HEX } from "@/components/NodeMap";
+import SavedLocationsPanel from "@/components/SavedLocationsPanel";
 import toast from "react-hot-toast";
 import { useSession, signOut, signIn } from "next-auth/react";
 import { sessionToAuthUser } from "@/lib/auth";
@@ -758,6 +759,26 @@ export default function FloodMapPage() {
 
             {/* ── Right sidebar ─────────────────────────────────────────────── */}
             <aside className="flex flex-col gap-5">
+
+              {/* Saved Locations — multi-pin alert radii (Phase 3).
+                  Only render once a session is established; anonymous
+                  visitors see nothing here (the BFF would 401 anyway). */}
+              {user && (
+                <SavedLocationsPanel
+                  onFocusLocation={(lat, lng) => {
+                    // Find the closest sensor and focus the map on it,
+                    // since NodeMap focuses by node id rather than raw
+                    // coordinate. Falls back to no-op if no sensors are
+                    // loaded yet.
+                    if (nodes.length === 0) return;
+                    const closest = nodes.reduce((best, n) => {
+                      const d = Math.hypot(n.latitude - lat, n.longitude - lng);
+                      return d < best.d ? { d, n } : best;
+                    }, { d: Infinity, n: nodes[0] });
+                    focusNode(closest.n.id);
+                  }}
+                />
+              )}
 
               {/* Live monitoring */}
               <div
