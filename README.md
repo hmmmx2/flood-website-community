@@ -6,7 +6,7 @@
 ![PWA](https://img.shields.io/badge/PWA-Web_Push-orange?logo=pwa)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-**Public community portal for FloodWatch — where Sarawak residents stay informed and connected during flood events.**
+**Public community portal for FloodWatch — where Sabah residents stay informed and connected during flood events.**
 
 ## Overview
 
@@ -239,4 +239,4 @@ This project is licensed under the [MIT License](../LICENSE).
 
 ---
 
-Part of the **FloodWatch** flood monitoring system for Sarawak, Malaysia.
+Part of the **FloodWatch** flood monitoring system for Sabah, Malaysia.

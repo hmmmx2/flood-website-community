@@ -20,7 +20,7 @@ describe('Community Feed', () => {
       cy.wait('@getPosts');
       cy.waitForPageLoad();
 
-      cy.contains('Flood situation near Sungai Sarawak').should('be.visible');
+      cy.contains('Flood situation near Sungai Sabah').should('be.visible');
       cy.contains('Emergency supplies available at community centre').should('be.visible');
     });
 

@@ -378,8 +378,10 @@ export default function FloodMapPage() {
     if (filterStatuses.size > 0) r = r.filter(n => filterStatuses.has(nodeStatusKey(n)));
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
+      // Search excludes nodeId — residents shouldn't have to interact with
+      // technical hardware IDs. Match against location, area, state, and
+      // (when geocoding lands) the resolved address.
       r = r.filter(n =>
-        n.nodeId.toLowerCase().includes(q) ||
         (n.name     ?? "").toLowerCase().includes(q) ||
         (n.location ?? "").toLowerCase().includes(q) ||
         (n.area     ?? "").toLowerCase().includes(q) ||
@@ -455,7 +457,7 @@ export default function FloodMapPage() {
           <div>
             <h1 className="text-2xl font-bold text-[var(--color-text)]">Flood Map</h1>
             <p className="text-sm text-[var(--color-muted)] mt-0.5">
-              Live map and node list — real-time IoT water levels across Sarawak. Filter by state, city, or status.
+              Real-time IoT water levels across Sabah. Click any marker for details, or filter by district, area, or severity.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -478,20 +480,10 @@ export default function FloodMapPage() {
           </div>
         </header>
 
-        {/* ── Stat cards ───────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-3">
-          {[
-            { label: "Total",    value: stats.totalAll, cls: "text-[var(--color-text)]" },
-            { label: "Online",   value: stats.online,   cls: "text-green-600" },
-            { label: "Warning",  value: stats.warning,  cls: "text-amber-500" },
-            { label: "Critical", value: stats.critical, cls: "text-red-600" },
-          ].map(s => (
-            <div key={s.label} className={`${card} p-3 text-center`}>
-              <p className="text-xs text-[var(--color-muted)] uppercase tracking-wide">{s.label}</p>
-              <p className={`text-xl font-bold mt-0.5 ${s.cls}`}>{s.value}</p>
-            </div>
-          ))}
-        </div>
+        {/* The four KPI summary cards (Total / Online / Warning / Critical)
+            previously lived here. They were redundant with the right-side
+            "Live Monitoring" card on the same page, so they've been removed
+            to declutter the UI. The map is the single source of truth now. */}
 
         {/* ── Filter panel ─────────────────────────────────────────────────── */}
         <div className={card}>
@@ -547,7 +539,7 @@ export default function FloodMapPage() {
                     showLabel
                     value={searchQuery}
                     onValueChange={setSearchQuery}
-                    placeholder="Node ID, location, area…"
+                    placeholder="Search by area, district, or river…"
                     size="sm"
                   />
                 </div>
@@ -700,9 +692,14 @@ export default function FloodMapPage() {
                       Recently Updated
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      {recentlyUpdated.map((node, i) => (
+                      {recentlyUpdated.map((node, i) => {
+                        // Render the human-readable location (area falls back to
+                        // location, then to "Sensor"), NOT the technical nodeId.
+                        // Residents shouldn't have to interact with hardware IDs.
+                        const placeLabel = node.area || node.location || "Sensor";
+                        return (
                         <button key={node.id} type="button" onClick={() => focusNode(node.id)}
-                          title={`Jump to ${node.nodeId}${node.location ? ` · ${node.location}` : ""}`}
+                          title={`Jump to ${placeLabel}${node.location && node.location !== placeLabel ? ` · ${node.location}` : ""}`}
                           className="group flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-input-bg)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-all hover:border-amber-400 hover:bg-amber-50"
                         >
                           <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold ${
@@ -711,15 +708,15 @@ export default function FloodMapPage() {
                             {i + 1}
                           </span>
                           <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ backgroundColor: statusDotHex(node) }} />
-                          <span>{node.nodeId}</span>
-                          {node.area && <span className="text-[var(--color-muted)]">· {node.area}</span>}
+                          <span>{placeLabel}</span>
                           {node.lastUpdated && (
                             <span className="text-[10px] text-[var(--color-muted)]">
                               {formatTimeAgo(node.lastUpdated)}
                             </span>
                           )}
                         </button>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -747,93 +744,13 @@ export default function FloodMapPage() {
                 </div>
               </article>
 
-              {/* All nodes grid */}
-              <article className={card + " p-5"}>
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h2 className="text-base font-semibold text-[var(--color-text)]">All Sensor Nodes</h2>
-                    <p className="text-xs text-[var(--color-muted)]">
-                      Click any node to navigate the map · star to save to Favourites
-                    </p>
-                  </div>
-                  <span className="rounded-full bg-[var(--color-input-bg)] px-2.5 py-1 text-xs font-medium text-[var(--color-muted)]">
-                    {stats.total}{activeFilterCount > 0 ? ` / ${stats.totalAll}` : ""} nodes
-                  </span>
-                </div>
-
-                {filteredNodes.length === 0 ? (
-                  <div className="flex flex-col items-center gap-3 rounded-2xl bg-[var(--color-input-bg)] py-12">
-                    <FilterIcon className="h-10 w-10 text-[var(--color-border)]" />
-                    <div className="text-center">
-                      <p className="text-sm font-semibold text-[var(--color-text)]">
-                        {nodes.length === 0
-                          ? "No sensor nodes in the database yet"
-                          : "No nodes match your filters"}
-                      </p>
-                      <p className="mt-1 text-xs text-[var(--color-muted)]">
-                        {nodes.length === 0
-                          ? "Nodes appear after the first device ingest, or once your administrator has registered them."
-                          : "Try broadening your criteria or clearing all filters."}
-                      </p>
-                    </div>
-                    {nodes.length > 0 && (
-                      <button type="button" onClick={clearAllFilters}
-                        className="rounded-lg bg-[var(--color-brand)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--color-brand-dark)] transition">
-                        Clear Filters
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {filteredNodes.map(node => {
-                      const isFav = favIds.has(node.nodeId);
-                      return (
-                        <div
-                          key={node.id}
-                          className={`group relative flex items-center gap-2 rounded-2xl border px-3 py-2.5 text-xs transition-colors ${
-                            isFav
-                              ? "border-amber-200 bg-amber-50"
-                              : "border-transparent bg-[var(--color-input-bg)] hover:bg-[var(--color-hover)]"
-                          }`}
-                        >
-                          <span className={`h-2 w-2 flex-shrink-0 rounded-full`}
-                            style={{ backgroundColor: markerHex(node) }} />
-                          <div
-                            className="min-w-0 flex-1 cursor-pointer"
-                            onClick={() => focusNode(node.id)}
-                            title={`Navigate to ${node.nodeId} on map`}
-                          >
-                            <p className="truncate font-semibold text-[var(--color-text)] group-hover:text-[var(--color-brand)] group-hover:underline transition-colors">
-                              {node.nodeId}
-                            </p>
-                            {(node.location || node.area) && (
-                              <p className="truncate text-[10px] leading-tight text-[var(--color-muted)]">
-                                {[node.location, node.area].filter(Boolean).join(" · ")}
-                              </p>
-                            )}
-                          </div>
-                          <MapPinIcon className="h-3 w-3 flex-shrink-0 text-[var(--color-brand)] opacity-0 group-hover:opacity-60 transition-opacity" />
-                          <span className="flex-shrink-0 font-mono text-[10px] text-[var(--color-muted)]">
-                            {node.status === "inactive" ? "—" : WATER_M[node.currentLevel]}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => void toggleFav(node.nodeId)}
-                            title={isFav ? "Remove favourite" : "Add to favourites"}
-                            className={`flex-shrink-0 transition-colors ${
-                              isFav
-                                ? "text-amber-400 hover:text-amber-500"
-                                : "opacity-0 group-hover:opacity-100 text-[var(--color-border)] hover:text-amber-400"
-                            }`}
-                          >
-                            <StarIcon filled={isFav} className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </article>
+              {/* The full "All Sensor Nodes" grid that sat under the map
+                  has been removed. The map is now the single interface
+                  for sensor lookup; users click markers directly to read
+                  individual nodes, and "Recently updated" + Favourites
+                  cover the at-a-glance use cases. Any node we still want
+                  to surface (recently updated, favourited) is visible
+                  above the map or in the right-hand panel. */}
             </div>
 
             {/* ── Right sidebar ─────────────────────────────────────────────── */}
@@ -852,7 +769,7 @@ export default function FloodMapPage() {
                   <h3 className="font-bold text-sm">Live Monitoring</h3>
                 </div>
                 <p className="text-sm text-white/85 mb-4">
-                  Tracking {stats.totalAll} sensor nodes across Sarawak in real-time.
+                  Tracking {stats.totalAll} sensor nodes across Sabah in real-time.
                 </p>
                 <div className="space-y-2 text-sm">
                   <div className="flex items-center justify-between">
@@ -917,7 +834,13 @@ export default function FloodMapPage() {
                             style={{ backgroundColor: markerHex(node) }} />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5">
-                              <p className="truncate text-xs font-semibold text-[var(--color-text)] group-hover:text-[var(--color-brand)] transition-colors">{node.nodeId}</p>
+                              {/* Show the human-readable place name (area / location)
+                                  instead of the technical nodeId so residents see
+                                  "Petra Jaya" not "102503180". toggleFav() still
+                                  uses node.nodeId under the hood. */}
+                              <p className="truncate text-xs font-semibold text-[var(--color-text)] group-hover:text-[var(--color-brand)] transition-colors">
+                                {node.area || node.location || "Saved sensor"}
+                              </p>
                               {isFiltered && (
                                 <span className="flex-shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-400 border border-slate-200">
                                   filtered
@@ -927,9 +850,9 @@ export default function FloodMapPage() {
                             <p className="text-[10px] text-[var(--color-muted)]">
                               {statusText(node)} · {node.status === "inactive" ? "—" : WATER_M[node.currentLevel]}
                             </p>
-                            {(node.location || node.area) && (
+                            {node.location && node.area && node.location !== node.area && (
                               <p className="mt-0.5 truncate text-[9px] text-[var(--color-muted)]/70">
-                                {[node.location, node.area].filter(Boolean).join(" · ")}
+                                {node.location}
                               </p>
                             )}
                           </div>
@@ -953,7 +876,7 @@ export default function FloodMapPage() {
               <div className={card + " p-4"}>
                 <h3 className="text-base font-semibold text-[var(--color-text)]">Status Legend</h3>
                 <p className="text-xs text-[var(--color-muted)] mt-0.5 mb-4">
-                  Sarawak flood SOP water levels.
+                  Sabah flood SOP water levels.
                 </p>
                 <ul className="space-y-3">
                   {[

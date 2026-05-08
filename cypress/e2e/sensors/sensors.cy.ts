@@ -93,7 +93,7 @@ describe('Sensors Page', () => {
       page.visit();
       page.waitForData();
 
-      cy.contains(/Sungai Sarawak|Kuching/i).should('exist');
+      cy.contains(/Sungai Sabah|Kuching/i).should('exist');
     });
   });
 

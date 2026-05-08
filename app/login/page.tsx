@@ -227,7 +227,7 @@ function LoginPageInner() {
               <Image src="/images/logo.png" alt="Pop Up Advertising And Information Enterprise" width={100} height={100} className="mx-auto mb-6" priority />
               <h1 className="text-3xl font-bold text-white mb-3">FloodWatch Community</h1>
               <p className="text-base text-white/90 max-w-sm mx-auto">
-                Real-time flood alerts and community updates for Sarawak, powered by IoT sensors.
+                Real-time flood alerts and community updates for Sabah, powered by IoT sensors.
               </p>
             </div>
           </div>

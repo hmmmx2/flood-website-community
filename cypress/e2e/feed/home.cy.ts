@@ -68,7 +68,7 @@ describe('Home Feed', () => {
       page.visit();
       page.waitForFeed();
 
-      page.assertPostVisible('Flood situation near Sungai Sarawak');
+      page.assertPostVisible('Flood situation near Sungai Sabah');
       page.assertPostVisible('Emergency supplies available at community centre');
     });
 
