@@ -332,17 +332,18 @@ export default function FloodMapPage() {
   );
 
   // For each saved place, compute the list of sensors inside its radius —
-  // sorted by distance. Powers the "Nodes in Radius" sidebar card.
+  // sorted by distance. Respects all active filters (state, area, status,
+  // search) so the panel stays in sync with the rest of the map.
   const nodesByPlace = useMemo(() => {
     if (savedLocations.length === 0) return [];
     return savedLocations.map(place => {
-      const matched = nodes
+      const matched = filteredNodes
         .map(n => ({ n, d: haversineKm(place.latitude, place.longitude, n.latitude, n.longitude) }))
         .filter(({ d }) => d <= place.alertRadiusKm)
         .sort((a, b) => a.d - b.d);
       return { place, items: matched };
     });
-  }, [savedLocations, nodes]);
+  }, [savedLocations, filteredNodes]);
 
   // ── Stats ──────────────────────────────────────────────────────────────────
   const stats = useMemo(() => ({
@@ -628,13 +629,87 @@ export default function FloodMapPage() {
                 </div>
               </article>
 
-              {/* The full "All Sensor Nodes" grid that sat under the map
-                  has been removed. The map is now the single interface
-                  for sensor lookup; users click markers directly to read
-                  individual nodes, and "Recently updated" + Favourites
-                  cover the at-a-glance use cases. Any node we still want
-                  to surface (recently updated, favourited) is visible
-                  above the map or in the right-hand panel. */}
+              {/* Nodes in Radius — for each saved place, lists sensors
+                  inside its alert radius, sorted by distance. Sits below
+                  the map so the relationship to the saved-place circles
+                  drawn on the map is visually obvious. */}
+              {user && nodesByPlace.length > 0 && (
+                <div className={card + " p-4"}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--color-text)]">
+                        Nodes in Radius
+                      </h3>
+                      <p className="text-[11px] text-[var(--color-muted)] mt-0.5">
+                        Sensors inside each of your saved places{activeFilterCount > 0 ? " (filtered)" : ""}.
+                      </p>
+                    </div>
+                    {activeFilterCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={clearAllFilters}
+                        className="rounded-full bg-[var(--color-input-bg)] px-3 py-1 text-[11px] font-semibold text-[var(--color-brand)] hover:bg-[var(--color-hover)]"
+                      >
+                        Clear filters
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {nodesByPlace.map(({ place, items }) => (
+                      <div
+                        key={place.id}
+                        className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-input-bg)] p-3"
+                      >
+                        <div className="mb-2 flex items-center justify-between">
+                          <p className="text-xs font-semibold text-[var(--color-text)] truncate">
+                            📍 {place.label}
+                          </p>
+                          <span className="rounded-full bg-[var(--color-card)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-muted)] border border-[var(--color-border)]">
+                            {items.length} · {place.alertRadiusKm} km
+                          </span>
+                        </div>
+                        {items.length === 0 ? (
+                          <p className="rounded-lg bg-[var(--color-card)] px-3 py-2 text-[11px] text-[var(--color-muted)]">
+                            No sensors within the radius{activeFilterCount > 0 ? " match the active filters" : ""}.
+                          </p>
+                        ) : (
+                          <ul className="space-y-1.5">
+                            {items.slice(0, 6).map(({ n, d }) => (
+                              <li key={n.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => focusOnPoint(n.latitude, n.longitude, 14)}
+                                  className="group flex w-full items-center gap-2 rounded-lg border border-transparent bg-[var(--color-card)] px-2.5 py-2 text-left transition-colors hover:border-[var(--color-brand)]"
+                                >
+                                  <span
+                                    className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                                    style={{ backgroundColor: nodeStatusHex(n) }}
+                                    aria-hidden
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-xs font-semibold text-[var(--color-text)]">
+                                      {n.area || n.location || "Sensor"}
+                                    </p>
+                                    <p className="truncate text-[10px] text-[var(--color-muted)]">
+                                      {nodeStatusLabel(n)} · {d.toFixed(1)} km
+                                    </p>
+                                  </div>
+                                </button>
+                              </li>
+                            ))}
+                            {items.length > 6 && (
+                              <li className="text-[10px] text-[var(--color-muted)] pl-1">
+                                +{items.length - 6} more
+                              </li>
+                            )}
+                          </ul>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* ── Right sidebar ─────────────────────────────────────────────── */}
@@ -655,7 +730,9 @@ export default function FloodMapPage() {
                 />
               )}
 
-              {/* Live monitoring */}
+              {/* Live monitoring — clicking Warning / Critical / Offline
+                  toggles the corresponding status filter. Numbers reflect
+                  whatever filters are currently active. */}
               <div
                 className="rounded-2xl p-4 text-white shadow-lg ring-1 ring-white/10"
                 style={{
@@ -668,90 +745,61 @@ export default function FloodMapPage() {
                   <h3 className="font-bold text-sm">Live Monitoring</h3>
                 </div>
                 <p className="text-sm text-white/85 mb-4">
-                  Tracking {stats.totalAll} sensor nodes across Sabah in real-time.
+                  {activeFilterCount > 0
+                    ? <>Showing <strong>{stats.total}</strong> of {stats.totalAll} sensors after filters.</>
+                    : <>Tracking <strong>{stats.totalAll}</strong> sensor nodes across Sabah in real-time.</>}
                 </p>
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-white/80">Online</span>
-                    <span className="font-bold">{stats.online}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-white/80">Warning</span>
-                    <span className="font-bold text-amber-300">{stats.warning}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-white/80">Critical</span>
-                    <span className="font-bold text-red-300">{stats.critical}</span>
-                  </div>
+                <div className="space-y-1.5 text-sm">
+                  {([
+                    { key: "online",   label: "Online",   value: stats.online,   tone: "bg-white/15 text-white" },
+                    { key: "normal",   label: "Normal",   value: stats.normal,   tone: "bg-yellow-300/15 text-yellow-200" },
+                    { key: "warning",  label: "Warning",  value: stats.warning,  tone: "bg-amber-300/15 text-amber-200" },
+                    { key: "critical", label: "Critical", value: stats.critical, tone: "bg-red-300/15 text-red-200" },
+                    { key: "offline",  label: "Offline",  value: stats.offline,  tone: "bg-white/10 text-white/80" },
+                  ] as const).map(row => {
+                    // "Online" is informational (no equivalent single status).
+                    // The other rows toggle the matching status filter.
+                    const filterKey = row.key === "online" ? null : (row.key as StatusKey);
+                    const isActive  = filterKey ? filterStatuses.has(filterKey) : false;
+                    const clickable = filterKey != null;
+                    return (
+                      <button
+                        key={row.key}
+                        type="button"
+                        disabled={!clickable}
+                        onClick={() => filterKey && toggleStatus(filterKey)}
+                        className={`flex w-full items-center justify-between rounded-xl px-3 py-2 transition ${
+                          clickable
+                            ? "cursor-pointer hover:bg-white/10 " + (isActive ? "bg-white/15 ring-1 ring-white/30" : "")
+                            : "cursor-default"
+                        }`}
+                        aria-pressed={clickable ? isActive : undefined}
+                        title={clickable
+                          ? (isActive ? `Stop filtering by ${row.label.toLowerCase()}` : `Show only ${row.label.toLowerCase()} sensors`)
+                          : undefined}
+                      >
+                        <span className="text-white/85">{row.label}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${row.tone}`}>
+                          {row.value}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
+                {filterStatuses.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setFilterStatuses(new Set())}
+                    className="mt-3 w-full rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/15"
+                  >
+                    Clear status filters ({filterStatuses.size})
+                  </button>
+                )}
               </div>
 
               {/* Favourites card removed in Phase 4b — pinning by sensor
                   exposed individual hardware. Saved Places covers the
                   same use-case at area / radius granularity. */}
-
-              {/* Nodes in Radius — for each saved place, list sensors that
-                  fall inside its alert radius, sorted by distance. */}
-              {user && nodesByPlace.length > 0 && (
-                <div className={card + " p-4"}>
-                  <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--color-text)]">
-                    Nodes in Radius
-                  </h3>
-                  <p className="text-[11px] text-[var(--color-muted)] mt-0.5 mb-3">
-                    Sensors inside each of your saved places.
-                  </p>
-                  <div className="space-y-4">
-                    {nodesByPlace.map(({ place, items }) => (
-                      <div key={place.id}>
-                        <div className="mb-1.5 flex items-center justify-between">
-                          <p className="text-xs font-semibold text-[var(--color-text)] truncate">
-                            {place.label}
-                          </p>
-                          <span className="rounded-full bg-[var(--color-input-bg)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-muted)]">
-                            {items.length} · {place.alertRadiusKm} km
-                          </span>
-                        </div>
-                        {items.length === 0 ? (
-                          <p className="rounded-lg bg-[var(--color-input-bg)] px-3 py-2 text-[11px] text-[var(--color-muted)]">
-                            No sensors within the radius.
-                          </p>
-                        ) : (
-                          <ul className="space-y-1.5">
-                            {items.slice(0, 8).map(({ n, d }) => (
-                              <li key={n.id}>
-                                <button
-                                  type="button"
-                                  onClick={() => focusOnPoint(n.latitude, n.longitude, 14)}
-                                  className="group flex w-full items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-input-bg)] px-2.5 py-2 text-left transition-colors hover:border-[var(--color-brand)]"
-                                >
-                                  <span
-                                    className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
-                                    style={{ backgroundColor: nodeStatusHex(n) }}
-                                    aria-hidden
-                                  />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="truncate text-xs font-semibold text-[var(--color-text)]">
-                                      {n.area || n.location || "Sensor"}
-                                    </p>
-                                    <p className="truncate text-[10px] text-[var(--color-muted)]">
-                                      {nodeStatusLabel(n)} · {d.toFixed(1)} km
-                                    </p>
-                                  </div>
-                                </button>
-                              </li>
-                            ))}
-                            {items.length > 8 && (
-                              <li className="text-[10px] text-[var(--color-muted)] pl-1">
-                                +{items.length - 8} more
-                              </li>
-                            )}
-                          </ul>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </aside>
           </div>
         )}

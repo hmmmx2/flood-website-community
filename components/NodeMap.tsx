@@ -112,9 +112,27 @@ export default function NodeMap({
   nodeRadiusM = 350,
 }: NodeMapProps) {
   const [mapError, setMapError] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const mapRef = useRef<google.maps.Map | null>(null);
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
   const [searchInput, setSearchInput] = useState("");
+
+  // Lock body scroll while the map is fullscreen so the page underneath
+  // doesn't scroll behind the overlay.
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [isFullscreen]);
+
+  // Allow ESC to exit fullscreen.
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setIsFullscreen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isFullscreen]);
 
   const { isLoaded, loadError } = useJsApiLoader({
     id: "google-map-script",
@@ -218,9 +236,18 @@ export default function NodeMap({
 
   // ── Map ────────────────────────────────────────────────────────────────────
   return (
-    <div className="relative" style={{ height }}>
+    <div
+      className={isFullscreen
+        ? "fixed inset-0 z-[60] bg-black/90 p-3 sm:p-6"
+        : "relative"}
+      style={isFullscreen ? undefined : { height }}
+    >
       <GoogleMap
-        mapContainerStyle={{ width: "100%", height: "100%", borderRadius: "16px" }}
+        mapContainerStyle={{
+          width: "100%",
+          height: "100%",
+          borderRadius: isFullscreen ? "12px" : "16px",
+        }}
         center={mapCenter}
         zoom={defaultZoom}
         options={{
@@ -284,7 +311,9 @@ export default function NodeMap({
       </GoogleMap>
 
       {/* Floating Places search bar — top-left of the map. */}
-      <div className="pointer-events-none absolute left-3 top-3 right-3 z-10 sm:right-auto sm:max-w-sm">
+      <div className={`pointer-events-none absolute left-3 z-10 sm:right-auto sm:max-w-sm ${
+        isFullscreen ? "top-6 right-20 sm:left-6" : "top-3 right-16"
+      }`}>
         <div className="pointer-events-auto rounded-full bg-white shadow-lg ring-1 ring-black/10">
           <Autocomplete
             onLoad={(ac) => { autocompleteRef.current = ac; }}
@@ -308,6 +337,33 @@ export default function NodeMap({
           Tip: right-click anywhere on the map to save it as a place
         </p>
       </div>
+
+      {/* Fullscreen / close button — top-right corner of the map. */}
+      <button
+        type="button"
+        onClick={() => setIsFullscreen(v => !v)}
+        title={isFullscreen ? "Exit fullscreen (Esc)" : "Enlarge map"}
+        aria-label={isFullscreen ? "Exit fullscreen" : "Enlarge map"}
+        className={`absolute z-20 flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-lg ring-1 ring-black/10 transition hover:bg-slate-50 ${
+          isFullscreen ? "top-6 right-6" : "top-3 right-3"
+        }`}
+      >
+        {isFullscreen ? (
+          /* X icon */
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+               stroke="#0f172a" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
+               className="h-5 w-5">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        ) : (
+          /* Diagonal expand icon */
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+               stroke="#0f172a" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+               className="h-5 w-5">
+            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+          </svg>
+        )}
+      </button>
     </div>
   );
 }
