@@ -4,12 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Navbar from "@/components/Navbar";
 import SearchModal from "@/components/SearchModal";
 import { SearchField } from "@/components/ui/search-field";
-import NodeMap, { type MapNode, type FloodLevel, getMarkerColor, STATUS_HEX } from "@/components/NodeMap";
-import SavedLocationsPanel from "@/components/SavedLocationsPanel";
+import ZoneMap, { type MapZone, type ZoneStatus, type FloodLevel, STATUS_HEX } from "@/components/NodeMap";
+import SavedLocationsPanel, { type SavedLocationsPanelHandle } from "@/components/SavedLocationsPanel";
 import toast from "react-hot-toast";
-import { useSession, signOut, signIn } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 import { sessionToAuthUser } from "@/lib/auth";
-import { fetchJson, authFetchJson } from "@/lib/fetchJson";
+import { fetchJson } from "@/lib/fetchJson";
 import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
 import { useSensorStream } from "@/components/providers/SensorStreamProvider";
 
@@ -34,50 +34,37 @@ type SensorNodeDto = {
   lastUpdated?: string;
 };
 
-type FavouriteNodeDto = SensorNodeDto & { favouritedAt: string };
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const LEVEL_LABEL: Record<FloodLevel, string> = { 0: "Dry", 1: "Normal", 2: "Warning", 3: "Critical" };
-const WATER_M: Record<FloodLevel, string>     = { 0: "0.0 m", 1: "1.0 m", 2: "2.5 m", 3: "4.0 m" };
 const OFFLINE_HEX = "#6b7280";
 
-function toMapNode(n: SensorNodeDto): MapNode {
-  return {
-    id:           n.id,
-    nodeId:       n.nodeId,
-    name:         n.name,
-    area:         n.area,
-    location:     n.location,
-    state:        n.state,
-    address:      n.address,
-    latitude:     n.latitude,
-    longitude:    n.longitude,
-    currentLevel: n.currentLevel,
-    isOffline:    n.status === "inactive",
-    lastUpdated:  n.lastUpdated,
-  };
+// ── Privacy: deterministic centroid offset for zones ──────────────────────────
+// Sensors are publicly visible only as aggregated "zones" (worst level
+// per area). Their true positions are never rendered — the zone centre
+// is shifted by a small deterministic delta so refreshing the page
+// won't reveal "where the circle wants to settle". The offset is seeded
+// by the zone name (FNV-1a-ish 32-bit hash) and capped at ±0.012° (~1.3 km).
+function hashSeed(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return h >>> 0;
 }
-
-function statusDotHex(node: SensorNodeDto): string {
-  if (node.status === "inactive") return OFFLINE_HEX;
-  return STATUS_HEX[node.currentLevel];
+function deterministicJitter(seed: number, axis: 0 | 1): number {
+  const v = ((seed >>> (axis * 16)) & 0xffff) / 0xffff; // 0..1
+  return (v - 0.5) * 0.024; // ±0.012°
 }
-function statusText(node: SensorNodeDto) {
-  if (node.status === "inactive") return "Offline";
-  return LEVEL_LABEL[node.currentLevel];
+function severityRank(level: FloodLevel | null, isOffline: boolean): number {
+  if (isOffline)      return 0; // offline beats nothing — but is shown as a separate state
+  if (level === 3)    return 4;
+  if (level === 2)    return 3;
+  if (level === 1)    return 2;
+  return 1;
 }
-function markerHex(node: SensorNodeDto): string {
-  return getMarkerColor(toMapNode(node));
-}
-
-function formatTimeAgo(iso: string): string {
-  const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (secs < 60) return `${secs}s ago`;
-  const mins = Math.floor(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
+function levelToZoneStatus(level: FloodLevel): ZoneStatus {
+  if (level === 3) return "critical";
+  if (level === 2) return "warning";
+  if (level === 1) return "normal";
+  return "dry";
 }
 
 // ── Status filter keys ────────────────────────────────────────────────────────
@@ -137,21 +124,6 @@ function ActivityIcon(p: React.SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
-function StarIcon({ filled, ...p }: { filled?: boolean } & React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" {...p}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
-    </svg>
-  );
-}
-function MapPinIcon(p: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-      <circle cx="12" cy="10" r="3" />
-    </svg>
-  );
-}
 function AlertTriangleIcon(p: React.SVGProps<SVGSVGElement>) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
@@ -168,8 +140,6 @@ export default function FloodMapPage() {
   const user = session?.user ? sessionToAuthUser(session.user) : null;
   const { searchOpen, openSearch, closeSearch } = useSiteSearchModal();
   const [nodes, setNodes]             = useState<SensorNodeDto[]>([]);
-  const [favIds, setFavIds]           = useState<Set<string>>(new Set());
-  const [pendingFavs, setPendingFavs] = useState<Set<string>>(new Set());
   const [loading, setLoading]         = useState(true);
   const [fetchError, setFetchError]   = useState(false);
   const [lastFetch, setLastFetch]     = useState<Date | null>(null);
@@ -182,24 +152,46 @@ export default function FloodMapPage() {
   const [filterStatuses, setFilterStatuses] = useState<Set<StatusKey>>(new Set());
   const [panelOpen, setPanelOpen]         = useState(true);
 
-  // ── Map focus ──────────────────────────────────────────────────────────────
-  const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
+  // ── Map focus (zone-level only — never per-sensor) ────────────────────────
+  const [focusLatLng, setFocusLatLng] =
+    useState<{ lat: number; lng: number; zoom?: number } | null>(null);
   const mapCardRef = useRef<HTMLDivElement>(null);
+  const savedLocationsRef = useRef<SavedLocationsPanelHandle | null>(null);
 
-  // ── Saved locations (Phase 4) — kept here so the map can render
-  //    house pins + alert-radius circles. Sourced from SavedLocationsPanel
-  //    via its onLocationsChange callback.
+  // ── Saved locations (Phase 4) — sourced from SavedLocationsPanel via its
+  //    onLocationsChange callback so the map can render the radius circles.
   const [savedLocations, setSavedLocations] = useState<{
     id: string; label: string; latitude: number; longitude: number; alertRadiusKm: number;
   }[]>([]);
 
-  function focusNode(nodeId: string) {
-    setFocusNodeId(null);
-    requestAnimationFrame(() => {
-      setFocusNodeId(nodeId);
-      mapCardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    });
+  function focusOnPoint(lat: number, lng: number, zoom = 13) {
+    setFocusLatLng({ lat, lng, zoom });
+    mapCardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
+
+  // Right-click on the map: reverse-geocode for a friendly label, then
+  // open the saved-place editor with the coords + address prefilled.
+  // The Geocoder lives in the same google.maps namespace as the Autocomplete
+  // (loaded by the ZoneMap), so it's available client-side once the map mounts.
+  const handleMapRightClick = useCallback(async (lat: number, lng: number) => {
+    if (!session) {
+      toast("Sign in to save a place.");
+      return;
+    }
+    let address = "";
+    try {
+      if (typeof google !== "undefined" && google.maps?.Geocoder) {
+        const geocoder = new google.maps.Geocoder();
+        const res = await geocoder.geocode({ location: { lat, lng } });
+        address = res.results[0]?.formatted_address ?? "";
+      }
+    } catch { /* reverse geocode is best-effort */ }
+    savedLocationsRef.current?.openWithPrefill({
+      latitude: lat,
+      longitude: lng,
+      address,
+    });
+  }, [session]);
 
   // ── Data fetching ──────────────────────────────────────────────────────────
   // Track an in-flight sensor fetch so concurrent triggers (manual refresh
@@ -265,85 +257,6 @@ export default function FloodMapPage() {
     // fetchSensors / subscribeSensorUpdates are both stable (empty-dep useCallback)
   }, [fetchSensors, subscribeSensorUpdates]);
 
-  // Favourites effect — depends on auth state. Use a stable boolean derived
-  // from session.user.id (NOT the session object reference itself, which
-  // NextAuth replaces on every keepalive poll) to avoid spurious refetches.
-  const sessionUserId = session?.user?.id ?? null;
-  useEffect(() => {
-    if (!sessionUserId) {
-      setFavIds(new Set());
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const data = await authFetchJson<FavouriteNodeDto[]>("/api/favourites");
-        if (cancelled) return;
-        setFavIds(
-          new Set(
-            data
-              .map((f) => f.nodeId)
-              .filter((id): id is string => typeof id === "string" && id.length > 0),
-          ),
-        );
-      } catch {
-        /* non-critical */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionUserId]);
-
-  // ── Favourite toggle ───────────────────────────────────────────────────────
-  const toggleFav = useCallback(
-    async (sensorNodeId: string) => {
-      if (!session) {
-        toast("Please sign in to continue.");
-        void signIn(undefined, { callbackUrl: typeof window !== "undefined" ? window.location.href : "/" });
-        return;
-      }
-      if (pendingFavs.has(sensorNodeId)) return;
-      setPendingFavs((prev) => new Set([...prev, sensorNodeId]));
-
-      const isFav = favIds.has(sensorNodeId);
-      setFavIds((prev) => {
-        const next = new Set(prev);
-        if (isFav) next.delete(sensorNodeId);
-        else next.add(sensorNodeId);
-        return next;
-      });
-      try {
-        if (isFav) {
-          await authFetchJson(`/api/favourites/${sensorNodeId}`, { method: "DELETE" });
-          toast.success("Removed from favourites");
-        } else {
-          await authFetchJson("/api/favourites", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ nodeId: sensorNodeId }),
-          });
-          toast.success("Added to favourites");
-        }
-      } catch (e) {
-        setFavIds((prev) => {
-          const next = new Set(prev);
-          if (isFav) next.add(sensorNodeId);
-          else next.delete(sensorNodeId);
-          return next;
-        });
-        toast.error(e instanceof Error ? e.message : "Failed to update favourites.");
-      } finally {
-        setPendingFavs((prev) => {
-          const next = new Set(prev);
-          next.delete(sensorNodeId);
-          return next;
-        });
-      }
-    },
-    [session, favIds, pendingFavs],
-  );
-
   // ── Derived: dropdown options ──────────────────────────────────────────────
   const availableStates = useMemo(() => {
     const s = new Set<string>();
@@ -403,26 +316,74 @@ export default function FloodMapPage() {
     return r;
   }, [nodes, filterState, filterCity, filterStatuses, searchQuery]);
 
-  // ── Recently updated (top 5) ───────────────────────────────────────────────
-  const recentlyUpdated = useMemo(() =>
-    [...nodes]
-      .filter(n => n.lastUpdated)
-      .sort((a, b) => new Date(b.lastUpdated!).getTime() - new Date(a.lastUpdated!).getTime())
-      .slice(0, 5),
-    [nodes],
-  );
+  // ── Privacy-first zone aggregation ────────────────────────────────────────
+  // Sensors are grouped by `area` (e.g. "Penampang", "Kota Kinabalu"). The
+  // resulting MapZone[] is the ONLY thing the map sees — raw lat/lng for
+  // individual sensors never leaves this component. Each zone gets:
+  //   • worstLevel   — the highest severity among contributing sensors
+  //   • centroid     — mean of contributing positions, then jittered
+  //                    deterministically by the area name so the visible
+  //                    centre is never the actual sensor location
+  //   • radiusM      — fixed 2.5 km bubble (does not encode sensor density)
+  const mapZones: MapZone[] = useMemo(() => {
+    if (filteredNodes.length === 0) return [];
+    const grouped = new Map<string, SensorNodeDto[]>();
+    for (const n of filteredNodes) {
+      const key = n.area || n.location || n.state || "Unknown area";
+      const arr = grouped.get(key);
+      if (arr) arr.push(n); else grouped.set(key, [n]);
+    }
+    const zones: MapZone[] = [];
+    for (const [areaName, group] of grouped) {
+      // Worst level wins; if every sensor is offline, mark zone offline.
+      let worst: ZoneStatus = "dry";
+      let bestRank = 0;
+      let allOffline = true;
+      let lastUpdated: string | undefined;
+      for (const n of group) {
+        if (n.status !== "inactive") {
+          allOffline = false;
+          const r = severityRank(n.currentLevel, false);
+          if (r > bestRank) {
+            bestRank = r;
+            worst = levelToZoneStatus(n.currentLevel);
+          }
+        }
+        if (n.lastUpdated && (!lastUpdated || n.lastUpdated > lastUpdated)) {
+          lastUpdated = n.lastUpdated;
+        }
+      }
+      if (allOffline) worst = "offline";
 
-  const recentlyUpdatedIds = useMemo(
-    () => new Set(recentlyUpdated.map(n => n.id)),
-    [recentlyUpdated],
-  );
+      const meanLat = group.reduce((s, n) => s + n.latitude,  0) / group.length;
+      const meanLng = group.reduce((s, n) => s + n.longitude, 0) / group.length;
+      const seed = hashSeed(areaName);
+      zones.push({
+        id: areaName,
+        name: areaName,
+        region: group[0].state ?? undefined,
+        worstLevel: worst,
+        sensorCount: group.length,
+        centerLat: meanLat + deterministicJitter(seed, 0),
+        centerLng: meanLng + deterministicJitter(seed, 1),
+        radiusM: 2500,
+        lastUpdated,
+      });
+    }
+    return zones;
+  }, [filteredNodes]);
 
-  // ── Map nodes — always include favourite nodes so clicking a fav always works
-  const mapNodes = useMemo(() => {
-    const filteredIds = new Set(filteredNodes.map(n => n.id));
-    const favExtras = nodes.filter(n => favIds.has(n.nodeId) && !filteredIds.has(n.id));
-    return [...filteredNodes, ...favExtras].map(toMapNode);
-  }, [filteredNodes, nodes, favIds]);
+  // Areas with elevated water level — replaces the old per-sensor
+  // "Recently Updated" chips. Order: critical > warning > normal.
+  const elevatedAreas = useMemo(() => {
+    const rank: Record<ZoneStatus, number> = {
+      critical: 4, warning: 3, normal: 2, dry: 1, offline: 0,
+    };
+    return [...mapZones]
+      .filter(z => z.worstLevel === "warning" || z.worstLevel === "critical")
+      .sort((a, b) => rank[b.worstLevel] - rank[a.worstLevel])
+      .slice(0, 6);
+  }, [mapZones]);
 
   // ── Stats ──────────────────────────────────────────────────────────────────
   const stats = useMemo(() => ({
@@ -434,20 +395,7 @@ export default function FloodMapPage() {
     normal:   filteredNodes.filter(n => n.status !== "inactive" && n.currentLevel === 1).length,
     warning:  filteredNodes.filter(n => n.status !== "inactive" && n.currentLevel === 2).length,
     critical: filteredNodes.filter(n => n.status !== "inactive" && n.currentLevel === 3).length,
-    favs:     favIds.size,
-  }), [filteredNodes, nodes, favIds]);
-
-  // Show ALL favourites in sidebar regardless of active filters
-  const favouriteNodes = useMemo(
-    () => nodes.filter(n => favIds.has(n.nodeId)),
-    [nodes, favIds],
-  );
-
-  // Track which favourites are currently hidden by filters (to show a badge)
-  const filteredNodeIds = useMemo(
-    () => new Set(filteredNodes.map(n => n.id)),
-    [filteredNodes],
-  );
+  }), [filteredNodes, nodes]);
 
   // ── Shared card class ──────────────────────────────────────────────────────
   const card = "bg-[var(--color-card)] rounded-2xl border border-[var(--color-border)] shadow-sm";
@@ -469,7 +417,8 @@ export default function FloodMapPage() {
           <div>
             <h1 className="text-2xl font-bold text-[var(--color-text)]">Flood Map</h1>
             <p className="text-sm text-[var(--color-muted)] mt-0.5">
-              Real-time IoT water levels across Sabah. Click any marker for details, or filter by district, area, or severity.
+              Real-time water-level zones across Sabah. Search for a place, or
+              <strong className="text-[var(--color-text)]"> right-click anywhere on the map</strong> to save it as a place and get email alerts.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -697,52 +646,50 @@ export default function FloodMapPage() {
                   </div>
                 </div>
 
-                {/* Recently updated chips */}
-                {recentlyUpdated.length > 0 && (
+                {/* Areas with elevated water level — replaces the per-sensor
+                    "Recently Updated" chips. Privacy-first: shows the area
+                    name only, no node ID and no coordinates. */}
+                {elevatedAreas.length > 0 && (
                   <div className="mb-4">
                     <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-                      Recently Updated
+                      Areas with rising water
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      {recentlyUpdated.map((node, i) => {
-                        // Render the human-readable location (area falls back to
-                        // location, then to "Sensor"), NOT the technical nodeId.
-                        // Residents shouldn't have to interact with hardware IDs.
-                        const placeLabel = node.area || node.location || "Sensor";
+                      {elevatedAreas.map(zone => {
+                        const tone = zone.worstLevel === "critical"
+                          ? "border-red-400 bg-red-50 hover:bg-red-100"
+                          : "border-amber-400 bg-amber-50 hover:bg-amber-100";
+                        const dot = zone.worstLevel === "critical" ? STATUS_HEX[3] : STATUS_HEX[2];
+                        const label = zone.worstLevel === "critical" ? "High Risk" : "Warning";
                         return (
-                        <button key={node.id} type="button" onClick={() => focusNode(node.id)}
-                          title={`Jump to ${placeLabel}${node.location && node.location !== placeLabel ? ` · ${node.location}` : ""}`}
-                          className="group flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-input-bg)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-all hover:border-amber-400 hover:bg-amber-50"
-                        >
-                          <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold ${
-                            i === 0 ? "bg-amber-400 text-white" : "bg-[var(--color-border)] text-[var(--color-muted)]"
-                          }`}>
-                            {i + 1}
-                          </span>
-                          <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ backgroundColor: statusDotHex(node) }} />
-                          <span>{placeLabel}</span>
-                          {node.lastUpdated && (
-                            <span className="text-[10px] text-[var(--color-muted)]">
-                              {formatTimeAgo(node.lastUpdated)}
+                          <button
+                            key={zone.id}
+                            type="button"
+                            onClick={() => focusOnPoint(zone.centerLat, zone.centerLng, 12)}
+                            title={`Centre map on ${zone.name}`}
+                            className={`group flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-all ${tone}`}
+                          >
+                            <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ backgroundColor: dot }} />
+                            <span>{zone.name}</span>
+                            <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: dot }}>
+                              {label}
                             </span>
-                          )}
-                        </button>
+                          </button>
                         );
                       })}
                     </div>
                   </div>
                 )}
 
-                {/* Google Map */}
+                {/* Privacy-first zone map */}
                 <div className="rounded-2xl border border-[var(--color-border)] overflow-hidden">
-                  <NodeMap
-                    nodes={mapNodes}
-                    height={460}
-                    zoom={10}
-                    focusNodeId={focusNodeId}
-                    highlightedIds={recentlyUpdatedIds}
-                    favouriteIds={favIds}
-                    onToggleFavourite={toggleFav}
+                  <ZoneMap
+                    zones={mapZones}
+                    height={480}
+                    defaultZoom={10}
+                    focusLatLng={focusLatLng}
+                    onMapRightClick={(lat, lng) => void handleMapRightClick(lat, lng)}
+                    onPlaceSelect={(lat, lng) => focusOnPoint(lat, lng, 14)}
                     savedLocations={savedLocations}
                   />
                 </div>
@@ -774,18 +721,8 @@ export default function FloodMapPage() {
                   visitors see nothing here (the BFF would 401 anyway). */}
               {user && (
                 <SavedLocationsPanel
-                  onFocusLocation={(lat, lng) => {
-                    // Find the closest sensor and focus the map on it,
-                    // since NodeMap focuses by node id rather than raw
-                    // coordinate. Falls back to no-op if no sensors are
-                    // loaded yet.
-                    if (nodes.length === 0) return;
-                    const closest = nodes.reduce((best, n) => {
-                      const d = Math.hypot(n.latitude - lat, n.longitude - lng);
-                      return d < best.d ? { d, n } : best;
-                    }, { d: Infinity, n: nodes[0] });
-                    focusNode(closest.n.id);
-                  }}
+                  ref={savedLocationsRef}
+                  onFocusLocation={(lat, lng) => focusOnPoint(lat, lng, 14)}
                   onLocationsChange={(locs) => setSavedLocations(locs.map(l => ({
                     id: l.id, label: l.label,
                     latitude: l.latitude, longitude: l.longitude,
@@ -822,93 +759,12 @@ export default function FloodMapPage() {
                     <span className="text-white/80">Critical</span>
                     <span className="font-bold text-red-300">{stats.critical}</span>
                   </div>
-                  {user && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-white/80">Saved</span>
-                      <span className="font-bold">{stats.favs}</span>
-                    </div>
-                  )}
                 </div>
               </div>
 
-              {/* Favourites */}
-              <div className={card + " p-4"}>
-                <div className="mb-3 flex items-center gap-2">
-                  <StarIcon filled className="h-4 w-4 text-amber-400" />
-                  <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--color-text)]">
-                    Favourites
-                  </h3>
-                  {favouriteNodes.length > 0 && (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-600">
-                      {favouriteNodes.length}
-                    </span>
-                  )}
-                </div>
-                {favouriteNodes.length > 0 && (
-                  <p className="mb-3 text-[10px] text-[var(--color-muted)]">
-                    Click any saved node to navigate the map to its location.
-                  </p>
-                )}
-
-                {favouriteNodes.length === 0 ? (
-                  <div className="flex flex-col items-center gap-1.5 rounded-2xl bg-[var(--color-input-bg)] py-6">
-                    <StarIcon className="h-7 w-7 text-[var(--color-border)]" />
-                    <p className="px-4 text-center text-xs leading-relaxed text-[var(--color-muted)]">
-                      Click the star on any node to pin it here.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {favouriteNodes.map(node => {
-                      const isFiltered = !filteredNodeIds.has(node.id);
-                      return (
-                        <div
-                          key={node.id}
-                          className="group flex cursor-pointer items-center gap-2 rounded-xl bg-[var(--color-input-bg)] px-3 py-2.5 transition-colors hover:bg-amber-50 hover:border-amber-200 border border-transparent"
-                          onClick={() => focusNode(node.id)}
-                          title="Click to navigate to this node on the map"
-                        >
-                          <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
-                            style={{ backgroundColor: markerHex(node) }} />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5">
-                              {/* Show the human-readable place name (area / location)
-                                  instead of the technical nodeId so residents see
-                                  "Petra Jaya" not "102503180". toggleFav() still
-                                  uses node.nodeId under the hood. */}
-                              <p className="truncate text-xs font-semibold text-[var(--color-text)] group-hover:text-[var(--color-brand)] transition-colors">
-                                {node.area || node.location || "Saved sensor"}
-                              </p>
-                              {isFiltered && (
-                                <span className="flex-shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-400 border border-slate-200">
-                                  filtered
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[10px] text-[var(--color-muted)]">
-                              {statusText(node)} · {node.status === "inactive" ? "—" : WATER_M[node.currentLevel]}
-                            </p>
-                            {node.location && node.area && node.location !== node.area && (
-                              <p className="mt-0.5 truncate text-[9px] text-[var(--color-muted)]/70">
-                                {node.location}
-                              </p>
-                            )}
-                          </div>
-                          <MapPinIcon className="h-3.5 w-3.5 flex-shrink-0 text-[var(--color-brand)] opacity-0 group-hover:opacity-70 transition-opacity" />
-                          <button
-                            type="button"
-                            onClick={e => { e.stopPropagation(); void toggleFav(node.nodeId); }}
-                            className="flex-shrink-0 text-amber-400 hover:text-amber-500 transition-colors"
-                            title="Remove from favourites"
-                          >
-                            <StarIcon filled className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              {/* Favourites card removed in Phase 4b — pinning by sensor
+                  exposed individual hardware. Saved Places covers the
+                  same use-case at area / radius granularity. */}
 
               {/* Status legend */}
               <div className={card + " p-4"}>

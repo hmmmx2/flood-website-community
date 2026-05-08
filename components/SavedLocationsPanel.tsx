@@ -11,9 +11,16 @@
  * UserRepository.findEmailSubscribersForFloodAt(...).
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useState, forwardRef } from "react";
 import toast from "react-hot-toast";
 import SavedLocationEditor, { type SavedLocationDraft } from "./SavedLocationEditor";
+
+/** Imperative handle exposed to the parent flood-map page so a
+ *  right-click on the map can prefill + open the editor without going
+ *  through prop-drilled state. */
+export interface SavedLocationsPanelHandle {
+  openWithPrefill: (prefill: Partial<SavedLocationDraft>) => void;
+}
 
 export interface SavedLocation {
   id: string;
@@ -33,15 +40,24 @@ interface SavedLocationsPanelProps {
   onLocationsChange?: (locations: SavedLocation[]) => void;
 }
 
-export default function SavedLocationsPanel({
+const SavedLocationsPanel = forwardRef<SavedLocationsPanelHandle, SavedLocationsPanelProps>(function SavedLocationsPanel({
   onFocusLocation,
   onLocationsChange,
-}: SavedLocationsPanelProps) {
+}, ref) {
   const [locations, setLocations] = useState<SavedLocation[]>([]);
   const [loading, setLoading] = useState(true);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<SavedLocation | null>(null);
+  const [prefill, setPrefill] = useState<Partial<SavedLocationDraft> | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    openWithPrefill: (p: Partial<SavedLocationDraft>) => {
+      setEditing(null);
+      setPrefill(p);
+      setEditorOpen(true);
+    },
+  }), []);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -119,7 +135,7 @@ export default function SavedLocationsPanel({
         </div>
         <button
           type="button"
-          onClick={() => { setEditing(null); setEditorOpen(true); }}
+          onClick={() => { setEditing(null); setPrefill(null); setEditorOpen(true); }}
           className="rounded-full px-3 py-1.5 text-xs font-semibold text-white"
           style={{ background: "var(--color-brand)" }}
         >
@@ -174,7 +190,7 @@ export default function SavedLocationsPanel({
                 <div className="flex flex-col gap-1 flex-shrink-0">
                   <button
                     type="button"
-                    onClick={() => { setEditing(loc); setEditorOpen(true); }}
+                    onClick={() => { setEditing(loc); setPrefill(null); setEditorOpen(true); }}
                     aria-label={`Edit ${loc.label}`}
                     className="text-[11px] underline-offset-2 hover:underline"
                     style={{ color: "var(--color-text-secondary)" }}
@@ -222,10 +238,13 @@ export default function SavedLocationsPanel({
             longitude: editing.longitude,
             alertRadiusKm: editing.alertRadiusKm,
           } : null}
-          onClose={() => { setEditorOpen(false); setEditing(null); }}
+          prefill={prefill}
+          onClose={() => { setEditorOpen(false); setEditing(null); setPrefill(null); }}
           onSave={handleSave}
         />
       )}
     </article>
   );
-}
+});
+
+export default SavedLocationsPanel;

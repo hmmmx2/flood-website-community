@@ -1,21 +1,22 @@
 "use client";
 
 /**
- * <SavedLocationEditor /> — modal form for adding / editing a saved
- * location pin. Captures:
+ * <SavedLocationEditor /> — modal form for adding / editing a saved place.
  *
- *   • label                 (required, e.g. "Home", "Workplace")
- *   • address               (free-text — display label, no geocoding here)
- *   • latitude / longitude  (from the device's geolocation, or typed)
- *   • alert radius (km)     (slider 1–50, default 5)
+ * Phase 4b (privacy + UX): captures the place via Google Places
+ * Autocomplete OR a right-click on the main map (parent passes the
+ * coords in via `prefill`). Manual lat/lng entry is hidden behind a
+ * "Set coordinates manually" toggle for the rare cases where the
+ * other two flows fail.
  *
- * Geolocation: uses the browser's navigator.geolocation API. If the
- * user denies permission, falls back to manual lat/lng entry. A future
- * enhancement (Phase 4 polish) will swap the manual coordinate fields
- * for a Google Places Autocomplete + draggable map pin.
+ *   • label                — required, e.g. "Home", "Workplace"
+ *   • address              — auto-filled from Places / reverse geocode
+ *   • latitude / longitude — set by Autocomplete, map right-click, GPS, or manual
+ *   • alertRadiusKm        — slider 1–50 km
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Autocomplete } from "@react-google-maps/api";
 
 export type SavedLocationDraft = {
   label: string;
@@ -27,19 +28,29 @@ export type SavedLocationDraft = {
 
 interface Props {
   initial: SavedLocationDraft | null;
+  /** When the parent has already obtained a place (e.g. via right-click +
+   *  reverse geocode), pass it here so the editor opens prefilled. */
+  prefill?: Partial<SavedLocationDraft> | null;
   onClose: () => void;
   onSave: (draft: SavedLocationDraft) => Promise<void> | void;
 }
 
-export default function SavedLocationEditor({ initial, onClose, onSave }: Props) {
-  const [label, setLabel] = useState(initial?.label ?? "");
-  const [address, setAddress] = useState(initial?.address ?? "");
-  const [latitude, setLatitude] = useState<string>(initial?.latitude?.toString() ?? "");
-  const [longitude, setLongitude] = useState<string>(initial?.longitude?.toString() ?? "");
-  const [radius, setRadius] = useState<number>(initial?.alertRadiusKm ?? 5);
+export default function SavedLocationEditor({ initial, prefill, onClose, onSave }: Props) {
+  const seed = initial ?? prefill ?? null;
+  const [label, setLabel] = useState(seed?.label ?? "");
+  const [address, setAddress] = useState(seed?.address ?? "");
+  const [latitude, setLatitude] = useState<string>(
+    seed?.latitude != null ? String(seed.latitude) : "",
+  );
+  const [longitude, setLongitude] = useState<string>(
+    seed?.longitude != null ? String(seed.longitude) : "",
+  );
+  const [radius, setRadius] = useState<number>(seed?.alertRadiusKm ?? 5);
   const [busy, setBusy] = useState(false);
   const [geoLoading, setGeoLoading] = useState(false);
+  const [showManual, setShowManual] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
   // Lock body scroll while modal is open
   useEffect(() => {
@@ -47,6 +58,29 @@ export default function SavedLocationEditor({ initial, onClose, onSave }: Props)
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = prev; };
   }, []);
+
+  // Whenever the parent updates the prefill (e.g. another right-click on
+  // the map while the editor is already open), refresh the coords.
+  useEffect(() => {
+    if (!prefill) return;
+    if (prefill.latitude != null) setLatitude(String(prefill.latitude));
+    if (prefill.longitude != null) setLongitude(String(prefill.longitude));
+    if (prefill.address)           setAddress(prefill.address);
+  }, [prefill]);
+
+  function handlePlaceChanged() {
+    const ac = autocompleteRef.current;
+    if (!ac) return;
+    const place = ac.getPlace();
+    if (!place.geometry?.location) {
+      setError("Pick a place from the suggestions.");
+      return;
+    }
+    setError(null);
+    setLatitude(place.geometry.location.lat().toFixed(6));
+    setLongitude(place.geometry.location.lng().toFixed(6));
+    setAddress(place.formatted_address ?? place.name ?? "");
+  }
 
   function handleUseGps() {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -74,13 +108,13 @@ export default function SavedLocationEditor({ initial, onClose, onSave }: Props)
     setError(null);
     const lat = Number(latitude);
     const lng = Number(longitude);
-    if (!label.trim()) { setError("Label is required."); return; }
+    if (!label.trim()) { setError("Give this place a label."); return; }
     if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
-      setError("Latitude must be between -90 and 90.");
+      setError("Pick a place from the search bar, or right-click on the map.");
       return;
     }
     if (!Number.isFinite(lng) || lng < -180 || lng > 180) {
-      setError("Longitude must be between -180 and 180.");
+      setError("Pick a place from the search bar, or right-click on the map.");
       return;
     }
     if (radius < 1 || radius > 50) {
@@ -103,11 +137,13 @@ export default function SavedLocationEditor({ initial, onClose, onSave }: Props)
     }
   }
 
+  const hasCoords = latitude !== "" && longitude !== "";
+
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label={initial ? "Edit saved location" : "Add saved location"}
+      aria-label={initial ? "Edit saved place" : "Add saved place"}
       className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
@@ -140,88 +176,127 @@ export default function SavedLocationEditor({ initial, onClose, onSave }: Props)
               placeholder="Home / Workplace / Mum's place"
               maxLength={80}
               required
-              className="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-lg px-3 py-2.5 text-sm border focus:outline-none focus:ring-2 focus:ring-blue-500"
               style={{
                 background: "var(--color-input-bg, var(--color-card))",
                 borderColor: "var(--color-border)",
                 color: "var(--color-text)",
+                minHeight: 44,
               }}
             />
           </div>
 
           <div>
             <label className="block text-xs font-semibold mb-1" style={{ color: "var(--color-text)" }}>
-              Address (optional)
+              Search a place <span style={{ color: "#dc2626" }}>*</span>
             </label>
-            <input
-              type="text"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="e.g. Jalan Pantai, Kota Kinabalu"
-              maxLength={1024}
-              className="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none focus:ring-2 focus:ring-blue-500"
-              style={{
-                background: "var(--color-input-bg, var(--color-card))",
-                borderColor: "var(--color-border)",
-                color: "var(--color-text)",
+            <Autocomplete
+              onLoad={(ac) => { autocompleteRef.current = ac; }}
+              onPlaceChanged={handlePlaceChanged}
+              options={{
+                componentRestrictions: { country: ["my"] },
+                fields: ["geometry", "name", "formatted_address"],
               }}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold mb-1" style={{ color: "var(--color-text)" }}>
-                Latitude <span style={{ color: "#dc2626" }}>*</span>
-              </label>
+            >
               <input
-                type="number"
-                step="any"
-                value={latitude}
-                onChange={(e) => setLatitude(e.target.value)}
-                placeholder="5.9788"
-                required
-                className="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none focus:ring-2 focus:ring-blue-500"
+                type="text"
+                defaultValue={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="e.g. Lintas Square, Kota Kinabalu"
+                className="w-full rounded-lg px-3 py-2.5 text-sm border focus:outline-none focus:ring-2 focus:ring-blue-500"
                 style={{
                   background: "var(--color-input-bg, var(--color-card))",
                   borderColor: "var(--color-border)",
                   color: "var(--color-text)",
+                  minHeight: 44,
                 }}
               />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold mb-1" style={{ color: "var(--color-text)" }}>
-                Longitude <span style={{ color: "#dc2626" }}>*</span>
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={longitude}
-                onChange={(e) => setLongitude(e.target.value)}
-                placeholder="116.0753"
-                required
-                className="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none focus:ring-2 focus:ring-blue-500"
-                style={{
-                  background: "var(--color-input-bg, var(--color-card))",
-                  borderColor: "var(--color-border)",
-                  color: "var(--color-text)",
-                }}
-              />
-            </div>
+            </Autocomplete>
+            <p className="mt-1.5 text-[11px]" style={{ color: "var(--color-muted)" }}>
+              Or right-click on the map to drop a pin, or use your GPS below.
+            </p>
           </div>
 
           <button
             type="button"
             onClick={handleUseGps}
             disabled={geoLoading}
-            className="w-full rounded-lg px-3 py-2 text-xs font-semibold border transition disabled:opacity-50"
+            className="w-full rounded-lg px-3 py-2.5 text-xs font-semibold border transition disabled:opacity-50"
             style={{
               background: "var(--color-input-bg, var(--color-card))",
               borderColor: "var(--color-border)",
               color: "var(--color-brand-soft, var(--color-brand))",
+              minHeight: 44,
             }}
           >
             {geoLoading ? "Locating…" : "📍 Use my current location"}
           </button>
+
+          {hasCoords && !showManual && (
+            <div
+              className="flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-[11px]"
+              style={{
+                background: "var(--color-input-bg, var(--color-card))",
+                color: "var(--color-muted)",
+                border: "1px dashed var(--color-border)",
+              }}
+            >
+              <span>
+                Pinned at <strong style={{ color: "var(--color-text)" }}>
+                  {Number(latitude).toFixed(4)}°, {Number(longitude).toFixed(4)}°
+                </strong>
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowManual(true)}
+                className="text-[11px] font-semibold underline"
+                style={{ color: "var(--color-brand)" }}
+              >
+                Edit
+              </button>
+            </div>
+          )}
+
+          {(showManual || (!hasCoords && initial)) && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold mb-1" style={{ color: "var(--color-text)" }}>
+                  Latitude
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={latitude}
+                  onChange={(e) => setLatitude(e.target.value)}
+                  placeholder="5.9788"
+                  className="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  style={{
+                    background: "var(--color-input-bg, var(--color-card))",
+                    borderColor: "var(--color-border)",
+                    color: "var(--color-text)",
+                  }}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1" style={{ color: "var(--color-text)" }}>
+                  Longitude
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={longitude}
+                  onChange={(e) => setLongitude(e.target.value)}
+                  placeholder="116.0753"
+                  className="w-full rounded-lg px-3 py-2 text-sm border focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  style={{
+                    background: "var(--color-input-bg, var(--color-card))",
+                    borderColor: "var(--color-border)",
+                    color: "var(--color-text)",
+                  }}
+                />
+              </div>
+            </div>
+          )}
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
@@ -255,8 +330,11 @@ export default function SavedLocationEditor({ initial, onClose, onSave }: Props)
           </div>
 
           {error && (
-            <div className="rounded-lg px-3 py-2 text-xs"
-                 style={{ background: "rgba(220, 38, 38, 0.1)", color: "#dc2626" }}>
+            <div
+              role="alert"
+              className="rounded-lg px-3 py-2 text-xs"
+              style={{ background: "rgba(220, 38, 38, 0.1)", color: "#dc2626" }}
+            >
               {error}
             </div>
           )}
@@ -274,6 +352,8 @@ export default function SavedLocationEditor({ initial, onClose, onSave }: Props)
             style={{
               borderColor: "var(--color-border)",
               color: "var(--color-text-secondary)",
+              minHeight: 44,
+              minWidth: 64,
             }}
           >
             Cancel
@@ -282,7 +362,7 @@ export default function SavedLocationEditor({ initial, onClose, onSave }: Props)
             type="submit"
             disabled={busy}
             className="rounded-full px-5 py-2 text-xs font-semibold text-white disabled:opacity-50"
-            style={{ background: "var(--color-brand)" }}
+            style={{ background: "var(--color-brand)", minHeight: 44, minWidth: 80 }}
           >
             {busy ? "Saving…" : initial ? "Update" : "Save"}
           </button>
