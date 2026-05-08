@@ -8,6 +8,7 @@ import React, {
   useState,
 } from "react";
 import {
+  Circle,
   GoogleMap,
   InfoWindow,
   Marker,
@@ -24,11 +25,24 @@ export type MapNode = {
   area?: string;
   location?: string;
   state?: string;
+  /** Reverse-geocoded full address (Phase 2). When present, the InfoWindow
+   *  leads with this instead of the technical nodeId. */
+  address?: string | null;
   latitude: number;
   longitude: number;
   currentLevel: FloodLevel;
   isOffline: boolean;
   lastUpdated?: string;
+};
+
+/** A user-saved place (Home / Workplace / etc.) rendered as a distinct
+ *  pin with a translucent radius circle around it. */
+export type MapSavedLocation = {
+  id: string;
+  label: string;
+  latitude: number;
+  longitude: number;
+  alertRadiusKm: number;
 };
 
 // ── Color helpers — kept in sync with flood-website-crm statusHexMap ─────────
@@ -87,6 +101,8 @@ type NodeMapProps = {
   favouriteIds?: Set<string>;
   /** Called with node.nodeId when the user clicks the star button */
   onToggleFavourite?: (nodeId: string) => void;
+  /** Phase 4 — saved places rendered as house pins with radius circles */
+  savedLocations?: MapSavedLocation[];
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -98,6 +114,7 @@ export default function NodeMap({
   highlightedIds,
   favouriteIds,
   onToggleFavourite,
+  savedLocations,
 }: NodeMapProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [clickedId, setClickedId] = useState<string | null>(null);
@@ -146,6 +163,9 @@ export default function NodeMap({
 
   const activeNode = nodes.find(n => n.id === activeId);
 
+  // Phase 4 accessibility: visible markers ≈ 32 px tall (scale 2.2 → 53 px
+  // bounding box, well over the 44-px tap target WCAG recommends), with a
+  // dark outer stroke for contrast against the light map style.
   const getIcon = (node: MapNode): google.maps.Symbol | undefined => {
     if (typeof google === "undefined") return undefined;
     const isHighlighted = highlightedIds?.has(node.id) || latestNode?.id === node.id;
@@ -153,9 +173,9 @@ export default function NodeMap({
       path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z",
       fillColor: getMarkerColor(node),
       fillOpacity: 1,
-      strokeColor: isHighlighted ? "#FFB800" : "#ffffff",
-      strokeWeight: isHighlighted ? 3.5 : 1.5,
-      scale: isHighlighted ? 1.9 : 1.5,
+      strokeColor: isHighlighted ? "#FFB800" : "#1f2937",
+      strokeWeight: isHighlighted ? 4 : 2,
+      scale: isHighlighted ? 2.6 : 2.2,
       anchor: new google.maps.Point(12, 24),
     };
   };
@@ -167,9 +187,26 @@ export default function NodeMap({
       fillColor: "transparent",
       fillOpacity: 0,
       strokeColor: "#FFB800",
+      strokeWeight: 2.5,
+      strokeOpacity: 0.7,
+      scale: 28,
+    };
+  };
+
+  // Saved-place pin — house silhouette in brand blue, visually distinct
+  // from sensor pins so users never mistake their saved address for a
+  // sensor reading.
+  const getSavedLocationIcon = (): google.maps.Symbol | undefined => {
+    if (typeof google === "undefined") return undefined;
+    return {
+      // House: rectangular base + triangular roof
+      path: "M3 12L12 3L21 12V21H14V14H10V21H3V12Z",
+      fillColor: "#2563eb",
+      fillOpacity: 0.95,
+      strokeColor: "#ffffff",
       strokeWeight: 2,
-      strokeOpacity: 0.65,
-      scale: 20,
+      scale: 1.6,
+      anchor: new google.maps.Point(12, 21),
     };
   };
 
@@ -268,6 +305,33 @@ export default function NodeMap({
       }}
       onLoad={onMapLoad}
     >
+      {/* Saved-place radius circles + house pins — rendered first so
+          they sit beneath the sensor markers in z-order. */}
+      {savedLocations?.map(loc => (
+        <React.Fragment key={`saved-${loc.id}`}>
+          <Circle
+            center={{ lat: loc.latitude, lng: loc.longitude }}
+            radius={loc.alertRadiusKm * 1000}
+            options={{
+              fillColor: "#2563eb",
+              fillOpacity: 0.08,
+              strokeColor: "#2563eb",
+              strokeOpacity: 0.45,
+              strokeWeight: 1.5,
+              clickable: false,
+              zIndex: 0,
+            }}
+          />
+          <Marker
+            position={{ lat: loc.latitude, lng: loc.longitude }}
+            icon={getSavedLocationIcon()}
+            title={`${loc.label} — ${loc.alertRadiusKm} km radius`}
+            clickable={false}
+            zIndex={5}
+          />
+        </React.Fragment>
+      ))}
+
       {nodes.map(node => {
         const isHighlighted = highlightedIds?.has(node.id) || latestNode?.id === node.id;
         return (
@@ -301,39 +365,38 @@ export default function NodeMap({
             disableAutoPan: false,
           }}
         >
-          <div style={{ minWidth: 220, fontFamily: "inherit", padding: "2px 2px 4px" }}>
-            {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <p style={{ fontWeight: 700, fontSize: 13, color: "#1e293b", margin: 0, flex: 1 }}>
-                {activeNode.nodeId}
-              </p>
+          <div style={{ minWidth: 240, fontFamily: "inherit", padding: "2px 2px 4px" }}>
+            {/* Header — Phase 4: address-first. The reverse-geocoded
+                address is what residents care about; the sensor's
+                technical nodeId is demoted to a small grey caption. */}
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginBottom: 8 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{
+                  fontWeight: 700, fontSize: 14, color: "#0f172a",
+                  margin: 0, lineHeight: 1.3, wordBreak: "break-word",
+                }}>
+                  {activeNode.address
+                    || [activeNode.location, activeNode.area].filter(Boolean).join(", ")
+                    || "Unnamed location"}
+                </p>
+                <p style={{
+                  fontSize: 10, color: "#94a3b8", margin: "3px 0 0",
+                  letterSpacing: "0.04em", textTransform: "uppercase",
+                }}>
+                  Sensor {activeNode.nodeId}
+                </p>
+              </div>
               {latestNode?.id === activeNode.id && (
                 <span style={{
                   background: "#fef3c7", color: "#92400e",
                   fontSize: 9, fontWeight: 700, padding: "2px 6px",
                   borderRadius: 999, letterSpacing: "0.05em",
+                  flexShrink: 0,
                 }}>
                   LATEST
                 </span>
               )}
             </div>
-
-            {/* Location */}
-            {(activeNode.location || activeNode.area) && (
-              <div style={{
-                display: "flex", alignItems: "center", gap: 4,
-                marginBottom: 8, padding: "4px 8px",
-                background: "#f1f5f9", borderRadius: 8,
-              }}>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#64748b"
-                  style={{ width: 12, height: 12, flexShrink: 0 }}>
-                  <path fillRule="evenodd" d="M11.54 22.351l.07.04.028.016a.76.76 0 00.723 0l.028-.015.071-.041a16.975 16.975 0 001.144-.742 19.58 19.58 0 002.683-2.282c1.944-2.079 3.953-5.442 3.953-9.827a8.25 8.25 0 00-16.5 0c0 4.385 2.009 7.748 3.953 9.827a19.58 19.58 0 002.682 2.282 16.975 16.975 0 001.145.742zM12 13.5a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
-                </svg>
-                <span style={{ fontSize: 11, color: "#64748b" }}>
-                  {[activeNode.location, activeNode.area].filter(Boolean).join(" · ")}
-                </span>
-              </div>
-            )}
 
             {/* Stats */}
             <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
@@ -386,11 +449,12 @@ export default function NodeMap({
                   onClick={() => onToggleFavourite(activeNode.nodeId)}
                   style={{
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    gap: 6, width: "100%", padding: "7px 12px", borderRadius: 10,
+                    gap: 6, width: "100%", minHeight: 44, padding: "10px 12px",
+                    borderRadius: 10,
                     border: isFav ? "1.5px solid #f59e0b" : "1.5px solid #d1d5db",
                     background: isFav ? "#fffbeb" : "#f9fafb",
                     color: isFav ? "#b45309" : "#374151",
-                    fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all 0.15s",
+                    fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "all 0.15s",
                   }}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"

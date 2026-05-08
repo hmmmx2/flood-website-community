@@ -49,6 +49,7 @@ function toMapNode(n: SensorNodeDto): MapNode {
     area:         n.area,
     location:     n.location,
     state:        n.state,
+    address:      n.address,
     latitude:     n.latitude,
     longitude:    n.longitude,
     currentLevel: n.currentLevel,
@@ -184,6 +185,13 @@ export default function FloodMapPage() {
   // ── Map focus ──────────────────────────────────────────────────────────────
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const mapCardRef = useRef<HTMLDivElement>(null);
+
+  // ── Saved locations (Phase 4) — kept here so the map can render
+  //    house pins + alert-radius circles. Sourced from SavedLocationsPanel
+  //    via its onLocationsChange callback.
+  const [savedLocations, setSavedLocations] = useState<{
+    id: string; label: string; latitude: number; longitude: number; alertRadiusKm: number;
+  }[]>([]);
 
   function focusNode(nodeId: string) {
     setFocusNodeId(null);
@@ -735,6 +743,7 @@ export default function FloodMapPage() {
                     highlightedIds={recentlyUpdatedIds}
                     favouriteIds={favIds}
                     onToggleFavourite={toggleFav}
+                    savedLocations={savedLocations}
                   />
                 </div>
 
@@ -777,6 +786,11 @@ export default function FloodMapPage() {
                     }, { d: Infinity, n: nodes[0] });
                     focusNode(closest.n.id);
                   }}
+                  onLocationsChange={(locs) => setSavedLocations(locs.map(l => ({
+                    id: l.id, label: l.label,
+                    latitude: l.latitude, longitude: l.longitude,
+                    alertRadiusKm: l.alertRadiusKm,
+                  })))}
                 />
               )}
 
