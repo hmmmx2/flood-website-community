@@ -22,6 +22,9 @@ type SensorNodeDto = {
   area: string;
   location: string;
   state: string;
+  /** Reverse-geocoded full address line. Populated by Phase 2's
+   *  GeocodeBackfillRunner; null on pre-backfill rows. */
+  address?: string | null;
   latitude: number;
   longitude: number;
   currentLevel: FloodLevel;
