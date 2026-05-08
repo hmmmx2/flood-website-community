@@ -11,7 +11,7 @@
  * UserRepository.findEmailSubscribersForFloodAt(...).
  */
 
-import { useCallback, useEffect, useImperativeHandle, useState, forwardRef } from "react";
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, forwardRef } from "react";
 import toast from "react-hot-toast";
 import SavedLocationEditor, { type SavedLocationDraft } from "./SavedLocationEditor";
 
@@ -59,6 +59,14 @@ const SavedLocationsPanel = forwardRef<SavedLocationsPanelHandle, SavedLocations
     },
   }), []);
 
+  // Capture the parent's onLocationsChange via a ref so reload() doesn't
+  // depend on it. Without this, an inline arrow in the parent caused a
+  // new function reference each render → reload() rebuilt → useEffect
+  // fired → setSavedLocations re-rendered the parent → loop. (Saved
+  // Places "load is not working properly" reported in QA.)
+  const onLocationsChangeRef = useRef(onLocationsChange);
+  useEffect(() => { onLocationsChangeRef.current = onLocationsChange; }, [onLocationsChange]);
+
   const reload = useCallback(async () => {
     setLoading(true);
     try {
@@ -69,13 +77,13 @@ const SavedLocationsPanel = forwardRef<SavedLocationsPanelHandle, SavedLocations
       }
       const data = (await res.json()) as SavedLocation[];
       setLocations(data);
-      onLocationsChange?.(data);
+      onLocationsChangeRef.current?.(data);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not load saved locations");
     } finally {
       setLoading(false);
     }
-  }, [onLocationsChange]);
+  }, []);
 
   useEffect(() => { void reload(); }, [reload]);
 

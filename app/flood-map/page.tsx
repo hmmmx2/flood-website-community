@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Navbar from "@/components/Navbar";
 import SearchModal from "@/components/SearchModal";
 import { SearchField } from "@/components/ui/search-field";
-import ZoneMap, { type MapZone, type ZoneStatus, type FloodLevel, STATUS_HEX } from "@/components/NodeMap";
+import NodeMap, { type MapNode, type FloodLevel, STATUS_HEX } from "@/components/NodeMap";
 import SavedLocationsPanel, { type SavedLocationsPanelHandle } from "@/components/SavedLocationsPanel";
 import toast from "react-hot-toast";
 import { useSession, signOut } from "next-auth/react";
@@ -38,33 +38,42 @@ type SensorNodeDto = {
 const LEVEL_LABEL: Record<FloodLevel, string> = { 0: "Dry", 1: "Normal", 2: "Warning", 3: "Critical" };
 const OFFLINE_HEX = "#6b7280";
 
-// ── Privacy: deterministic centroid offset for zones ──────────────────────────
-// Sensors are publicly visible only as aggregated "zones" (worst level
-// per area). Their true positions are never rendered — the zone centre
-// is shifted by a small deterministic delta so refreshing the page
-// won't reveal "where the circle wants to settle". The offset is seeded
-// by the zone name (FNV-1a-ish 32-bit hash) and capped at ±0.012° (~1.3 km).
-function hashSeed(s: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
-  return h >>> 0;
+function toMapNode(n: SensorNodeDto): MapNode {
+  return {
+    id:           n.id,
+    nodeId:       n.nodeId,
+    name:         n.name,
+    area:         n.area,
+    location:     n.location,
+    state:        n.state,
+    address:      n.address,
+    latitude:     n.latitude,
+    longitude:    n.longitude,
+    currentLevel: n.currentLevel,
+    isOffline:    n.status === "inactive",
+    lastUpdated:  n.lastUpdated,
+  };
 }
-function deterministicJitter(seed: number, axis: 0 | 1): number {
-  const v = ((seed >>> (axis * 16)) & 0xffff) / 0xffff; // 0..1
-  return (v - 0.5) * 0.024; // ±0.012°
+
+// Haversine distance in km — used to determine which sensors fall
+// inside each saved-place radius for the "Nodes in Radius" panel.
+function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const R = 6371;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+  const lat1 = toRad(aLat), lat2 = toRad(bLat);
+  const a = Math.sin(dLat / 2) ** 2 + Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
 }
-function severityRank(level: FloodLevel | null, isOffline: boolean): number {
-  if (isOffline)      return 0; // offline beats nothing — but is shown as a separate state
-  if (level === 3)    return 4;
-  if (level === 2)    return 3;
-  if (level === 1)    return 2;
-  return 1;
+
+function nodeStatusLabel(n: SensorNodeDto): string {
+  if (n.status === "inactive") return "Offline";
+  return LEVEL_LABEL[n.currentLevel];
 }
-function levelToZoneStatus(level: FloodLevel): ZoneStatus {
-  if (level === 3) return "critical";
-  if (level === 2) return "warning";
-  if (level === 1) return "normal";
-  return "dry";
+function nodeStatusHex(n: SensorNodeDto): string {
+  if (n.status === "inactive") return "#6b7280";
+  return STATUS_HEX[n.currentLevel];
 }
 
 // ── Status filter keys ────────────────────────────────────────────────────────
@@ -316,74 +325,24 @@ export default function FloodMapPage() {
     return r;
   }, [nodes, filterState, filterCity, filterStatuses, searchQuery]);
 
-  // ── Privacy-first zone aggregation ────────────────────────────────────────
-  // Sensors are grouped by `area` (e.g. "Penampang", "Kota Kinabalu"). The
-  // resulting MapZone[] is the ONLY thing the map sees — raw lat/lng for
-  // individual sensors never leaves this component. Each zone gets:
-  //   • worstLevel   — the highest severity among contributing sensors
-  //   • centroid     — mean of contributing positions, then jittered
-  //                    deterministically by the area name so the visible
-  //                    centre is never the actual sensor location
-  //   • radiusM      — fixed 2.5 km bubble (does not encode sensor density)
-  const mapZones: MapZone[] = useMemo(() => {
-    if (filteredNodes.length === 0) return [];
-    const grouped = new Map<string, SensorNodeDto[]>();
-    for (const n of filteredNodes) {
-      const key = n.area || n.location || n.state || "Unknown area";
-      const arr = grouped.get(key);
-      if (arr) arr.push(n); else grouped.set(key, [n]);
-    }
-    const zones: MapZone[] = [];
-    for (const [areaName, group] of grouped) {
-      // Worst level wins; if every sensor is offline, mark zone offline.
-      let worst: ZoneStatus = "dry";
-      let bestRank = 0;
-      let allOffline = true;
-      let lastUpdated: string | undefined;
-      for (const n of group) {
-        if (n.status !== "inactive") {
-          allOffline = false;
-          const r = severityRank(n.currentLevel, false);
-          if (r > bestRank) {
-            bestRank = r;
-            worst = levelToZoneStatus(n.currentLevel);
-          }
-        }
-        if (n.lastUpdated && (!lastUpdated || n.lastUpdated > lastUpdated)) {
-          lastUpdated = n.lastUpdated;
-        }
-      }
-      if (allOffline) worst = "offline";
+  // ── Per-node mapping ──────────────────────────────────────────────────────
+  const mapNodes: MapNode[] = useMemo(
+    () => filteredNodes.map(toMapNode),
+    [filteredNodes],
+  );
 
-      const meanLat = group.reduce((s, n) => s + n.latitude,  0) / group.length;
-      const meanLng = group.reduce((s, n) => s + n.longitude, 0) / group.length;
-      const seed = hashSeed(areaName);
-      zones.push({
-        id: areaName,
-        name: areaName,
-        region: group[0].state ?? undefined,
-        worstLevel: worst,
-        sensorCount: group.length,
-        centerLat: meanLat + deterministicJitter(seed, 0),
-        centerLng: meanLng + deterministicJitter(seed, 1),
-        radiusM: 2500,
-        lastUpdated,
-      });
-    }
-    return zones;
-  }, [filteredNodes]);
-
-  // Areas with elevated water level — replaces the old per-sensor
-  // "Recently Updated" chips. Order: critical > warning > normal.
-  const elevatedAreas = useMemo(() => {
-    const rank: Record<ZoneStatus, number> = {
-      critical: 4, warning: 3, normal: 2, dry: 1, offline: 0,
-    };
-    return [...mapZones]
-      .filter(z => z.worstLevel === "warning" || z.worstLevel === "critical")
-      .sort((a, b) => rank[b.worstLevel] - rank[a.worstLevel])
-      .slice(0, 6);
-  }, [mapZones]);
+  // For each saved place, compute the list of sensors inside its radius —
+  // sorted by distance. Powers the "Nodes in Radius" sidebar card.
+  const nodesByPlace = useMemo(() => {
+    if (savedLocations.length === 0) return [];
+    return savedLocations.map(place => {
+      const matched = nodes
+        .map(n => ({ n, d: haversineKm(place.latitude, place.longitude, n.latitude, n.longitude) }))
+        .filter(({ d }) => d <= place.alertRadiusKm)
+        .sort((a, b) => a.d - b.d);
+      return { place, items: matched };
+    });
+  }, [savedLocations, nodes]);
 
   // ── Stats ──────────────────────────────────────────────────────────────────
   const stats = useMemo(() => ({
@@ -417,8 +376,8 @@ export default function FloodMapPage() {
           <div>
             <h1 className="text-2xl font-bold text-[var(--color-text)]">Flood Map</h1>
             <p className="text-sm text-[var(--color-muted)] mt-0.5">
-              Real-time water-level zones across Sabah. Search for a place, or
-              <strong className="text-[var(--color-text)]"> right-click anywhere on the map</strong> to save it as a place and get email alerts.
+              Real-time water-level sensors across Sabah, coloured by status.
+              Search for a place, or <strong className="text-[var(--color-text)]">right-click anywhere on the map</strong> to save it as a place and get email alerts.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -646,47 +605,12 @@ export default function FloodMapPage() {
                   </div>
                 </div>
 
-                {/* Areas with elevated water level — replaces the per-sensor
-                    "Recently Updated" chips. Privacy-first: shows the area
-                    name only, no node ID and no coordinates. */}
-                {elevatedAreas.length > 0 && (
-                  <div className="mb-4">
-                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-                      Areas with rising water
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {elevatedAreas.map(zone => {
-                        const tone = zone.worstLevel === "critical"
-                          ? "border-red-400 bg-red-50 hover:bg-red-100"
-                          : "border-amber-400 bg-amber-50 hover:bg-amber-100";
-                        const dot = zone.worstLevel === "critical" ? STATUS_HEX[3] : STATUS_HEX[2];
-                        const label = zone.worstLevel === "critical" ? "High Risk" : "Warning";
-                        return (
-                          <button
-                            key={zone.id}
-                            type="button"
-                            onClick={() => focusOnPoint(zone.centerLat, zone.centerLng, 12)}
-                            title={`Centre map on ${zone.name}`}
-                            className={`group flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-all ${tone}`}
-                          >
-                            <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ backgroundColor: dot }} />
-                            <span>{zone.name}</span>
-                            <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: dot }}>
-                              {label}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Privacy-first zone map */}
+                {/* Per-node circle map */}
                 <div className="rounded-2xl border border-[var(--color-border)] overflow-hidden">
-                  <ZoneMap
-                    zones={mapZones}
+                  <NodeMap
+                    nodes={mapNodes}
                     height={480}
-                    defaultZoom={10}
+                    defaultZoom={11}
                     focusLatLng={focusLatLng}
                     onMapRightClick={(lat, lng) => void handleMapRightClick(lat, lng)}
                     onPlaceSelect={(lat, lng) => focusOnPoint(lat, lng, 14)}
@@ -766,50 +690,68 @@ export default function FloodMapPage() {
                   exposed individual hardware. Saved Places covers the
                   same use-case at area / radius granularity. */}
 
-              {/* Status legend */}
-              <div className={card + " p-4"}>
-                <h3 className="text-base font-semibold text-[var(--color-text)]">Status Legend</h3>
-                <p className="text-xs text-[var(--color-muted)] mt-0.5 mb-4">
-                  Sabah flood SOP water levels.
-                </p>
-                <ul className="space-y-3">
-                  {[
-                    { hex: STATUS_HEX[0],  label: "Dry",      desc: "No flood risk",          lvl: 0 },
-                    { hex: STATUS_HEX[1],  label: "Normal",   desc: "Safe water level",        lvl: 1 },
-                    { hex: STATUS_HEX[2],  label: "Warning",  desc: "Monitor closely",         lvl: 2 },
-                    { hex: STATUS_HEX[3],  label: "Critical", desc: "Severe flood risk",       lvl: 3 },
-                    { hex: OFFLINE_HEX,    label: "Offline",  desc: "Sensor not reporting",    lvl: null },
-                  ].map(({ hex, label, desc, lvl }) => (
-                    <li
-                      key={label}
-                      className="flex items-center justify-between rounded-2xl border border-[var(--color-border)] px-4 py-3"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span
-                          className="flex h-9 w-9 items-center justify-center rounded-full text-white text-sm font-semibold"
-                          style={{ backgroundColor: hex }}
-                        >
-                          {lvl ?? "—"}
-                        </span>
-                        <div>
-                          <p className="text-sm font-semibold text-[var(--color-text)]">{label}</p>
-                          <p className="text-xs text-[var(--color-muted)]">{desc}</p>
+              {/* Nodes in Radius — for each saved place, list sensors that
+                  fall inside its alert radius, sorted by distance. */}
+              {user && nodesByPlace.length > 0 && (
+                <div className={card + " p-4"}>
+                  <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--color-text)]">
+                    Nodes in Radius
+                  </h3>
+                  <p className="text-[11px] text-[var(--color-muted)] mt-0.5 mb-3">
+                    Sensors inside each of your saved places.
+                  </p>
+                  <div className="space-y-4">
+                    {nodesByPlace.map(({ place, items }) => (
+                      <div key={place.id}>
+                        <div className="mb-1.5 flex items-center justify-between">
+                          <p className="text-xs font-semibold text-[var(--color-text)] truncate">
+                            {place.label}
+                          </p>
+                          <span className="rounded-full bg-[var(--color-input-bg)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-muted)]">
+                            {items.length} · {place.alertRadiusKm} km
+                          </span>
                         </div>
+                        {items.length === 0 ? (
+                          <p className="rounded-lg bg-[var(--color-input-bg)] px-3 py-2 text-[11px] text-[var(--color-muted)]">
+                            No sensors within the radius.
+                          </p>
+                        ) : (
+                          <ul className="space-y-1.5">
+                            {items.slice(0, 8).map(({ n, d }) => (
+                              <li key={n.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => focusOnPoint(n.latitude, n.longitude, 14)}
+                                  className="group flex w-full items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-input-bg)] px-2.5 py-2 text-left transition-colors hover:border-[var(--color-brand)]"
+                                >
+                                  <span
+                                    className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                                    style={{ backgroundColor: nodeStatusHex(n) }}
+                                    aria-hidden
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-xs font-semibold text-[var(--color-text)]">
+                                      {n.area || n.location || "Sensor"}
+                                    </p>
+                                    <p className="truncate text-[10px] text-[var(--color-muted)]">
+                                      {nodeStatusLabel(n)} · {d.toFixed(1)} km
+                                    </p>
+                                  </div>
+                                </button>
+                              </li>
+                            ))}
+                            {items.length > 8 && (
+                              <li className="text-[10px] text-[var(--color-muted)] pl-1">
+                                +{items.length - 8} more
+                              </li>
+                            )}
+                          </ul>
+                        )}
                       </div>
-                      {lvl !== null && (
-                        <span className="text-sm font-semibold text-[var(--color-brand)]">
-                          LVL {lvl}
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-                <div className="mt-4 rounded-2xl bg-[var(--color-input-bg)] px-4 py-3 text-xs text-[var(--color-muted)]">
-                  <p className="font-semibold uppercase tracking-wide text-[var(--color-text)]">Map Info</p>
-                  <p>Total: {stats.totalAll} · Visible: {stats.total} · Online: {stats.online} · Offline: {stats.offline}</p>
-                  <p className="mt-0.5">Live · Server-Sent Events (SSE).</p>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </aside>
           </div>
         )}

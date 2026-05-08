@@ -1,19 +1,18 @@
 "use client";
 
 /**
- * <ZoneMap /> — privacy-first Flood Map.
+ * <NodeMap /> — Flood Map.
  *
- * Phase 4b redesign: individual sensor positions are NEVER rendered or
- * exposed in the DOM. The component only accepts pre-aggregated
- * `MapZone[]` (worst-level + count per area) and renders translucent
- * coloured circles at obfuscated centroids. This protects physical
- * hardware from theft and vandalism — a resident sees "Penampang —
- * High Risk" but can't track the device to a riverbank.
+ * Each sensor is rendered as a translucent coloured circle at its real
+ * position; the circle fill colour reflects the current water-level
+ * (Dry / Normal / Warning / Critical / Offline). No pin markers, no
+ * InfoWindow — node identification is handled in the right-hand
+ * "Nodes in Radius" panel that lives next to each saved place.
  *
- * Interactions:
+ * The map also supports:
  *   • Right-click on map  → onMapRightClick(lat, lng)  (drop a saved-place pin)
- *   • Autocomplete search → onPlaceSelect(lat, lng, name)
- *   • Saved-location pins are still clickable (those are the *user's* pins, not sensors).
+ *   • Places Autocomplete → onPlaceSelect(lat, lng, name)
+ *   • Saved-place house pins + alert-radius circles
  */
 
 import React, {
@@ -28,26 +27,25 @@ import {
   Circle,
   GoogleMap,
   Marker,
-  OverlayView,
   useJsApiLoader,
   type Libraries,
 } from "@react-google-maps/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-export type ZoneStatus = "dry" | "normal" | "warning" | "critical" | "offline";
+export type FloodLevel = 0 | 1 | 2 | 3;
 
-export type MapZone = {
-  id: string;            // unique zone key — typically the area name
-  name: string;          // display name (e.g. "Penampang", "Kota Kinabalu")
-  region?: string;       // parent district / state, optional caption
-  worstLevel: ZoneStatus;
-  sensorCount: number;
-  /** Centroid-shifted lat/lng — never the true sensor position. */
-  centerLat: number;
-  centerLng: number;
-  /** Visual radius in metres. Constant per area; not derived from the
-   *  spread of underlying sensors (which would leak density info). */
-  radiusM: number;
+export type MapNode = {
+  id: string;
+  nodeId: string;
+  name?: string;
+  area?: string;
+  location?: string;
+  state?: string;
+  address?: string | null;
+  latitude: number;
+  longitude: number;
+  currentLevel: FloodLevel;
+  isOffline: boolean;
   lastUpdated?: string;
 };
 
@@ -60,34 +58,19 @@ export type MapSavedLocation = {
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-/** Numeric-keyed status palette retained for legend / filter chip code in
- *  flood-map/page.tsx. The four water levels map 1:1 onto ZoneStatus. */
-export type FloodLevel = 0 | 1 | 2 | 3;
 export const STATUS_HEX: Record<FloodLevel, string> = {
-  0: "#16a34a", // emerald — All clear
-  1: "#facc15", // amber — Normal
-  2: "#f97316", // orange — Warning
-  3: "#dc2626", // red    — High Risk
+  0: "#16a34a", // Dry      — emerald
+  1: "#facc15", // Normal   — amber
+  2: "#f97316", // Warning  — orange
+  3: "#dc2626", // Critical — red
 };
-const ZONE_HEX: Record<ZoneStatus, string> = {
-  dry:      STATUS_HEX[0],
-  normal:   STATUS_HEX[1],
-  warning:  STATUS_HEX[2],
-  critical: STATUS_HEX[3],
-  offline:  "#6b7280",
-};
+const OFFLINE_HEX = "#6b7280";
 
-const STATUS_LABEL: Record<ZoneStatus, string> = {
-  dry:      "All clear",
-  normal:   "Normal",
-  warning:  "Warning",
-  critical: "High Risk",
-  offline:  "Sensor offline",
-};
+function getNodeColour(node: MapNode): string {
+  if (node.isOffline) return OFFLINE_HEX;
+  return STATUS_HEX[node.currentLevel] ?? STATUS_HEX[0];
+}
 
-// `places` is required for the Autocomplete search bar. Hoisted to a
-// stable reference so the loader's library list doesn't change between
-// renders (changing it triggers a useJsApiLoader warning).
 const MAPS_LIBRARIES: Libraries = ["places"];
 
 const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ?? "";
@@ -100,33 +83,35 @@ const mapStyles: google.maps.MapTypeStyle[] = [
 ];
 
 // ── Props ─────────────────────────────────────────────────────────────────────
-type ZoneMapProps = {
-  zones: MapZone[];
+type NodeMapProps = {
+  nodes: MapNode[];
   savedLocations?: MapSavedLocation[];
   height?: number;
   defaultZoom?: number;
   defaultCenter?: { lat: number; lng: number };
-  /** Pan + zoom the map to this point. Used by the saved-place click flow. */
+  /** Pan + zoom the map to this point. */
   focusLatLng?: { lat: number; lng: number; zoom?: number } | null;
-  /** Right-click handler — receives the geographic point the user clicked. */
+  /** Right-click → user picks a coord (used for "save this place"). */
   onMapRightClick?: (lat: number, lng: number) => void;
   /** Place search handler — fired when user picks an Autocomplete suggestion. */
   onPlaceSelect?: (lat: number, lng: number, name: string) => void;
+  /** Per-node circle radius in metres. Defaults to 350 m. */
+  nodeRadiusM?: number;
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export default function ZoneMap({
-  zones,
+export default function NodeMap({
+  nodes,
   savedLocations,
   height = 480,
-  defaultZoom = 10,
+  defaultZoom = 11,
   defaultCenter,
   focusLatLng = null,
   onMapRightClick,
   onPlaceSelect,
-}: ZoneMapProps) {
+  nodeRadiusM = 350,
+}: NodeMapProps) {
   const [mapError, setMapError] = useState(false);
-  const [hoveredZoneId, setHoveredZoneId] = useState<string | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
   const [searchInput, setSearchInput] = useState("");
@@ -139,18 +124,15 @@ export default function ZoneMap({
 
   useEffect(() => { if (loadError) setMapError(true); }, [loadError]);
 
-  // Initial center — computed once on mount from the zone average.
-  // Falls back to the explicit `defaultCenter` (or Sabah-ish coords).
   const mapCenter = useMemo(() => {
     if (defaultCenter) return defaultCenter;
-    if (zones.length === 0) return { lat: 5.9788, lng: 116.0753 };
-    const lat = zones.reduce((s, z) => s + z.centerLat, 0) / zones.length;
-    const lng = zones.reduce((s, z) => s + z.centerLng, 0) / zones.length;
+    if (nodes.length === 0) return { lat: 5.9788, lng: 116.0753 };
+    const lat = nodes.reduce((s, n) => s + n.latitude,  0) / nodes.length;
+    const lng = nodes.reduce((s, n) => s + n.longitude, 0) / nodes.length;
     return { lat, lng };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // mount-only
 
-  // Pan to focusLatLng when it changes.
   useEffect(() => {
     if (!focusLatLng || !mapRef.current) return;
     mapRef.current.panTo({ lat: focusLatLng.lat, lng: focusLatLng.lng });
@@ -183,7 +165,6 @@ export default function ZoneMap({
     onPlaceSelect?.(lat, lng, name);
   }, [onPlaceSelect]);
 
-  // ── Saved-place house pin (kept from Phase 4) ─────────────────────────────
   const savedPlaceIcon: google.maps.Symbol | undefined = useMemo(() => {
     if (typeof google === "undefined" || !isLoaded) return undefined;
     return {
@@ -208,20 +189,8 @@ export default function ZoneMap({
       >
         <p className="text-sm font-semibold text-[var(--color-text)]">Map Preview</p>
         <p className="mt-1 text-xs text-[var(--color-muted)]">
-          {zones.length} flood {zones.length === 1 ? "zone" : "zones"} loaded
+          {nodes.length} sensor{nodes.length === 1 ? "" : "s"} loaded
         </p>
-        <div className="mt-4 flex flex-wrap justify-center gap-2 px-4">
-          {zones.slice(0, 4).map(z => (
-            <div
-              key={z.id}
-              className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)]/95 px-2 py-1 text-xs"
-            >
-              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: ZONE_HEX[z.worstLevel] }} />
-              <span className="font-medium text-[var(--color-text)]">{z.name}</span>
-              <span className="text-[var(--color-muted)]">{STATUS_LABEL[z.worstLevel]}</span>
-            </div>
-          ))}
-        </div>
         <p className="absolute bottom-3 text-[10px] text-[var(--color-muted)]">
           Configure NEXT_PUBLIC_GOOGLE_MAPS_KEY for live map
         </p>
@@ -259,91 +228,35 @@ export default function ZoneMap({
           zoomControl: true,
           styles: mapStyles,
           gestureHandling: "greedy",
-          // We intentionally hide the Street View pegman — it lets users
-          // confirm precise sensor positions on the ground, defeating the
-          // centroid-shift obfuscation.
           streetViewControl: false,
           mapTypeControl: false,
-          // Disable rotation/tilt so the visible zones stay aligned with
-          // the colour-blind-friendly text labels.
           rotateControl: false,
         }}
         onLoad={onMapLoad}
         onRightClick={handleRightClick}
       >
-        {/* ── Flood zones — translucent circles, soft edges. */}
-        {zones.map(zone => {
-          const colour = ZONE_HEX[zone.worstLevel];
-          const isHovered = hoveredZoneId === zone.id;
+        {/* Per-node circles — one per sensor, coloured by water level. */}
+        {nodes.map(node => {
+          const colour = getNodeColour(node);
           return (
-            <React.Fragment key={`zone-${zone.id}`}>
-              <Circle
-                center={{ lat: zone.centerLat, lng: zone.centerLng }}
-                radius={zone.radiusM}
-                onMouseOver={() => setHoveredZoneId(zone.id)}
-                onMouseOut={() => setHoveredZoneId(null)}
-                options={{
-                  fillColor: colour,
-                  fillOpacity: isHovered ? 0.32 : 0.22,
-                  strokeColor: colour,
-                  strokeOpacity: 0.7,
-                  strokeWeight: isHovered ? 2.5 : 1.5,
-                  // Zones are *not* clickable as far as data exposure goes —
-                  // hover only changes opacity, no InfoWindow. clickable=false
-                  // also prevents the cursor from suggesting a click target.
-                  clickable: false,
-                  zIndex: 1,
-                }}
-              />
-              {/* Zone label — high-contrast pill rendered as DOM so screen
-                  readers find it. Positioned at the obfuscated centroid. */}
-              <OverlayView
-                position={{ lat: zone.centerLat, lng: zone.centerLng }}
-                mapPaneName={OverlayView.OVERLAY_LAYER}
-                getPixelPositionOffset={(w, h) => ({ x: -w / 2, y: -h / 2 })}
-              >
-                <div
-                  role="img"
-                  aria-label={`${zone.name}: ${STATUS_LABEL[zone.worstLevel]}`}
-                  style={{
-                    pointerEvents: "none",
-                    userSelect: "none",
-                    background: "rgba(255,255,255,0.92)",
-                    border: `2px solid ${colour}`,
-                    borderRadius: 999,
-                    padding: "4px 10px",
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: "#0f172a",
-                    whiteSpace: "nowrap",
-                    boxShadow: "0 2px 6px rgba(0,0,0,0.12)",
-                    fontFamily: "inherit",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                  }}
-                >
-                  <span
-                    style={{
-                      display: "inline-block",
-                      width: 8,
-                      height: 8,
-                      borderRadius: "50%",
-                      background: colour,
-                      flexShrink: 0,
-                    }}
-                  />
-                  <span>{zone.name}</span>
-                  <span style={{ color: colour, fontWeight: 800 }}>
-                    · {STATUS_LABEL[zone.worstLevel]}
-                  </span>
-                </div>
-              </OverlayView>
-            </React.Fragment>
+            <Circle
+              key={`node-${node.id}`}
+              center={{ lat: node.latitude, lng: node.longitude }}
+              radius={nodeRadiusM}
+              options={{
+                fillColor: colour,
+                fillOpacity: 0.4,
+                strokeColor: colour,
+                strokeOpacity: 0.85,
+                strokeWeight: 2,
+                clickable: false,
+                zIndex: 2,
+              }}
+            />
           );
         })}
 
-        {/* ── Saved-place radius circles + house pins (the user's own pins). */}
+        {/* Saved-place radius circles + house pins. */}
         {savedLocations?.map(loc => (
           <React.Fragment key={`saved-${loc.id}`}>
             <Circle
@@ -370,17 +283,13 @@ export default function ZoneMap({
         ))}
       </GoogleMap>
 
-      {/* ── Floating Places search bar — top-left of the map. */}
-      <div
-        className="pointer-events-none absolute left-3 top-3 right-3 z-10 sm:right-auto sm:max-w-sm"
-      >
+      {/* Floating Places search bar — top-left of the map. */}
+      <div className="pointer-events-none absolute left-3 top-3 right-3 z-10 sm:right-auto sm:max-w-sm">
         <div className="pointer-events-auto rounded-full bg-white shadow-lg ring-1 ring-black/10">
           <Autocomplete
             onLoad={(ac) => { autocompleteRef.current = ac; }}
             onPlaceChanged={handlePlaceChanged}
             options={{
-              // Bias to Malaysia so suggestions feel local. The Place API
-              // still returns global results if the user types something far away.
               componentRestrictions: { country: ["my"] },
               fields: ["geometry", "name", "formatted_address"],
             }}
