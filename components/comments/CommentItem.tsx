@@ -50,6 +50,9 @@ export default function CommentItem({
       });
       onPatch({ ...n, ...updated, children: n.children });
       setEditing(false);
+      // Pull a fresh page from the server so the rendered tree matches
+      // the canonical state (catches any side-effects on counts / sorts).
+      onCommentMutated?.();
       toast.success("Updated");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed");

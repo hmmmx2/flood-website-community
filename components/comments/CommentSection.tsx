@@ -88,6 +88,18 @@ export default function CommentSection({ postId, currentUserId, onTotalCommentsC
     [postId, publishTotal, sort],
   );
 
+  // Re-fetch every page currently shown so server truth wins after a
+  // mutation (delete reshapes the tree, edit updates content). Without
+  // this the optimistic update can drift — e.g. when a parent gets
+  // soft-deleted, the children's render conditions change.
+  const refreshAllPages = useCallback(async () => {
+    const last = page;
+    await fetchPage(0, false);
+    for (let p = 1; p <= last; p++) {
+      await fetchPage(p, true);
+    }
+  }, [fetchPage, page]);
+
   useEffect(() => {
     setLoading(true);
     setPage(0);
@@ -190,7 +202,7 @@ export default function CommentSection({ postId, currentUserId, onTotalCommentsC
             depth={0}
             onPatch={patchNode}
             onAdd={(c) => void addComment(normalizeComment(c))}
-            onCommentMutated={refreshCommentTotal}
+            onCommentMutated={refreshAllPages}
           />
           {flat.length === 0 && (
             <p className="text-center text-sm text-[var(--color-muted)] py-6">No comments yet.</p>
