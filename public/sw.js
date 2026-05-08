@@ -28,7 +28,7 @@ self.addEventListener('push', (event) => {
   }
 
   // Map flood level → notification urgency
-  const levelLabels = { 0: 'Normal', 1: 'Normal', 2: 'Warning', 3: 'Critical' };
+  const levelLabels = { 0: 'Normal', 1: 'Alert', 2: 'Warning', 3: 'Critical' };
   const levelLabel = levelLabels[data.level] ?? 'Alert';
   const isCritical = data.level >= 3;
 

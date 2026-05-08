@@ -21,3 +21,26 @@ export async function DELETE(
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed" }, { status });
   }
 }
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ nodeId: string }> },
+) {
+  const session = await auth();
+  if (!session?.accessToken) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  try {
+    const { nodeId } = await params;
+    const body = await req.json();
+    const data = await javaFetch<unknown>(`/favourites/${nodeId}`, {
+      method: "PATCH",
+      token: session.accessToken,
+      body,
+    });
+    return NextResponse.json(data);
+  } catch (error) {
+    const status = (error as { status?: number }).status ?? 500;
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed" }, { status });
+  }
+}

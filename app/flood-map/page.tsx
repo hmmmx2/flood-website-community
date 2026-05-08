@@ -6,8 +6,9 @@ import SearchModal from "@/components/SearchModal";
 import { SearchField } from "@/components/ui/search-field";
 import NodeMap, { type MapNode, type FloodLevel, STATUS_HEX } from "@/components/NodeMap";
 import SavedLocationsPanel, { type SavedLocationsPanelHandle } from "@/components/SavedLocationsPanel";
+import NodeBellMenu, { type NodeChannelPrefs } from "@/components/NodeBellMenu";
 import toast from "react-hot-toast";
-import { useSession, signOut, signIn } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 import { sessionToAuthUser } from "@/lib/auth";
 import { fetchJson, authFetchJson } from "@/lib/fetchJson";
 import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
@@ -35,10 +36,23 @@ type SensorNodeDto = {
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const LEVEL_LABEL: Record<FloodLevel, string> = { 0: "Dry", 1: "Normal", 2: "Warning", 3: "Critical" };
+const LEVEL_LABEL: Record<FloodLevel, string> = { 0: "Normal", 1: "Alert", 2: "Warning", 3: "Critical" };
 const OFFLINE_HEX = "#6b7280";
 
-type FavouriteNodeDto = SensorNodeDto & { favouritedAt?: string };
+type FavouriteNodeDto = SensorNodeDto & {
+  favouritedAt?: string;
+  emailEnabled?: boolean;
+  smsEnabled?: boolean;
+  whatsappEnabled?: boolean;
+  pushEnabled?: boolean;
+};
+
+const DEFAULT_NODE_CHANNEL_PREFS: NodeChannelPrefs = {
+  emailEnabled: true,
+  smsEnabled: true,
+  whatsappEnabled: true,
+  pushEnabled: true,
+};
 
 function toMapNode(n: SensorNodeDto): MapNode {
   return {
@@ -82,8 +96,8 @@ function nodeStatusHex(n: SensorNodeDto): string {
 type StatusKey = "dry" | "normal" | "warning" | "critical" | "offline";
 
 const STATUS_OPTIONS: { key: StatusKey; label: string; dotHex: string }[] = [
-  { key: "dry",      label: "Dry",      dotHex: STATUS_HEX[0] },
-  { key: "normal",   label: "Normal",   dotHex: STATUS_HEX[1] },
+  { key: "dry",      label: "Normal",   dotHex: STATUS_HEX[0] },
+  { key: "normal",   label: "Alert",    dotHex: STATUS_HEX[1] },
   { key: "warning",  label: "Warning",  dotHex: STATUS_HEX[2] },
   { key: "critical", label: "Critical", dotHex: STATUS_HEX[3] },
   { key: "offline",  label: "Offline",  dotHex: OFFLINE_HEX   },
@@ -128,16 +142,6 @@ function XIcon(p: React.SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
-function StarIcon({ filled, ...p }: { filled?: boolean } & React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
-         fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" {...p}>
-      <path strokeLinecap="round" strokeLinejoin="round"
-            d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
-    </svg>
-  );
-}
-
 function MapPinIcon(p: React.SVGProps<SVGSVGElement>) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
@@ -163,7 +167,11 @@ export default function FloodMapPage() {
   const { searchOpen, openSearch, closeSearch } = useSiteSearchModal();
   const [nodes, setNodes]             = useState<SensorNodeDto[]>([]);
   const [favIds, setFavIds]           = useState<Set<string>>(new Set());
-  const [pendingFavs, setPendingFavs] = useState<Set<string>>(new Set());
+  // Per-node notification channel preferences. Keyed by sensor business
+  // nodeId. Hydrated from /api/favourites and updated optimistically when
+  // the user toggles channels via the bell menu.
+  const [favChannelPrefs, setFavChannelPrefs] =
+    useState<Record<string, NodeChannelPrefs>>({});
   const [loading, setLoading]         = useState(true);
   const [fetchError, setFetchError]   = useState(false);
   const [lastFetch, setLastFetch]     = useState<Date | null>(null);
@@ -313,63 +321,64 @@ export default function FloodMapPage() {
   // saved-location radius (see UserRepository.findNotificationSubscribersForFloodAt).
   const sessionUserId = session?.user?.id ?? null;
   useEffect(() => {
-    if (!sessionUserId) { setFavIds(new Set()); return; }
+    if (!sessionUserId) {
+      setFavIds(new Set());
+      setFavChannelPrefs({});
+      return;
+    }
     let cancelled = false;
     void (async () => {
       try {
         const data = await authFetchJson<FavouriteNodeDto[]>("/api/favourites");
         if (cancelled) return;
-        setFavIds(new Set(
-          data.map((f) => f.nodeId).filter((id): id is string => typeof id === "string" && id.length > 0)
-        ));
+        const ids = new Set<string>();
+        const prefs: Record<string, NodeChannelPrefs> = {};
+        for (const f of data) {
+          if (typeof f.nodeId !== "string" || f.nodeId.length === 0) continue;
+          ids.add(f.nodeId);
+          prefs[f.nodeId] = {
+            emailEnabled:    f.emailEnabled    ?? true,
+            smsEnabled:      f.smsEnabled      ?? true,
+            whatsappEnabled: f.whatsappEnabled ?? true,
+            pushEnabled:     f.pushEnabled     ?? true,
+          };
+        }
+        setFavIds(ids);
+        setFavChannelPrefs(prefs);
       } catch { /* non-critical */ }
     })();
     return () => { cancelled = true; };
   }, [sessionUserId]);
 
-  const toggleFav = useCallback(async (sensorNodeId: string) => {
-    if (!session) {
-      toast("Please sign in to continue.");
-      void signIn(undefined, { callbackUrl: typeof window !== "undefined" ? window.location.href : "/" });
-      return;
-    }
-    if (pendingFavs.has(sensorNodeId)) return;
-    setPendingFavs(prev => new Set([...prev, sensorNodeId]));
-
-    const isFav = favIds.has(sensorNodeId);
+  /**
+   * Make sure a favourite row exists for this sensor before the user can
+   * tweak its channel toggles. No-op if already favourited. Called by
+   * <NodeBellMenu /> the first time a user touches a channel switch.
+   */
+  const subscribeNode = useCallback(async (sensorNodeId: string) => {
+    if (favIds.has(sensorNodeId)) return;
+    await authFetchJson("/api/favourites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nodeId: sensorNodeId }),
+    });
     setFavIds(prev => {
       const next = new Set(prev);
-      if (isFav) next.delete(sensorNodeId); else next.add(sensorNodeId);
+      next.add(sensorNodeId);
       return next;
     });
-    try {
-      if (isFav) {
-        await authFetchJson(`/api/favourites/${sensorNodeId}`, { method: "DELETE" });
-        toast.success("Removed from favourites");
-      } else {
-        await authFetchJson("/api/favourites", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ nodeId: sensorNodeId }),
-        });
-        toast.success("You'll be notified when this sensor reports an alert");
-      }
-    } catch (e) {
-      // Roll the optimistic update back on failure.
-      setFavIds(prev => {
-        const next = new Set(prev);
-        if (isFav) next.add(sensorNodeId); else next.delete(sensorNodeId);
-        return next;
-      });
-      toast.error(e instanceof Error ? e.message : "Could not update favourites.");
-    } finally {
-      setPendingFavs(prev => {
-        const next = new Set(prev);
-        next.delete(sensorNodeId);
-        return next;
-      });
-    }
-  }, [session, favIds, pendingFavs]);
+    // Hydrate default prefs locally — backend defaults match these.
+    setFavChannelPrefs(prev =>
+      prev[sensorNodeId] ? prev : { ...prev, [sensorNodeId]: DEFAULT_NODE_CHANNEL_PREFS },
+    );
+  }, [favIds]);
+
+  const updateChannelPrefs = useCallback(
+    (sensorNodeId: string, next: NodeChannelPrefs) => {
+      setFavChannelPrefs(prev => ({ ...prev, [sensorNodeId]: next }));
+    },
+    [],
+  );
 
   // ── Derived: dropdown options ──────────────────────────────────────────────
   const availableStates = useMemo(() => {
@@ -725,8 +734,8 @@ export default function FloodMapPage() {
               {/* Water level legend */}
               <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-[var(--color-muted)]">
                 <span className="font-semibold text-[var(--color-text)]">Water Level:</span>
-                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[0] }} /> Dry ({stats.dry})</span>
-                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[1] }} /> Normal ({stats.normal})</span>
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[0] }} /> Normal ({stats.dry})</span>
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[1] }} /> Alert ({stats.normal})</span>
                 <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[2] }} /> Warning ({stats.warning})</span>
                 <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[3] }} /> Critical ({stats.critical})</span>
               </div>
@@ -798,7 +807,7 @@ export default function FloodMapPage() {
                             >
                               {items.map(({ n, d }) => {
                                 const isFav = favIds.has(n.nodeId);
-                                const isPending = pendingFavs.has(n.nodeId);
+                                const prefs = favChannelPrefs[n.nodeId] ?? DEFAULT_NODE_CHANNEL_PREFS;
                                 return (
                                   <li
                                     key={n.id}
@@ -810,26 +819,13 @@ export default function FloodMapPage() {
                                         style={{ backgroundColor: nodeStatusHex(n) }}
                                         aria-hidden
                                       />
-                                      <button
-                                        type="button"
-                                        onClick={(e) => { e.stopPropagation(); void toggleFav(n.nodeId); }}
-                                        disabled={isPending}
-                                        title={isFav
-                                          ? "Stop notifications for this sensor"
-                                          : "Notify me when this sensor reports an alert"}
-                                        aria-label={isFav ? "Unstar sensor" : "Star sensor for notifications"}
-                                        aria-pressed={isFav}
-                                        className="flex-shrink-0 -mt-0.5 -mr-1 p-1 rounded transition disabled:opacity-50"
-                                      >
-                                        <StarIcon
-                                          filled={isFav}
-                                          className={`h-4 w-4 transition-colors ${
-                                            isFav
-                                              ? "text-amber-400"
-                                              : "text-[var(--color-muted)] hover:text-amber-400"
-                                          }`}
-                                        />
-                                      </button>
+                                      <NodeBellMenu
+                                        nodeId={n.nodeId}
+                                        isFavourited={isFav}
+                                        prefs={prefs}
+                                        onPrefsChange={(next) => updateChannelPrefs(n.nodeId, next)}
+                                        onSubscribe={() => subscribeNode(n.nodeId)}
+                                      />
                                     </div>
                                     <button
                                       type="button"

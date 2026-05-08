@@ -119,6 +119,12 @@ export default function NodeMap({
   const mapRef = useRef<google.maps.Map | null>(null);
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
   const [searchInput, setSearchInput] = useState("");
+  // Pin marker for the most recently searched place — mirrors how Google
+  // Maps drops a red pin where you searched. Cleared when the user clears
+  // the search input or right-clicks the marker.
+  const [searchedPlace, setSearchedPlace] = useState<
+    { lat: number; lng: number; name: string } | null
+  >(null);
   // Latest focusLatLng captured via ref so we can apply it inside
   // onMapLoad even if the prop arrived before the map finished mounting
   // (e.g. geolocation resolves quickly on a desktop with cached fix).
@@ -195,6 +201,7 @@ export default function NodeMap({
       mapRef.current.setZoom(14);
     }
     setSearchInput(name);
+    setSearchedPlace({ lat, lng, name });
     onPlaceSelect?.(lat, lng, name);
   }, [onPlaceSelect]);
 
@@ -208,6 +215,21 @@ export default function NodeMap({
       strokeWeight: 2,
       scale: 1.6,
       anchor: new google.maps.Point(12, 21),
+    };
+  }, [isLoaded]);
+
+  // Standard "searched" red pin — same teardrop shape Google Maps drops
+  // when you pick an Autocomplete suggestion. Anchor is at the tip.
+  const searchedPlaceIcon: google.maps.Symbol | undefined = useMemo(() => {
+    if (typeof google === "undefined" || !isLoaded) return undefined;
+    return {
+      path: "M12 2C7.58 2 4 5.58 4 10c0 5.25 7 12 8 12s8-6.75 8-12c0-4.42-3.58-8-8-8zm0 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6z",
+      fillColor: "#dc2626",
+      fillOpacity: 1,
+      strokeColor: "#ffffff",
+      strokeWeight: 2,
+      scale: 2,
+      anchor: new google.maps.Point(12, 22),
     };
   }, [isLoaded]);
 
@@ -334,6 +356,18 @@ export default function NodeMap({
           </>
         )}
 
+        {/* Searched-place pin — drops where the user picked from
+            Autocomplete, just like Google Maps. Click the pin to clear it. */}
+        {searchedPlace && (
+          <Marker
+            position={{ lat: searchedPlace.lat, lng: searchedPlace.lng }}
+            icon={searchedPlaceIcon}
+            title={searchedPlace.name}
+            zIndex={20}
+            onClick={() => setSearchedPlace(null)}
+          />
+        )}
+
         {/* Saved-place radius circles + house pins. */}
         {savedLocations?.map(loc => (
           <React.Fragment key={`saved-${loc.id}`}>
@@ -377,7 +411,11 @@ export default function NodeMap({
             <input
               type="text"
               value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSearchInput(v);
+                if (v.trim() === "") setSearchedPlace(null);
+              }}
               placeholder="Search a place…"
               aria-label="Search for a place"
               className="w-full rounded-full bg-transparent px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
