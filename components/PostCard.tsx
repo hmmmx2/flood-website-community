@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import ShareModal from "./ShareModal";
@@ -32,14 +33,49 @@ export default function PostCard({
 }: Props) {
   const [shareOpen, setShareOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const kebabRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Close the kebab menu on outside click + ESC.
+  // Anchor the dropdown under the kebab using viewport-fixed coords.
+  // The card itself has `overflow-hidden` for the rounded corners +
+  // hover image, which would clip an absolutely-positioned popover.
+  // Portal-rendering with fixed coords lets the menu escape that.
+  const recalcMenuPos = () => {
+    const b = kebabRef.current;
+    if (!b) return;
+    const r = b.getBoundingClientRect();
+    const POPOVER_W = 160; // matches w-40
+    const margin = 8;
+    let left = r.right - POPOVER_W;
+    if (left < margin) left = margin;
+    if (left + POPOVER_W + margin > window.innerWidth) {
+      left = window.innerWidth - POPOVER_W - margin;
+    }
+    setMenuPos({ top: r.bottom + 4, left });
+  };
+
+  useLayoutEffect(() => {
+    if (!menuOpen) return;
+    recalcMenuPos();
+    const onScroll = () => recalcMenuPos();
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [menuOpen]);
+
+  // Close the kebab menu on outside click + ESC. Both the trigger AND the
+  // portal'd menu count as "inside".
   useEffect(() => {
     if (!menuOpen) return;
     const onDoc = (e: MouseEvent) => {
-      if (!menuRef.current) return;
-      if (!menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+      const t = e.target as Node;
+      if (kebabRef.current?.contains(t)) return;
+      if (menuRef.current?.contains(t)) return;
+      setMenuOpen(false);
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuOpen(false); };
     document.addEventListener("mousedown", onDoc);
@@ -133,23 +169,42 @@ export default function PostCard({
 
           {/* Main content */}
           <div className="flex-1 p-3.5">
-            {/* Group badge + author + time */}
-            <div className="flex items-center gap-2 mb-2 flex-wrap">
-              {post.groupSlug && (
-                <>
-                  <Link href={`/g/${post.groupSlug}`}
-                    className="text-xs font-bold text-[var(--color-brand)] hover:underline leading-none">
-                    g/{post.groupSlug}
-                  </Link>
-                  <span className="text-[var(--color-muted)] text-xs">•</span>
-                </>
-              )}
-              <div className="h-6 w-6 rounded-full bg-[var(--color-brand)] flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0">
-                {getInitials(post.authorName)}
+            {/* Group badge + author + time + (owner) kebab */}
+            <div className="flex items-start gap-2 mb-2">
+              <div className="flex items-center gap-2 flex-wrap min-w-0">
+                {post.groupSlug && (
+                  <>
+                    <Link href={`/g/${post.groupSlug}`}
+                      className="text-xs font-bold text-[var(--color-brand)] hover:underline leading-none">
+                      g/{post.groupSlug}
+                    </Link>
+                    <span className="text-[var(--color-muted)] text-xs">•</span>
+                  </>
+                )}
+                <div className="h-6 w-6 rounded-full bg-[var(--color-brand)] flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0">
+                  {getInitials(post.authorName)}
+                </div>
+                <span className="text-xs font-semibold text-[var(--color-text)] truncate">{post.authorName}</span>
+                <span className="text-[var(--color-muted)] text-xs">•</span>
+                <span className="text-[var(--color-muted)] text-xs">{timeAgo(post.createdAt)}</span>
               </div>
-              <span className="text-xs font-semibold text-[var(--color-text)]">{post.authorName}</span>
-              <span className="text-[var(--color-muted)] text-xs">•</span>
-              <span className="text-[var(--color-muted)] text-xs">{timeAgo(post.createdAt)}</span>
+              {isOwner && (
+                <button
+                  ref={kebabRef}
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
+                  aria-label="Post actions"
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  className="ml-auto -mr-1 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-pill-bg)] hover:text-[var(--color-text)] transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+                    <circle cx="12" cy="5" r="1.6" />
+                    <circle cx="12" cy="12" r="1.6" />
+                    <circle cx="12" cy="19" r="1.6" />
+                  </svg>
+                </button>
+              )}
             </div>
 
             {/* Title */}
@@ -196,68 +251,6 @@ export default function PostCard({
                 Share
               </button>
 
-              {/* Owner actions — collapsed into a kebab menu so the action
-                  bar stays clean on mobile + matches every other social
-                  feed pattern users already know. */}
-              {isOwner && (
-                <div ref={menuRef} className="relative ml-auto">
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
-                    aria-label="Post actions"
-                    aria-haspopup="menu"
-                    aria-expanded={menuOpen}
-                    className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-pill-bg)] hover:text-[var(--color-text)] transition-colors"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
-                      <circle cx="12" cy="5" r="1.6" />
-                      <circle cx="12" cy="12" r="1.6" />
-                      <circle cx="12" cy="19" r="1.6" />
-                    </svg>
-                  </button>
-                  {menuOpen && (
-                    <div
-                      role="menu"
-                      onClick={(e) => e.stopPropagation()}
-                      className="absolute right-0 top-9 z-30 w-40 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-xl ring-1 ring-black/5"
-                    >
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setMenuOpen(false);
-                          setEditOpen(true);
-                          setEditTitle(post.title);
-                          setEditContent(post.content);
-                          setEditImagePreview(post.imageUrl ?? null);
-                          setEditImageBase64(null);
-                          setRemoveImage(false);
-                          setEditError(null);
-                        }}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-[var(--color-text)] hover:bg-[var(--color-hover)]"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
-                        </svg>
-                        Edit
-                      </button>
-                      {onDelete && (
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => { setMenuOpen(false); onDelete(post.id); }}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-red-500 hover:bg-red-500/10 dark:hover:bg-red-950/40"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                          </svg>
-                          Delete
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
 
           </div>
@@ -265,6 +258,53 @@ export default function PostCard({
       </div>
 
       {shareOpen && <ShareModal postId={post.id} title={post.title} onClose={() => setShareOpen(false)} />}
+
+      {/* Owner action menu — portal'd to <body> so the card's
+          `overflow-hidden` corner-rounding doesn't clip it. */}
+      {menuOpen && menuPos && typeof document !== "undefined" && isOwner && createPortal(
+        <div
+          ref={menuRef}
+          role="menu"
+          onClick={(e) => e.stopPropagation()}
+          style={{ position: "fixed", top: menuPos.top, left: menuPos.left, width: 160 }}
+          className="z-[80] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-xl ring-1 ring-black/5"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setMenuOpen(false);
+              setEditOpen(true);
+              setEditTitle(post.title);
+              setEditContent(post.content);
+              setEditImagePreview(post.imageUrl ?? null);
+              setEditImageBase64(null);
+              setRemoveImage(false);
+              setEditError(null);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-[var(--color-text)] hover:bg-[var(--color-hover)]"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+            </svg>
+            Edit
+          </button>
+          {onDelete && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { setMenuOpen(false); onDelete(post.id); }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-red-500 hover:bg-red-500/10 dark:hover:bg-red-950/40"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+              </svg>
+              Delete
+            </button>
+          )}
+        </div>,
+        document.body,
+      )}
 
       {/* Edit Modal */}
       {editOpen && (
