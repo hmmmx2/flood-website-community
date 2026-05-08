@@ -97,6 +97,8 @@ type NodeMapProps = {
   onPlaceSelect?: (lat: number, lng: number, name: string) => void;
   /** Per-node circle radius in metres. Defaults to 350 m. */
   nodeRadiusM?: number;
+  /** Live "you are here" marker — set once geolocation resolves on the page. */
+  myLocation?: { lat: number; lng: number; accuracyM?: number } | null;
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -110,12 +112,18 @@ export default function NodeMap({
   onMapRightClick,
   onPlaceSelect,
   nodeRadiusM = 350,
+  myLocation = null,
 }: NodeMapProps) {
   const [mapError, setMapError] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const mapRef = useRef<google.maps.Map | null>(null);
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
   const [searchInput, setSearchInput] = useState("");
+  // Latest focusLatLng captured via ref so we can apply it inside
+  // onMapLoad even if the prop arrived before the map finished mounting
+  // (e.g. geolocation resolves quickly on a desktop with cached fix).
+  const focusLatLngRef = useRef(focusLatLng);
+  useEffect(() => { focusLatLngRef.current = focusLatLng; }, [focusLatLng]);
 
   // Lock body scroll while the map is fullscreen so the page underneath
   // doesn't scroll behind the overlay.
@@ -160,6 +168,13 @@ export default function NodeMap({
   const onMapLoad = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
     setMapError(false);
+    // If the parent set a focus point before the map finished mounting,
+    // apply it now (the [focusLatLng] effect already ran with mapRef=null).
+    const pending = focusLatLngRef.current;
+    if (pending) {
+      map.panTo({ lat: pending.lat, lng: pending.lng });
+      if (pending.zoom != null) map.setZoom(pending.zoom);
+    }
   }, []);
 
   const handleRightClick = useCallback((e: google.maps.MapMouseEvent) => {
@@ -282,6 +297,42 @@ export default function NodeMap({
             />
           );
         })}
+
+        {/* "You are here" — accuracy ring + crisp blue dot at the user's
+            current position. Rendered above every other layer so it's
+            always visible. */}
+        {myLocation && (
+          <>
+            {myLocation.accuracyM != null && myLocation.accuracyM > 0 && (
+              <Circle
+                center={{ lat: myLocation.lat, lng: myLocation.lng }}
+                radius={Math.min(2000, myLocation.accuracyM)}
+                options={{
+                  fillColor: "#1d4ed8",
+                  fillOpacity: 0.10,
+                  strokeColor: "#1d4ed8",
+                  strokeOpacity: 0.35,
+                  strokeWeight: 1,
+                  clickable: false,
+                  zIndex: 9,
+                }}
+              />
+            )}
+            <Circle
+              center={{ lat: myLocation.lat, lng: myLocation.lng }}
+              radius={40}
+              options={{
+                fillColor: "#1d4ed8",
+                fillOpacity: 1,
+                strokeColor: "#ffffff",
+                strokeOpacity: 1,
+                strokeWeight: 3,
+                clickable: false,
+                zIndex: 10,
+              }}
+            />
+          </>
+        )}
 
         {/* Saved-place radius circles + house pins. */}
         {savedLocations?.map(loc => (

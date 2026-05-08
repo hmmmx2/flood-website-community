@@ -178,8 +178,34 @@ export default function FloodMapPage() {
   // ── Map focus (zone-level only — never per-sensor) ────────────────────────
   const [focusLatLng, setFocusLatLng] =
     useState<{ lat: number; lng: number; zoom?: number } | null>(null);
+  const [myLocation, setMyLocation] =
+    useState<{ lat: number; lng: number; accuracyM?: number } | null>(null);
   const mapCardRef = useRef<HTMLDivElement>(null);
   const savedLocationsRef = useRef<SavedLocationsPanelHandle | null>(null);
+
+  // Auto-centre the map on the user's current position the first time
+  // they land here (login / register / refresh — by virtue of being a
+  // mount-only effect). Browser auto-prompts for permission. We never
+  // poll — just one read at mount. If the user denies or the browser
+  // doesn't expose the API, we silently skip; the map stays centred on
+  // the default Sabah viewport.
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    let cancelled = false;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (cancelled) return;
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const accuracyM = pos.coords.accuracy;
+        setMyLocation({ lat, lng, accuracyM });
+        setFocusLatLng({ lat, lng, zoom: 13 });
+      },
+      () => { /* user denied or geolocation failed — silently skip */ },
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
+    );
+    return () => { cancelled = true; };
+  }, []);
 
   // ── Saved locations (Phase 4) — sourced from SavedLocationsPanel via its
   //    onLocationsChange callback so the map can render the radius circles.
@@ -694,6 +720,7 @@ export default function FloodMapPage() {
                     onMapRightClick={(lat, lng) => void handleMapRightClick(lat, lng)}
                     onPlaceSelect={(lat, lng) => focusOnPoint(lat, lng, 14)}
                     savedLocations={savedLocations}
+                    myLocation={myLocation}
                   />
                 </div>
 
