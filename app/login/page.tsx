@@ -210,7 +210,17 @@ function LoginPageInner() {
               className="object-cover"
               priority
             />
-            <div className="absolute inset-0 bg-gradient-to-br from-blue-900/70 via-blue-600/50 to-cyan-600/50 dark:from-zinc-900/90 dark:via-zinc-800/80 dark:to-slate-800/50" />
+            {/* Same inline gradient as the register page so the hero
+                overlay is identical across the auth flow in both light
+                and dark mode (Tailwind dark:* variants here used to swap
+                to greys, which made the two pages look unrelated). */}
+            <div
+              className="absolute inset-0"
+              style={{
+                background:
+                  "linear-gradient(135deg, rgba(30,58,138,0.7) 0%, rgba(29,78,216,0.5) 50%, rgba(8,145,178,0.5) 100%)",
+              }}
+            />
           </div>
           <div className="relative z-10 flex flex-1 flex-col justify-center items-center text-center px-12">
             <div className="drop-shadow-lg">
