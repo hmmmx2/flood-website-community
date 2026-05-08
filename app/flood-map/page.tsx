@@ -128,13 +128,6 @@ function XIcon(p: React.SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
-function ActivityIcon(p: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-    </svg>
-  );
-}
 function StarIcon({ filled, ...p }: { filled?: boolean } & React.SVGProps<SVGSVGElement>) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
@@ -145,6 +138,14 @@ function StarIcon({ filled, ...p }: { filled?: boolean } & React.SVGProps<SVGSVG
   );
 }
 
+function MapPinIcon(p: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
+      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z" />
+      <circle cx="12" cy="10" r="3" />
+    </svg>
+  );
+}
 function AlertTriangleIcon(p: React.SVGProps<SVGSVGElement>) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
@@ -474,7 +475,7 @@ export default function FloodMapPage() {
         activeLink="sensors"
       />
 
-      <main className="max-w-6xl mx-auto px-4 py-6 space-y-5">
+      <main className="max-w-7xl mx-auto px-4 py-6 space-y-5">
 
         {/* ── Page header ──────────────────────────────────────────────────── */}
         <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -686,169 +687,57 @@ export default function FloodMapPage() {
           </div>
         ) : (
 
-          /* ── Main content grid ──────────────────────────────────────────── */
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,1.1fr)]">
+          /* ── Main content stack ─────────────────────────────────────────── */
+          <div className="flex flex-col gap-5">
 
-            {/* ── Left column ──────────────────────────────────────────────── */}
-            <div className="flex flex-col gap-5">
-
-              {/* Map card */}
-              <article ref={mapCardRef} className={card + " p-5"}>
-                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-[var(--color-muted)]">Live View</p>
-                    <h2 className="text-lg font-semibold text-[var(--color-text)]">Live map</h2>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-4 text-sm font-semibold text-[var(--color-text)]">
-                    <span>Online: <span className="text-green-600">{stats.online}</span></span>
-                    <span>Offline: <span className="text-[var(--color-brand)]">{stats.offline}</span></span>
-                    {activeFilterCount > 0 && (
-                      <span className="text-xs font-medium text-[var(--color-muted)]">
-                        ({stats.total} / {stats.totalAll} shown)
-                      </span>
-                    )}
-                  </div>
+            {/* Map card — now full width */}
+            <article ref={mapCardRef} className={card + " p-5"}>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-[var(--color-muted)]">Live View</p>
+                  <h2 className="text-lg font-semibold text-[var(--color-text)]">Live map</h2>
                 </div>
-
-                {/* Per-node circle map */}
-                <div className="rounded-2xl border border-[var(--color-border)] overflow-hidden">
-                  <NodeMap
-                    nodes={mapNodes}
-                    height={480}
-                    defaultZoom={11}
-                    focusLatLng={focusLatLng}
-                    onMapRightClick={(lat, lng) => void handleMapRightClick(lat, lng)}
-                    onPlaceSelect={(lat, lng) => focusOnPoint(lat, lng, 14)}
-                    savedLocations={savedLocations}
-                    myLocation={myLocation}
-                  />
+                <div className="flex flex-wrap items-center gap-4 text-sm font-semibold text-[var(--color-text)]">
+                  <span>Online: <span className="text-green-600">{stats.online}</span></span>
+                  <span>Offline: <span className="text-[var(--color-brand)]">{stats.offline}</span></span>
+                  {activeFilterCount > 0 && (
+                    <span className="text-xs font-medium text-[var(--color-muted)]">
+                      ({stats.total} / {stats.totalAll} shown)
+                    </span>
+                  )}
                 </div>
+              </div>
 
-                {/* Water level legend */}
-                <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-[var(--color-muted)]">
-                  <span className="font-semibold text-[var(--color-text)]">Water Level:</span>
-                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[0] }} /> Dry ({stats.dry})</span>
-                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[1] }} /> Normal ({stats.normal})</span>
-                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[2] }} /> Warning ({stats.warning})</span>
-                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[3] }} /> Critical ({stats.critical})</span>
-                </div>
-              </article>
+              {/* Per-node circle map */}
+              <div className="rounded-2xl border border-[var(--color-border)] overflow-hidden">
+                <NodeMap
+                  nodes={mapNodes}
+                  height={620}
+                  defaultZoom={11}
+                  focusLatLng={focusLatLng}
+                  onMapRightClick={(lat, lng) => void handleMapRightClick(lat, lng)}
+                  onPlaceSelect={(lat, lng) => focusOnPoint(lat, lng, 14)}
+                  savedLocations={savedLocations}
+                  myLocation={myLocation}
+                />
+              </div>
 
-              {/* Nodes in Radius — for each saved place, lists sensors
-                  inside its alert radius, sorted by distance. Sits below
-                  the map so the relationship to the saved-place circles
-                  drawn on the map is visually obvious. */}
-              {user && nodesByPlace.length > 0 && (
-                <div className={card + " p-4"}>
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--color-text)]">
-                        Nodes in Radius
-                      </h3>
-                      <p className="text-[11px] text-[var(--color-muted)] mt-0.5">
-                        Sensors inside each of your saved places{activeFilterCount > 0 ? " (filtered)" : ""}.
-                      </p>
-                    </div>
-                    {activeFilterCount > 0 && (
-                      <button
-                        type="button"
-                        onClick={clearAllFilters}
-                        className="rounded-full bg-[var(--color-input-bg)] px-3 py-1 text-[11px] font-semibold text-[var(--color-brand)] hover:bg-[var(--color-hover)]"
-                      >
-                        Clear filters
-                      </button>
-                    )}
-                  </div>
+              {/* Water level legend */}
+              <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-[var(--color-muted)]">
+                <span className="font-semibold text-[var(--color-text)]">Water Level:</span>
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[0] }} /> Dry ({stats.dry})</span>
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[1] }} /> Normal ({stats.normal})</span>
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[2] }} /> Warning ({stats.warning})</span>
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[3] }} /> Critical ({stats.critical})</span>
+              </div>
+            </article>
 
-                  <div className="space-y-4">
-                    {nodesByPlace.map(({ place, items }) => (
-                      <div
-                        key={place.id}
-                        className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-input-bg)] p-3"
-                      >
-                        <div className="mb-2 flex items-center justify-between">
-                          <p className="text-xs font-semibold text-[var(--color-text)] truncate">
-                            📍 {place.label}
-                          </p>
-                          <span className="rounded-full bg-[var(--color-card)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-muted)] border border-[var(--color-border)]">
-                            {items.length} · {place.alertRadiusKm} km
-                          </span>
-                        </div>
-                        {items.length === 0 ? (
-                          <p className="rounded-lg bg-[var(--color-card)] px-3 py-2 text-[11px] text-[var(--color-muted)]">
-                            No sensors within the radius{activeFilterCount > 0 ? " match the active filters" : ""}.
-                          </p>
-                        ) : (
-                          <ul
-                            className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 max-h-[280px] overflow-y-auto pr-1"
-                            style={{ scrollbarWidth: "thin" }}
-                          >
-                            {items.map(({ n, d }) => {
-                              const isFav = favIds.has(n.nodeId);
-                              const isPending = pendingFavs.has(n.nodeId);
-                              return (
-                                <li
-                                  key={n.id}
-                                  className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-2.5 transition-colors hover:border-[var(--color-brand)]"
-                                >
-                                  <div className="flex items-start justify-between gap-1.5 mb-1.5">
-                                    <span
-                                      className="mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full"
-                                      style={{ backgroundColor: nodeStatusHex(n) }}
-                                      aria-hidden
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={(e) => { e.stopPropagation(); void toggleFav(n.nodeId); }}
-                                      disabled={isPending}
-                                      title={isFav
-                                        ? "Stop notifications for this sensor"
-                                        : "Notify me when this sensor reports an alert"}
-                                      aria-label={isFav ? "Unstar sensor" : "Star sensor for notifications"}
-                                      aria-pressed={isFav}
-                                      className="flex-shrink-0 -mt-0.5 -mr-1 p-1 rounded transition disabled:opacity-50"
-                                    >
-                                      <StarIcon
-                                        filled={isFav}
-                                        className={`h-4 w-4 transition-colors ${
-                                          isFav
-                                            ? "text-amber-400"
-                                            : "text-[var(--color-muted)] hover:text-amber-400"
-                                        }`}
-                                      />
-                                    </button>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => focusOnPoint(n.latitude, n.longitude, 14)}
-                                    className="block w-full text-left"
-                                  >
-                                    <p className="truncate text-xs font-semibold text-[var(--color-text)]">
-                                      {n.area || n.location || "Sensor"}
-                                    </p>
-                                    <p className="truncate text-[10px] text-[var(--color-muted)] mt-0.5">
-                                      {nodeStatusLabel(n)} · {d.toFixed(1)} km
-                                    </p>
-                                  </button>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+            {/* ── Below-map stack: My Saved Places on top, Nodes in Radius below ── */}
+            {user && (
+              <div className="flex flex-col gap-5">
 
-            {/* ── Right sidebar ─────────────────────────────────────────────── */}
-            <aside className="flex flex-col gap-5">
-
-              {/* Saved Locations — multi-pin alert radii (Phase 3).
-                  Only render once a session is established; anonymous
-                  visitors see nothing here (the BFF would 401 anyway). */}
-              {user && (
+                {/* My Saved Places — sits at the top so users see what they
+                    have saved before scanning the per-place sensor lists. */}
                 <SavedLocationsPanel
                   ref={savedLocationsRef}
                   onFocusLocation={(lat, lng) => focusOnPoint(lat, lng, 14)}
@@ -858,114 +747,114 @@ export default function FloodMapPage() {
                     alertRadiusKm: l.alertRadiusKm,
                   })))}
                 />
-              )}
 
-              {/* Live monitoring — clicking Warning / Critical / Offline
-                  toggles the corresponding status filter. Numbers reflect
-                  whatever filters are currently active. */}
-              <div
-                className="rounded-2xl p-4 text-white shadow-lg ring-1 ring-white/10"
-                style={{
-                  background: "var(--gradient-hero)",
-                  boxShadow: "0 10px 30px -12px var(--color-brand-glow), 0 0 0 1px rgba(255,255,255,0.06) inset",
-                }}
-              >
-                <div className="flex items-center gap-2 mb-3">
-                  <ActivityIcon className="h-5 w-5" />
-                  <h3 className="font-bold text-sm">Live Monitoring</h3>
-                </div>
-                <p className="text-sm text-white/85 mb-3">
-                  {activeFilterCount > 0
-                    ? <>Showing <strong>{stats.total}</strong> of {stats.totalAll} sensors after filters.</>
-                    : <>Tracking <strong>{stats.totalAll}</strong> sensor nodes across Sabah in real-time.</>}
-                </p>
+                {/* Nodes in Radius — for each saved place, lists sensors
+                    inside its alert radius, sorted by distance. */}
+                {nodesByPlace.length > 0 && (
+                  <div className={card + " p-4"}>
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--color-text)]">
+                          Nodes in Radius
+                        </h3>
+                        <p className="text-[11px] text-[var(--color-muted)] mt-0.5">
+                          Sensors inside each of your saved places{activeFilterCount > 0 ? " (filtered)" : ""}.
+                        </p>
+                      </div>
+                      {activeFilterCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={clearAllFilters}
+                          className="rounded-full bg-[var(--color-input-bg)] px-3 py-1 text-[11px] font-semibold text-[var(--color-brand)] hover:bg-[var(--color-hover)]"
+                        >
+                          Clear filters
+                        </button>
+                      )}
+                    </div>
 
-                {/* Inline filters — same store as the Filters panel above
-                    (filterState / filterCity), so changing here also
-                    updates the map and Nodes-in-Radius. */}
-                <div className="grid grid-cols-2 gap-2 mb-4">
-                  <div className="relative">
-                    <select
-                      value={filterState}
-                      onChange={e => setFilterState(e.target.value)}
-                      aria-label="Filter by state"
-                      className="w-full appearance-none rounded-lg bg-white/10 px-2.5 py-2 pr-7 text-xs font-semibold text-white focus:bg-white/20 focus:outline-none cursor-pointer"
-                    >
-                      <option value="" className="text-slate-900">All states</option>
-                      {availableStates.map(s => (
-                        <option key={s} value={s} className="text-slate-900">{s}</option>
+                    <div className="space-y-4">
+                      {nodesByPlace.map(({ place, items }) => (
+                        <div
+                          key={place.id}
+                          className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-input-bg)] p-3"
+                        >
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <p className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-text)] truncate min-w-0">
+                              <MapPinIcon className="h-3.5 w-3.5 flex-shrink-0 text-[var(--color-brand)]" />
+                              <span className="truncate">{place.label}</span>
+                            </p>
+                            <span className="rounded-full bg-[var(--color-card)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-muted)] border border-[var(--color-border)]">
+                              {items.length} · {place.alertRadiusKm} km
+                            </span>
+                          </div>
+                          {items.length === 0 ? (
+                            <p className="rounded-lg bg-[var(--color-card)] px-3 py-2 text-[11px] text-[var(--color-muted)]">
+                              No sensors within the radius{activeFilterCount > 0 ? " match the active filters" : ""}.
+                            </p>
+                          ) : (
+                            <ul
+                              className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-2 max-h-[280px] overflow-y-auto pr-1"
+                              style={{ scrollbarWidth: "thin" }}
+                            >
+                              {items.map(({ n, d }) => {
+                                const isFav = favIds.has(n.nodeId);
+                                const isPending = pendingFavs.has(n.nodeId);
+                                return (
+                                  <li
+                                    key={n.id}
+                                    className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-2.5 transition-colors hover:border-[var(--color-brand)]"
+                                  >
+                                    <div className="flex items-start justify-between gap-1.5 mb-1.5">
+                                      <span
+                                        className="mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                                        style={{ backgroundColor: nodeStatusHex(n) }}
+                                        aria-hidden
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); void toggleFav(n.nodeId); }}
+                                        disabled={isPending}
+                                        title={isFav
+                                          ? "Stop notifications for this sensor"
+                                          : "Notify me when this sensor reports an alert"}
+                                        aria-label={isFav ? "Unstar sensor" : "Star sensor for notifications"}
+                                        aria-pressed={isFav}
+                                        className="flex-shrink-0 -mt-0.5 -mr-1 p-1 rounded transition disabled:opacity-50"
+                                      >
+                                        <StarIcon
+                                          filled={isFav}
+                                          className={`h-4 w-4 transition-colors ${
+                                            isFav
+                                              ? "text-amber-400"
+                                              : "text-[var(--color-muted)] hover:text-amber-400"
+                                          }`}
+                                        />
+                                      </button>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => focusOnPoint(n.latitude, n.longitude, 14)}
+                                      className="block w-full text-left"
+                                    >
+                                      <p className="truncate text-xs font-semibold text-[var(--color-text)]">
+                                        {n.area || n.location || "Sensor"}
+                                      </p>
+                                      <p className="truncate text-[10px] text-[var(--color-muted)] mt-0.5">
+                                        {nodeStatusLabel(n)} · {d.toFixed(1)} km
+                                      </p>
+                                    </button>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          )}
+                        </div>
                       ))}
-                    </select>
-                    <ChevronDownIcon className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-white/70" />
+                    </div>
                   </div>
-                  <div className="relative">
-                    <select
-                      value={filterCity}
-                      onChange={e => setFilterCity(e.target.value)}
-                      disabled={availableCities.length === 0}
-                      aria-label="Filter by city or area"
-                      className="w-full appearance-none rounded-lg bg-white/10 px-2.5 py-2 pr-7 text-xs font-semibold text-white focus:bg-white/20 focus:outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <option value="" className="text-slate-900">All cities</option>
-                      {availableCities.map(c => (
-                        <option key={c} value={c} className="text-slate-900">{c}</option>
-                      ))}
-                    </select>
-                    <ChevronDownIcon className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-white/70" />
-                  </div>
-                </div>
-                <div className="space-y-1.5 text-sm">
-                  {([
-                    { key: "online",   label: "Online",   value: stats.online,   tone: "bg-white/15 text-white" },
-                    { key: "normal",   label: "Normal",   value: stats.normal,   tone: "bg-yellow-300/15 text-yellow-200" },
-                    { key: "warning",  label: "Warning",  value: stats.warning,  tone: "bg-amber-300/15 text-amber-200" },
-                    { key: "critical", label: "Critical", value: stats.critical, tone: "bg-red-300/15 text-red-200" },
-                    { key: "offline",  label: "Offline",  value: stats.offline,  tone: "bg-white/10 text-white/80" },
-                  ] as const).map(row => {
-                    // "Online" is informational (no equivalent single status).
-                    // The other rows toggle the matching status filter.
-                    const filterKey = row.key === "online" ? null : (row.key as StatusKey);
-                    const isActive  = filterKey ? filterStatuses.has(filterKey) : false;
-                    const clickable = filterKey != null;
-                    return (
-                      <button
-                        key={row.key}
-                        type="button"
-                        disabled={!clickable}
-                        onClick={() => filterKey && toggleStatus(filterKey)}
-                        className={`flex w-full items-center justify-between rounded-xl px-3 py-2 transition ${
-                          clickable
-                            ? "cursor-pointer hover:bg-white/10 " + (isActive ? "bg-white/15 ring-1 ring-white/30" : "")
-                            : "cursor-default"
-                        }`}
-                        aria-pressed={clickable ? isActive : undefined}
-                        title={clickable
-                          ? (isActive ? `Stop filtering by ${row.label.toLowerCase()}` : `Show only ${row.label.toLowerCase()} sensors`)
-                          : undefined}
-                      >
-                        <span className="text-white/85">{row.label}</span>
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${row.tone}`}>
-                          {row.value}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-                {filterStatuses.size > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setFilterStatuses(new Set())}
-                    className="mt-3 w-full rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/15"
-                  >
-                    Clear status filters ({filterStatuses.size})
-                  </button>
                 )}
               </div>
-
-              {/* Favourites card removed in Phase 4b — pinning by sensor
-                  exposed individual hardware. Saved Places covers the
-                  same use-case at area / radius granularity. */}
-            </aside>
+            )}
           </div>
         )}
       </main>
