@@ -7,9 +7,9 @@ import { SearchField } from "@/components/ui/search-field";
 import NodeMap, { type MapNode, type FloodLevel, STATUS_HEX } from "@/components/NodeMap";
 import SavedLocationsPanel, { type SavedLocationsPanelHandle } from "@/components/SavedLocationsPanel";
 import toast from "react-hot-toast";
-import { useSession, signOut } from "next-auth/react";
+import { useSession, signOut, signIn } from "next-auth/react";
 import { sessionToAuthUser } from "@/lib/auth";
-import { fetchJson } from "@/lib/fetchJson";
+import { fetchJson, authFetchJson } from "@/lib/fetchJson";
 import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
 import { useSensorStream } from "@/components/providers/SensorStreamProvider";
 
@@ -37,6 +37,8 @@ type SensorNodeDto = {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const LEVEL_LABEL: Record<FloodLevel, string> = { 0: "Dry", 1: "Normal", 2: "Warning", 3: "Critical" };
 const OFFLINE_HEX = "#6b7280";
+
+type FavouriteNodeDto = SensorNodeDto & { favouritedAt?: string };
 
 function toMapNode(n: SensorNodeDto): MapNode {
   return {
@@ -133,6 +135,16 @@ function ActivityIcon(p: React.SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+function StarIcon({ filled, ...p }: { filled?: boolean } & React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+         fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path strokeLinecap="round" strokeLinejoin="round"
+            d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+    </svg>
+  );
+}
+
 function AlertTriangleIcon(p: React.SVGProps<SVGSVGElement>) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
@@ -149,6 +161,8 @@ export default function FloodMapPage() {
   const user = session?.user ? sessionToAuthUser(session.user) : null;
   const { searchOpen, openSearch, closeSearch } = useSiteSearchModal();
   const [nodes, setNodes]             = useState<SensorNodeDto[]>([]);
+  const [favIds, setFavIds]           = useState<Set<string>>(new Set());
+  const [pendingFavs, setPendingFavs] = useState<Set<string>>(new Set());
   const [loading, setLoading]         = useState(true);
   const [fetchError, setFetchError]   = useState(false);
   const [lastFetch, setLastFetch]     = useState<Date | null>(null);
@@ -265,6 +279,70 @@ export default function FloodMapPage() {
     };
     // fetchSensors / subscribeSensorUpdates are both stable (empty-dep useCallback)
   }, [fetchSensors, subscribeSensorUpdates]);
+
+  // ── Favourites — per-node "notify me about this sensor" ───────────────────
+  // The Nodes-in-Radius card has a star button on each row; starring a node
+  // also makes the multichannel dispatcher pick this user up regardless of
+  // saved-location radius (see UserRepository.findNotificationSubscribersForFloodAt).
+  const sessionUserId = session?.user?.id ?? null;
+  useEffect(() => {
+    if (!sessionUserId) { setFavIds(new Set()); return; }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await authFetchJson<FavouriteNodeDto[]>("/api/favourites");
+        if (cancelled) return;
+        setFavIds(new Set(
+          data.map((f) => f.nodeId).filter((id): id is string => typeof id === "string" && id.length > 0)
+        ));
+      } catch { /* non-critical */ }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionUserId]);
+
+  const toggleFav = useCallback(async (sensorNodeId: string) => {
+    if (!session) {
+      toast("Please sign in to continue.");
+      void signIn(undefined, { callbackUrl: typeof window !== "undefined" ? window.location.href : "/" });
+      return;
+    }
+    if (pendingFavs.has(sensorNodeId)) return;
+    setPendingFavs(prev => new Set([...prev, sensorNodeId]));
+
+    const isFav = favIds.has(sensorNodeId);
+    setFavIds(prev => {
+      const next = new Set(prev);
+      if (isFav) next.delete(sensorNodeId); else next.add(sensorNodeId);
+      return next;
+    });
+    try {
+      if (isFav) {
+        await authFetchJson(`/api/favourites/${sensorNodeId}`, { method: "DELETE" });
+        toast.success("Removed from favourites");
+      } else {
+        await authFetchJson("/api/favourites", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nodeId: sensorNodeId }),
+        });
+        toast.success("You'll be notified when this sensor reports an alert");
+      }
+    } catch (e) {
+      // Roll the optimistic update back on failure.
+      setFavIds(prev => {
+        const next = new Set(prev);
+        if (isFav) next.add(sensorNodeId); else next.delete(sensorNodeId);
+        return next;
+      });
+      toast.error(e instanceof Error ? e.message : "Could not update favourites.");
+    } finally {
+      setPendingFavs(prev => {
+        const next = new Set(prev);
+        next.delete(sensorNodeId);
+        return next;
+      });
+    }
+  }, [session, favIds, pendingFavs]);
 
   // ── Derived: dropdown options ──────────────────────────────────────────────
   const availableStates = useMemo(() => {
@@ -655,7 +733,7 @@ export default function FloodMapPage() {
                     )}
                   </div>
 
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <div className="space-y-4">
                     {nodesByPlace.map(({ place, items }) => (
                       <div
                         key={place.id}
@@ -674,35 +752,60 @@ export default function FloodMapPage() {
                             No sensors within the radius{activeFilterCount > 0 ? " match the active filters" : ""}.
                           </p>
                         ) : (
-                          <ul className="space-y-1.5">
-                            {items.slice(0, 6).map(({ n, d }) => (
-                              <li key={n.id}>
-                                <button
-                                  type="button"
-                                  onClick={() => focusOnPoint(n.latitude, n.longitude, 14)}
-                                  className="group flex w-full items-center gap-2 rounded-lg border border-transparent bg-[var(--color-card)] px-2.5 py-2 text-left transition-colors hover:border-[var(--color-brand)]"
+                          <ul
+                            className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 snap-x snap-mandatory"
+                            style={{ scrollbarWidth: "thin" }}
+                          >
+                            {items.map(({ n, d }) => {
+                              const isFav = favIds.has(n.nodeId);
+                              const isPending = pendingFavs.has(n.nodeId);
+                              return (
+                                <li
+                                  key={n.id}
+                                  className="flex-shrink-0 w-[180px] snap-start rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-2.5 transition-colors hover:border-[var(--color-brand)]"
                                 >
-                                  <span
-                                    className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
-                                    style={{ backgroundColor: nodeStatusHex(n) }}
-                                    aria-hidden
-                                  />
-                                  <div className="min-w-0 flex-1">
+                                  <div className="flex items-start justify-between gap-1.5 mb-1.5">
+                                    <span
+                                      className="mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                                      style={{ backgroundColor: nodeStatusHex(n) }}
+                                      aria-hidden
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); void toggleFav(n.nodeId); }}
+                                      disabled={isPending}
+                                      title={isFav
+                                        ? "Stop notifications for this sensor"
+                                        : "Notify me when this sensor reports an alert"}
+                                      aria-label={isFav ? "Unstar sensor" : "Star sensor for notifications"}
+                                      aria-pressed={isFav}
+                                      className="flex-shrink-0 -mt-0.5 -mr-1 p-1 rounded transition disabled:opacity-50"
+                                    >
+                                      <StarIcon
+                                        filled={isFav}
+                                        className={`h-4 w-4 transition-colors ${
+                                          isFav
+                                            ? "text-amber-400"
+                                            : "text-[var(--color-muted)] hover:text-amber-400"
+                                        }`}
+                                      />
+                                    </button>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => focusOnPoint(n.latitude, n.longitude, 14)}
+                                    className="block w-full text-left"
+                                  >
                                     <p className="truncate text-xs font-semibold text-[var(--color-text)]">
                                       {n.area || n.location || "Sensor"}
                                     </p>
-                                    <p className="truncate text-[10px] text-[var(--color-muted)]">
+                                    <p className="truncate text-[10px] text-[var(--color-muted)] mt-0.5">
                                       {nodeStatusLabel(n)} · {d.toFixed(1)} km
                                     </p>
-                                  </div>
-                                </button>
-                              </li>
-                            ))}
-                            {items.length > 6 && (
-                              <li className="text-[10px] text-[var(--color-muted)] pl-1">
-                                +{items.length - 6} more
-                              </li>
-                            )}
+                                  </button>
+                                </li>
+                              );
+                            })}
                           </ul>
                         )}
                       </div>
@@ -744,11 +847,46 @@ export default function FloodMapPage() {
                   <ActivityIcon className="h-5 w-5" />
                   <h3 className="font-bold text-sm">Live Monitoring</h3>
                 </div>
-                <p className="text-sm text-white/85 mb-4">
+                <p className="text-sm text-white/85 mb-3">
                   {activeFilterCount > 0
                     ? <>Showing <strong>{stats.total}</strong> of {stats.totalAll} sensors after filters.</>
                     : <>Tracking <strong>{stats.totalAll}</strong> sensor nodes across Sabah in real-time.</>}
                 </p>
+
+                {/* Inline filters — same store as the Filters panel above
+                    (filterState / filterCity), so changing here also
+                    updates the map and Nodes-in-Radius. */}
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  <div className="relative">
+                    <select
+                      value={filterState}
+                      onChange={e => setFilterState(e.target.value)}
+                      aria-label="Filter by state"
+                      className="w-full appearance-none rounded-lg bg-white/10 px-2.5 py-2 pr-7 text-xs font-semibold text-white focus:bg-white/20 focus:outline-none cursor-pointer"
+                    >
+                      <option value="" className="text-slate-900">All states</option>
+                      {availableStates.map(s => (
+                        <option key={s} value={s} className="text-slate-900">{s}</option>
+                      ))}
+                    </select>
+                    <ChevronDownIcon className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-white/70" />
+                  </div>
+                  <div className="relative">
+                    <select
+                      value={filterCity}
+                      onChange={e => setFilterCity(e.target.value)}
+                      disabled={availableCities.length === 0}
+                      aria-label="Filter by city or area"
+                      className="w-full appearance-none rounded-lg bg-white/10 px-2.5 py-2 pr-7 text-xs font-semibold text-white focus:bg-white/20 focus:outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <option value="" className="text-slate-900">All cities</option>
+                      {availableCities.map(c => (
+                        <option key={c} value={c} className="text-slate-900">{c}</option>
+                      ))}
+                    </select>
+                    <ChevronDownIcon className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-white/70" />
+                  </div>
+                </div>
                 <div className="space-y-1.5 text-sm">
                   {([
                     { key: "online",   label: "Online",   value: stats.online,   tone: "bg-white/15 text-white" },
