@@ -8,6 +8,10 @@ const JAVA_API = normaliseJavaApiBase(
   "http://localhost:4001",
 );
 
+/** Exposed for routes that proxy long-lived streams (SSE) and need to
+ *  build the upstream URL themselves rather than going through fetch JSON. */
+export const JAVA_API_BASE = JAVA_API;
+
 type Opts = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;

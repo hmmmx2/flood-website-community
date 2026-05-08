@@ -44,6 +44,24 @@ export default function SettingsPage() {
   const [showPw, setShowPw] = useState(false);
   const [pwSaving, setPwSaving] = useState(false);
 
+  // Channel preferences (in-app / email / SMS / WhatsApp)
+  type ChannelPrefs = {
+    phoneE164: string;
+    notifyEmail: boolean;
+    notifySms: boolean;
+    notifyWhatsapp: boolean;
+    notifyInApp: boolean;
+  };
+  const [prefs, setPrefs] = useState<ChannelPrefs>({
+    phoneE164: "",
+    notifyEmail: true,
+    notifySms: false,
+    notifyWhatsapp: false,
+    notifyInApp: true,
+  });
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
+  const [prefsSaving, setPrefsSaving] = useState(false);
+
   useEffect(() => {
     if (!session) return;
     if (!user) { router.replace("/login"); return; }
@@ -59,8 +77,56 @@ export default function SettingsPage() {
       setPushPermission(permission);
       setPushSubscribed(subscribed);
     });
+
+    // Load channel preferences (phone + email/sms/whatsapp/in-app toggles)
+    void (async () => {
+      try {
+        const res = await fetch("/api/profile/notification-prefs", {
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as Partial<ChannelPrefs>;
+        setPrefs({
+          phoneE164:      data.phoneE164      ?? "",
+          notifyEmail:    data.notifyEmail    ?? true,
+          notifySms:      data.notifySms      ?? false,
+          notifyWhatsapp: data.notifyWhatsapp ?? false,
+          notifyInApp:    data.notifyInApp    ?? true,
+        });
+        setPrefsLoaded(true);
+      } catch { /* non-critical */ }
+    })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
+
+  async function savePrefs(patch: Partial<ChannelPrefs>) {
+    const next = { ...prefs, ...patch };
+    setPrefs(next);
+    setPrefsSaving(true);
+    try {
+      const res = await fetch("/api/profile/notification-prefs", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `Save failed (${res.status})`);
+      }
+      toast.success("Notification preferences saved.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save preferences.");
+      // Reload from server on failure so the UI doesn't lie about what's saved.
+      try {
+        const r = await fetch("/api/profile/notification-prefs", { credentials: "include" });
+        if (r.ok) setPrefs((await r.json()) as ChannelPrefs);
+      } catch { /* */ }
+    } finally {
+      setPrefsSaving(false);
+    }
+  }
 
   async function handlePushToggle() {
     setPushLoading(true);
@@ -304,6 +370,85 @@ export default function SettingsPage() {
             {/* Notifications tab */}
             {activeTab === "notifications" && (
               <div className="space-y-4">
+
+                {/* ── Multichannel alert preferences ─────────────────── */}
+                <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-6">
+                  <h2 className="font-bold text-[var(--color-text)] text-lg mb-1">Alert delivery</h2>
+                  <p className="text-sm text-[var(--color-muted)] mb-5">
+                    Pick how we reach you when a sensor inside one of your
+                    saved-place radii hits Alert / Warning / Critical.
+                  </p>
+
+                  {/* Phone number — required for SMS / WhatsApp */}
+                  <div className="mb-5">
+                    <label className="block text-xs font-semibold text-[var(--color-text)] mb-1.5">
+                      Phone number{" "}
+                      <span className="text-[10px] font-normal text-[var(--color-muted)]">
+                        (E.164, e.g. +60123456789)
+                      </span>
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="tel"
+                        value={prefs.phoneE164}
+                        onChange={(e) => setPrefs(p => ({ ...p, phoneE164: e.target.value }))}
+                        placeholder="+60123456789"
+                        className="flex-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-3 py-2.5 text-sm text-[var(--color-text)] focus:border-[var(--color-brand)] focus:outline-none"
+                        style={{ minHeight: 44 }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void savePrefs({ phoneE164: prefs.phoneE164.trim() })}
+                        disabled={prefsSaving || !prefsLoaded}
+                        className="rounded-full bg-[var(--color-brand)] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                        style={{ minHeight: 44, minWidth: 80 }}
+                      >
+                        {prefsSaving ? "Saving…" : "Save"}
+                      </button>
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-[var(--color-muted)]">
+                      Only used for SMS and WhatsApp alerts. Leave blank to disable both.
+                    </p>
+                  </div>
+
+                  {/* Channel toggles */}
+                  <div className="rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+                    {([
+                      { key: "notifyInApp",    label: "In-app bell + sound", desc: "Bell icon next to your avatar, with a soft chime." },
+                      { key: "notifyEmail",    label: "Email",               desc: "Sent from FloodWatch via Resend." },
+                      { key: "notifySms",      label: "SMS",                 desc: "Requires phone number above. Delivered by Twilio." },
+                      { key: "notifyWhatsapp", label: "WhatsApp",            desc: "Requires phone number above. Twilio sandbox in dev." },
+                    ] as const).map(channel => {
+                      const value = prefs[channel.key];
+                      const requiresPhone = channel.key === "notifySms" || channel.key === "notifyWhatsapp";
+                      const blocked = requiresPhone && !prefs.phoneE164.trim();
+                      return (
+                        <label
+                          key={channel.key}
+                          className={`flex items-center justify-between gap-3 px-4 py-3 ${blocked ? "opacity-60" : "cursor-pointer hover:bg-[var(--color-hover)]"}`}
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-[var(--color-text)]">
+                              {channel.label}
+                            </p>
+                            <p className="text-[11px] text-[var(--color-muted)] mt-0.5">
+                              {channel.desc}
+                              {blocked && " — add a phone number first."}
+                            </p>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={value}
+                            disabled={blocked || prefsSaving || !prefsLoaded}
+                            onChange={(e) => void savePrefs({ [channel.key]: e.target.checked } as Partial<ChannelPrefs>)}
+                            className="h-5 w-5 flex-shrink-0 cursor-pointer accent-[var(--color-brand)]"
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-6">
                   <h2 className="font-bold text-[var(--color-text)] text-lg mb-1">Flood Alert Notifications</h2>
                   <p className="text-sm text-[var(--color-muted)] mb-6">

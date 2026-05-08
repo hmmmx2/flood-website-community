@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { ThemeToggle } from "@/lib/theme/ThemeToggle";
+import NotificationBell from "@/components/NotificationBell";
 import { useRef, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
@@ -229,6 +230,13 @@ export default function Navbar({
         <div className="flex-shrink-0">
           <ThemeToggle compact />
         </div>
+
+        {/* Bell — only authenticated users have notifications. */}
+        {user && (
+          <div className="hidden sm:block flex-shrink-0">
+            <NotificationBell enabled />
+          </div>
+        )}
 
         {/* ── Desktop auth ─────────────────────────────────────────────── */}
         {user ? (
