@@ -94,11 +94,22 @@ function LoginPageInner() {
         | { error?: string };
 
       if (!res.ok) {
-        throw new Error(
+        const msg =
           "error" in body && typeof body.error === "string"
             ? body.error
-            : "Invalid email or password.",
-        );
+            : "Invalid email or password.";
+        if (/verify your email/i.test(msg)) {
+          // Account exists but email isn't verified — re-issue a code and
+          // bounce them to the verification screen.
+          await fetch("/api/auth/resend-verification", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: loginEmail.trim().toLowerCase() }),
+          }).catch(() => {});
+          router.push(`/verify-email?email=${encodeURIComponent(loginEmail.trim().toLowerCase())}`);
+          return;
+        }
+        throw new Error(msg);
       }
 
       const payload = body as {
@@ -158,7 +169,12 @@ function LoginPageInner() {
     }
     setLoading(true);
     try {
-      // Step 1: create account on Spring Boot
+      // /api/auth/register no longer auto-logs the user in. The Java
+      // service responds 202 Accepted with a `RegisterPendingDto`
+      // (email + optional dev code) and emails the 6-digit code. We
+      // bounce the user to /verify-email — they enter the code, the
+      // backend marks email_verified=true, and only then does a session
+      // get issued.
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -169,21 +185,18 @@ function LoginPageInner() {
           password: regPassword,
         }),
       });
+      const data = (await res.json().catch(() => ({}))) as {
+        email?: string;
+        devCode?: string;
+        error?: string;
+      };
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Registration failed.");
       }
-
-      // Step 2: sign in via NextAuth to establish the session cookie
-      const result = await signIn("credentials", {
-        email: regEmail,
-        password: regPassword,
-        redirect: false,
-      });
-      if (result?.error) {
-        throw new Error("Account created but sign-in failed. Please log in.");
-      }
-      router.push("/");
+      const targetEmail = data.email ?? regEmail;
+      const params = new URLSearchParams({ email: targetEmail });
+      if (data.devCode) params.set("devCode", data.devCode);
+      router.push(`/verify-email?${params.toString()}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed.");
     } finally {

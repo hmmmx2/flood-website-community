@@ -19,16 +19,15 @@ export default {
     authorized({ auth, request }) {
       const path = request.nextUrl.pathname;
       const isAuthed = !!auth?.user;
-      // Authenticated users have no business on the public auth pages —
-      // bounce them home so they can't accidentally re-trigger reset flows
-      // for themselves or look at stale "create account" forms.
-      if (
-        isAuthed &&
-        (path === "/login" ||
-          path === "/register" ||
-          path === "/forgot-password" ||
-          path === "/reset-password")
-      ) {
+      // /forgot-password and /reset-password must remain reachable even
+      // while a session cookie is still active — a user may want to
+      // reset their password from a code on their phone after already
+      // signing in on this browser. /login also stays accessible so the
+      // user can switch accounts (e.g. just changed their password in
+      // settings, the JWT still validates, and they want to re-login).
+      // /register is the only auth page we hard-bounce — already
+      // signed-in users have no business creating a duplicate account.
+      if (isAuthed && path === "/register") {
         return Response.redirect(new URL("/", request.nextUrl));
       }
       if (path.startsWith("/settings") && !isAuthed) {

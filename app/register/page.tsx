@@ -4,7 +4,6 @@ import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { signIn } from "next-auth/react";
 import { AuthFooter, AuthTopNav } from "@/components/auth/AuthChrome";
 
 export default function RegisterPage() {
@@ -36,28 +35,29 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
-      // Step 1: create the account on Spring Boot
+      // The Java service now responds 202 Accepted with an email +
+      // optional dev code instead of an immediate session — the user
+      // must verify the 6-digit code on /verify-email before signing in.
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ firstName, lastName, email, password }),
       });
 
+      const data = (await res.json().catch(() => ({}))) as {
+        email?: string;
+        devCode?: string;
+        error?: string;
+      };
+
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Registration failed. Please try again.");
       }
 
-      // Step 2: sign in via NextAuth to establish the secure session cookie
-      const result = await signIn("credentials", {
-        email,
-        password,
-        redirect: false,
-      });
-      if (result?.error) {
-        throw new Error("Account created but sign-in failed. Please log in.");
-      }
-      router.push("/");
+      const targetEmail = data.email ?? email;
+      const params = new URLSearchParams({ email: targetEmail });
+      if (data.devCode) params.set("devCode", data.devCode);
+      router.push(`/verify-email?${params.toString()}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed.");
     } finally {
