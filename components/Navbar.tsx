@@ -54,6 +54,15 @@ function SettingsIcon() {
   );
 }
 
+function UserIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+      strokeWidth="1.8" stroke="currentColor" className="h-4 w-4 flex-shrink-0">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+    </svg>
+  );
+}
+
 function SignOutIcon() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
@@ -280,7 +289,20 @@ export default function Navbar({
             </button>
 
             {userMenuOpen && (
-              <div className="absolute right-0 top-full mt-1 w-48 bg-[var(--color-card)] rounded-xl border border-[var(--color-border)] shadow-lg overflow-hidden z-50">
+              <div className="absolute right-0 top-full mt-1 w-56 bg-[var(--color-card)] rounded-xl border border-[var(--color-border)] shadow-lg overflow-hidden z-50">
+                <Link
+                  href={`/u/${user.id}`}
+                  onClick={() => setUserMenuOpen(false)}
+                  className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-hover)] transition font-medium"
+                >
+                  <UserIcon />
+                  <span className="flex-1 min-w-0">
+                    <span className="block truncate">View profile</span>
+                    <span className="block text-[11px] text-[var(--color-muted)] truncate">
+                      {user.displayName}
+                    </span>
+                  </span>
+                </Link>
                 <Link
                   href="/settings"
                   onClick={() => setUserMenuOpen(false)}
@@ -416,6 +438,14 @@ export default function Navbar({
                       </p>
                     </div>
                   </div>
+                  <Link
+                    href={`/u/${user.id}`}
+                    onClick={() => setMobileOpen(false)}
+                    className="flex items-center gap-3 px-3 py-3 text-base text-[var(--color-text)] hover:bg-[var(--color-hover)] transition font-medium rounded-xl"
+                  >
+                    <UserIcon />
+                    View profile
+                  </Link>
                   <Link
                     href="/settings"
                     onClick={() => setMobileOpen(false)}
