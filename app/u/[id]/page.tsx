@@ -224,10 +224,7 @@ export default function UserProfilePage() {
                     {isOwn && !editingAvatar && (
                       <button
                         type="button"
-                        onClick={() => {
-                          setAvatarDraft(profile.avatarUrl ?? "");
-                          setEditingAvatar(true);
-                        }}
+                        onClick={() => setEditingAvatar(true)}
                         aria-label="Change profile picture"
                         className="absolute bottom-1 right-1 flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-card)] border border-[var(--color-border)] shadow-md text-[var(--color-text)] hover:bg-[var(--color-pill-bg)] transition"
                       >
