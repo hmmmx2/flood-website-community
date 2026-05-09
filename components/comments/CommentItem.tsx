@@ -142,20 +142,51 @@ export default function CommentItem({
   return (
     <div id={`comment-${n.id}`} className="group flex gap-3 scroll-mt-24">
       {/* Avatar (Twitter/Facebook-style outside the bubble) */}
-      <div
-        aria-hidden
-        className="mt-0.5 h-9 w-9 flex-shrink-0 rounded-full bg-[var(--color-brand)]/15 flex items-center justify-center text-[11px] font-bold text-[var(--color-brand)] select-none"
-      >
-        {getInitials(n.authorName)}
-      </div>
+      {n.authorId && !n.deleted ? (
+        <Link
+          href={`/u/${n.authorId}`}
+          aria-label={`View ${n.authorName}'s profile`}
+          className="mt-0.5 h-9 w-9 flex-shrink-0 rounded-full bg-[var(--color-brand)]/15 flex items-center justify-center text-[11px] font-bold text-[var(--color-brand)] select-none hover:opacity-90 overflow-hidden"
+        >
+          {n.authorAvatar ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={n.authorAvatar}
+              alt=""
+              className="h-full w-full object-cover"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = "none";
+              }}
+            />
+          ) : (
+            getInitials(n.authorName)
+          )}
+        </Link>
+      ) : (
+        <div
+          aria-hidden
+          className="mt-0.5 h-9 w-9 flex-shrink-0 rounded-full bg-[var(--color-brand)]/15 flex items-center justify-center text-[11px] font-bold text-[var(--color-brand)] select-none"
+        >
+          {getInitials(n.authorName)}
+        </div>
+      )}
 
       <div className="flex-1 min-w-0">
         {/* Bubble: name/time on first line, body below, kebab anchored top-right */}
         <div className="relative rounded-2xl bg-[var(--color-pill-bg)] px-3.5 py-2.5">
           <div className="flex items-center gap-1.5 flex-wrap pr-7">
-            <span className="text-sm font-bold text-[var(--color-text)]">
-              {n.authorName}
-            </span>
+            {n.authorId && !n.deleted ? (
+              <Link
+                href={`/u/${n.authorId}`}
+                className="text-sm font-bold text-[var(--color-text)] hover:underline"
+              >
+                {n.authorName}
+              </Link>
+            ) : (
+              <span className="text-sm font-bold text-[var(--color-text)]">
+                {n.authorName}
+              </span>
+            )}
             <span className="text-[var(--color-muted)] text-xs">·</span>
             <span className="text-xs text-[var(--color-muted)]" title={n.createdAt}>
               {timeAgo(n.createdAt)}

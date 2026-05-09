@@ -183,10 +183,31 @@ export default function PostCard({
                     <span className="text-[var(--color-muted)] text-xs">•</span>
                   </>
                 )}
-                <div className="h-6 w-6 rounded-full bg-[var(--color-brand)] flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0">
-                  {getInitials(post.authorName)}
-                </div>
-                <span className="text-xs font-semibold text-[var(--color-text)] truncate">{post.authorName}</span>
+                <Link
+                  href={`/u/${post.authorId}`}
+                  className="h-6 w-6 rounded-full bg-[var(--color-brand)] flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0 hover:opacity-90"
+                  aria-label={`View ${post.authorName}'s profile`}
+                >
+                  {post.authorAvatar ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={post.authorAvatar}
+                      alt=""
+                      className="h-full w-full rounded-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = "none";
+                      }}
+                    />
+                  ) : (
+                    getInitials(post.authorName)
+                  )}
+                </Link>
+                <Link
+                  href={`/u/${post.authorId}`}
+                  className="text-xs font-semibold text-[var(--color-text)] truncate hover:underline"
+                >
+                  {post.authorName}
+                </Link>
                 <span className="text-[var(--color-muted)] text-xs">•</span>
                 <span className="text-[var(--color-muted)] text-xs">{timeAgo(post.createdAt)}</span>
               </div>
