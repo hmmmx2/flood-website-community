@@ -3,29 +3,40 @@
 /**
  * /verify-email — second step of the registration flow.
  *
- * The /register form POSTs to /api/auth/register, which now creates the
- * user with email_verified=false and emails a 6-digit code, then bumps
- * the user here with the email (and, in dev mode, the code) as query
- * params. The user enters the code, we POST it to /api/auth/verify-email,
- * Spring marks the account verified and returns a real session
- * (accessToken + refreshToken). We then install the NextAuth cookie
- * by calling signIn("admin-token", { accessToken, refreshToken }) —
- * the existing token-based provider in auth.ts that hydrates a user
- * from /profile without needing a password. No re-typing required.
+ * Modern OTP UI: six separated digit boxes with auto-advance, paste support,
+ * arrow-key navigation, and animated success/error feedback. After
+ * /api/auth/verify-email succeeds we install the NextAuth session via the
+ * token-based "admin-token" provider so the user lands signed-in on the home
+ * page without retyping their password.
  */
 
-import { Suspense, useEffect, useState, type FormEvent } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ClipboardEvent,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { AuthFooter, AuthTopNav } from "@/components/auth/AuthChrome";
-import { MailIcon } from "@/components/icons";
+
+const CODE_LEN = 6;
+const RESEND_COOLDOWN_S = 30;
 
 type VerifyEmailResponse = {
   session?: { accessToken?: string; refreshToken?: string };
   user?: { id?: string; email?: string };
 };
+
+type Status = "idle" | "submitting" | "success" | "error";
 
 function VerifyEmailInner() {
   const router = useRouter();
@@ -34,39 +45,118 @@ function VerifyEmailInner() {
   const devCodeParam = params.get("devCode") ?? "";
 
   const [email, setEmail] = useState(emailParam);
-  const [code, setCode] = useState(devCodeParam);
-  const [loading, setLoading] = useState(false);
-  const [resending, setResending] = useState(false);
+  const [digits, setDigits] = useState<string[]>(() =>
+    seedDigits(devCodeParam),
+  );
+  const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState("");
-  const [info, setInfo] = useState("");
+  const [info, setInfo] = useState(
+    devCodeParam ? "Dev mode — code prefilled from server response." : "",
+  );
+  const [resendIn, setResendIn] = useState(0);
+  const [resending, setResending] = useState(false);
+
+  const inputsRef = useRef<Array<HTMLInputElement | null>>([]);
+  const code = useMemo(() => digits.join(""), [digits]);
+  const isComplete = code.length === CODE_LEN && /^\d{6}$/.test(code);
 
   useEffect(() => {
-    if (devCodeParam) {
-      setInfo(`Dev mode — code prefilled from server response.`);
-    }
-  }, [devCodeParam]);
+    // focus first empty box on mount
+    const idx = digits.findIndex((d) => !d);
+    inputsRef.current[idx === -1 ? CODE_LEN - 1 : idx]?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  async function handleVerify(e: FormEvent) {
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const t = setTimeout(() => setResendIn((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendIn]);
+
+  const setDigitAt = useCallback((idx: number, value: string) => {
+    setDigits((prev) => {
+      const next = [...prev];
+      next[idx] = value;
+      return next;
+    });
+  }, []);
+
+  function handleChange(idx: number) {
+    return (e: ChangeEvent<HTMLInputElement>) => {
+      const raw = e.target.value.replace(/\D/g, "");
+      if (status === "error") {
+        setStatus("idle");
+        setError("");
+      }
+      if (raw.length === 0) {
+        setDigitAt(idx, "");
+        return;
+      }
+      // Pasted multi-digit value into one box — distribute it
+      if (raw.length > 1) {
+        const chars = raw.slice(0, CODE_LEN - idx).split("");
+        setDigits((prev) => {
+          const next = [...prev];
+          chars.forEach((c, i) => (next[idx + i] = c));
+          return next;
+        });
+        const target = Math.min(idx + chars.length, CODE_LEN - 1);
+        inputsRef.current[target]?.focus();
+        return;
+      }
+      setDigitAt(idx, raw);
+      if (idx < CODE_LEN - 1) inputsRef.current[idx + 1]?.focus();
+    };
+  }
+
+  function handleKeyDown(idx: number) {
+    return (e: KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Backspace") {
+        if (digits[idx]) {
+          setDigitAt(idx, "");
+          return;
+        }
+        if (idx > 0) {
+          inputsRef.current[idx - 1]?.focus();
+          setDigitAt(idx - 1, "");
+        }
+      } else if (e.key === "ArrowLeft" && idx > 0) {
+        inputsRef.current[idx - 1]?.focus();
+      } else if (e.key === "ArrowRight" && idx < CODE_LEN - 1) {
+        inputsRef.current[idx + 1]?.focus();
+      }
+    };
+  }
+
+  function handlePaste(e: ClipboardEvent<HTMLInputElement>) {
+    const raw = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, CODE_LEN);
+    if (!raw) return;
     e.preventDefault();
+    const next = Array.from({ length: CODE_LEN }, (_, i) => raw[i] ?? "");
+    setDigits(next);
+    inputsRef.current[Math.min(raw.length, CODE_LEN - 1)]?.focus();
+  }
+
+  async function submitCode(currentCode: string) {
     setError("");
     setInfo("");
-    setLoading(true);
+    setStatus("submitting");
     try {
       const res = await fetch("/api/auth/verify-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), code: code.trim() }),
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          code: currentCode,
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as VerifyEmailResponse & {
         error?: string;
       };
-      if (!res.ok) {
-        throw new Error(data.error || "Verification failed.");
-      }
+      if (!res.ok) throw new Error(data.error || "Verification failed.");
 
-      // Install the NextAuth session using the tokens Spring just
-      // returned. Token-based provider does not require a password —
-      // mirrors the same pattern as the CRM admin SSO callback.
+      setStatus("success");
+
       const accessToken = data.session?.accessToken;
       const refreshToken = data.session?.refreshToken;
       if (accessToken && refreshToken) {
@@ -76,24 +166,31 @@ function VerifyEmailInner() {
           redirect: false,
         });
         if (!result?.error) {
-          router.push("/");
+          setTimeout(() => router.push("/"), 900);
           return;
         }
       }
-
-      // Fallback — verification succeeded but token-handoff failed.
-      // Send the user to /login with a friendly toast rather than a
-      // dead end on the verify page.
-      setInfo("Account verified! Sign in below to continue.");
-      setTimeout(() => router.push("/login"), 1200);
+      setInfo("Account verified. Sign in below to continue.");
+      setTimeout(() => router.push("/login"), 1100);
     } catch (err) {
+      setStatus("error");
       setError(err instanceof Error ? err.message : "Verification failed.");
-    } finally {
-      setLoading(false);
+      setTimeout(() => {
+        setStatus((s) => (s === "error" ? "idle" : s));
+        setDigits(Array(CODE_LEN).fill(""));
+        inputsRef.current[0]?.focus();
+      }, 900);
     }
   }
 
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!isComplete || status === "submitting") return;
+    void submitCode(code);
+  }
+
   async function handleResend() {
+    if (resending || resendIn > 0 || !email) return;
     setError("");
     setInfo("");
     setResending(true);
@@ -107,7 +204,10 @@ function VerifyEmailInner() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Couldn't resend code.");
       }
-      setInfo("If an account exists for that email, a fresh code has been sent.");
+      setInfo("A fresh code has been sent. Check your inbox.");
+      setResendIn(RESEND_COOLDOWN_S);
+      setDigits(Array(CODE_LEN).fill(""));
+      inputsRef.current[0]?.focus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't resend code.");
     } finally {
@@ -116,44 +216,58 @@ function VerifyEmailInner() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col" style={{ background: "var(--color-bg)" }}>
+    <div
+      className="flex min-h-screen flex-col"
+      style={{ background: "var(--color-bg)" }}
+    >
       <AuthTopNav />
       <div className="flex flex-1 flex-col items-center justify-center p-6 pt-20 sm:pt-24">
         <div
           className="w-full max-w-md rounded-3xl border p-8 shadow-lg"
-          style={{ background: "var(--color-card)", borderColor: "var(--color-border)" }}
+          style={{
+            background: "var(--color-card)",
+            borderColor: "var(--color-border)",
+          }}
         >
-          <div className="flex justify-center mb-6">
-            <Image src="/images/logo.png" alt="FloodWatch" width={64} height={64} priority />
+          <div className="flex justify-center mb-5">
+            <Image
+              src="/images/logo.png"
+              alt="FloodWatch"
+              width={56}
+              height={56}
+              priority
+            />
           </div>
 
-          <div className="text-center mb-6">
-            <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[var(--color-brand)]/15 text-[var(--color-brand)] mb-3 mx-auto">
-              <MailIcon className="h-8 w-8" />
-            </div>
-            <h2 className="text-2xl font-semibold mb-1" style={{ color: "var(--color-text)" }}>
+          <div className="text-center mb-7">
+            <h2
+              className="text-2xl font-semibold mb-2 tracking-tight"
+              style={{ color: "var(--color-text)" }}
+            >
               Verify your email
             </h2>
-            <p className="text-sm" style={{ color: "var(--color-muted)" }}>
-              We sent a 6-digit code to <strong style={{ color: "var(--color-text)" }}>{email || "your email"}</strong>.
+            <p
+              className="text-sm leading-relaxed"
+              style={{ color: "var(--color-muted)" }}
+            >
+              We sent a 6-digit code to{" "}
+              <span
+                className="font-medium"
+                style={{ color: "var(--color-text)" }}
+              >
+                {email || "your email"}
+              </span>
+              .
             </p>
           </div>
 
-          {error && (
-            <div className="mb-4 rounded-xl px-4 py-3 text-sm border bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">
-              {error}
-            </div>
-          )}
-          {info && !error && (
-            <div className="mb-4 rounded-xl px-4 py-3 text-sm border bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300">
-              {info}
-            </div>
-          )}
-
-          <form onSubmit={handleVerify} className="space-y-4">
+          <form onSubmit={handleSubmit}>
             {!emailParam && (
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: "var(--color-text)" }}>
+              <div className="mb-5">
+                <label
+                  className="block text-sm font-medium mb-2"
+                  style={{ color: "var(--color-text)" }}
+                >
                   Email
                 </label>
                 <input
@@ -162,7 +276,7 @@ function VerifyEmailInner() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   placeholder="you@example.com"
-                  className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-colors focus:ring-2"
+                  className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2"
                   style={{
                     background: "var(--color-input-bg)",
                     borderColor: "var(--color-border)",
@@ -171,56 +285,181 @@ function VerifyEmailInner() {
                 />
               </div>
             )}
-            <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: "var(--color-text)" }}>
-                Verification code
-              </label>
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="\d{6}"
-                maxLength={6}
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                required
-                placeholder="000000"
-                className="w-full rounded-xl border px-4 py-2.5 text-base tracking-[0.5em] text-center outline-none transition-colors focus:ring-2"
-                style={{
-                  background: "var(--color-input-bg)",
-                  borderColor: "var(--color-border)",
-                  color: "var(--color-text)",
-                }}
-              />
-              <p className="mt-1 text-xs" style={{ color: "var(--color-muted)" }}>
-                Code expires in 10 minutes.
-              </p>
+
+            <div
+              className="flex items-center justify-between gap-2 sm:gap-3 mb-3"
+              onPaste={handlePaste}
+            >
+              {digits.map((d, idx) => (
+                <input
+                  key={idx}
+                  ref={(el) => {
+                    inputsRef.current[idx] = el;
+                  }}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={1}
+                  value={d}
+                  onChange={handleChange(idx)}
+                  onKeyDown={handleKeyDown(idx)}
+                  disabled={status === "submitting" || status === "success"}
+                  aria-label={`Digit ${idx + 1}`}
+                  className={[
+                    "h-14 w-full sm:h-16 rounded-xl border text-center text-2xl font-semibold outline-none transition-all",
+                    "focus:ring-2 focus:ring-offset-0 focus:border-[var(--color-brand)] focus:ring-[var(--color-brand)]/30",
+                    status === "error"
+                      ? "border-red-400 ring-2 ring-red-400/30 animate-[shake_0.4s_ease-in-out]"
+                      : status === "success"
+                        ? "border-emerald-400 ring-2 ring-emerald-400/30"
+                        : d
+                          ? "border-[var(--color-brand)]/50"
+                          : "border-[var(--color-border)]",
+                  ].join(" ")}
+                  style={{
+                    background: "var(--color-input-bg)",
+                    color: "var(--color-text)",
+                  }}
+                />
+              ))}
             </div>
+
+            <div className="min-h-[24px] mb-4 text-center text-sm">
+              {status === "error" && error && (
+                <span className="inline-flex items-center gap-1.5 text-red-600 dark:text-red-400 font-medium">
+                  <CrossIcon className="h-4 w-4" />
+                  {error}
+                </span>
+              )}
+              {status === "success" && (
+                <span className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-medium">
+                  <CheckIcon className="h-4 w-4" />
+                  Verified — taking you in…
+                </span>
+              )}
+              {status !== "error" && status !== "success" && info && (
+                <span style={{ color: "var(--color-muted)" }}>{info}</span>
+              )}
+              {status === "idle" && !info && (
+                <span style={{ color: "var(--color-muted)" }}>
+                  Code expires in 10 minutes.
+                </span>
+              )}
+            </div>
+
             <button
               type="submit"
-              disabled={loading}
-              className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--color-brand-dark)] disabled:opacity-50 disabled:cursor-not-allowed bg-[var(--color-brand)]"
+              disabled={!isComplete || status === "submitting" || status === "success"}
+              className="w-full rounded-xl px-4 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-brand-dark)] disabled:opacity-50 disabled:cursor-not-allowed bg-[var(--color-brand)] flex items-center justify-center gap-2"
             >
-              {loading ? "Verifying…" : "Verify and continue"}
+              {status === "submitting" && <Spinner />}
+              {status === "success" && <CheckIcon className="h-4 w-4" />}
+              {status === "submitting"
+                ? "Verifying…"
+                : status === "success"
+                  ? "Verified"
+                  : "Verify and continue"}
             </button>
           </form>
 
-          <div className="mt-5 flex items-center justify-between text-sm">
+          <div className="mt-6 flex items-center justify-between text-sm">
             <button
               type="button"
               onClick={handleResend}
-              disabled={resending || !email}
-              className="font-semibold transition hover:opacity-80 text-[var(--color-brand)] disabled:opacity-50"
+              disabled={resending || resendIn > 0 || !email}
+              className="font-semibold transition hover:opacity-80 text-[var(--color-brand)] disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {resending ? "Sending…" : "Resend code"}
+              {resending
+                ? "Sending…"
+                : resendIn > 0
+                  ? `Resend in ${resendIn}s`
+                  : "Resend code"}
             </button>
-            <Link href="/login" className="text-[var(--color-muted)] hover:opacity-80">
+            <Link
+              href="/login"
+              className="text-[var(--color-muted)] hover:opacity-80"
+            >
               ← Back to Sign In
             </Link>
           </div>
         </div>
       </div>
       <AuthFooter />
+      <style jsx global>{`
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          20% { transform: translateX(-6px); }
+          40% { transform: translateX(6px); }
+          60% { transform: translateX(-4px); }
+          80% { transform: translateX(4px); }
+        }
+      `}</style>
     </div>
+  );
+}
+
+function seedDigits(devCode: string): string[] {
+  const sane = devCode.replace(/\D/g, "").slice(0, CODE_LEN);
+  return Array.from({ length: CODE_LEN }, (_, i) => sane[i] ?? "");
+}
+
+function CheckIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 10.5l4 4 8-9" />
+    </svg>
+  );
+}
+
+function CrossIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 5l10 10M15 5L5 15" />
+    </svg>
+  );
+}
+
+function Spinner() {
+  return (
+    <svg
+      className="h-4 w-4 animate-spin"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeOpacity="0.25"
+        strokeWidth="3"
+      />
+      <path
+        d="M22 12a10 10 0 0 1-10 10"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }
 
@@ -228,7 +467,10 @@ export default function VerifyEmailPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center" style={{ background: "var(--color-bg)" }}>
+        <div
+          className="flex min-h-screen items-center justify-center"
+          style={{ background: "var(--color-bg)" }}
+        >
           <p style={{ color: "var(--color-muted)" }}>Loading…</p>
         </div>
       }
