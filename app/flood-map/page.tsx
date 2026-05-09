@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import SearchModal from "@/components/SearchModal";
 import { SearchField } from "@/components/ui/search-field";
@@ -226,6 +227,24 @@ export default function FloodMapPage() {
     setFocusLatLng({ lat, lng, zoom });
     mapCardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
+
+  // Deep-link from the bell notification: /flood-map?node=<businessNodeId>
+  // pans + zooms onto that sensor once the node list has loaded. Tracked
+  // via a ref so the focus runs at most once per ?node= value, even if
+  // the node list re-fetches (we don't want to keep snapping the user
+  // back after they pan away).
+  const search = useSearchParams();
+  const nodeIdParam = search?.get("node") ?? null;
+  const focusedNodeIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!nodeIdParam) return;
+    if (focusedNodeIdRef.current === nodeIdParam) return;
+    if (nodes.length === 0) return;
+    const target = nodes.find((n) => n.nodeId === nodeIdParam || n.id === nodeIdParam);
+    if (!target) return;
+    focusedNodeIdRef.current = nodeIdParam;
+    focusOnPoint(target.latitude, target.longitude, 16);
+  }, [nodeIdParam, nodes]);
 
   // Right-click on the map: reverse-geocode for a friendly label, then
   // open the saved-place editor with the coords + address prefilled.

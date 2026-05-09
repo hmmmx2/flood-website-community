@@ -19,6 +19,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 type Notification = {
   id: string;
@@ -174,16 +175,22 @@ export default function NotificationBell({ enabled = true }: Props) {
   }, [open]);
 
   // ── Mark read ─────────────────────────────────────────────────────────────
-  async function markRead(id: string) {
+  // Returns a Promise so the click handler can await persistence before
+  // navigating. Without that await, navigation can race the POST and the
+  // bell on the next page re-fetches with the row still unread.
+  const markRead = useCallback(async (id: string) => {
+    // Optimistic local update first so the badge clears instantly even
+    // if the network round-trip is slow.
     setItems(prev => prev.map(n => n.id === id ? { ...n, readAt: new Date().toISOString() } : n));
     setUnread(c => Math.max(0, c - 1));
     try {
       await fetch(`/api/notifications/${encodeURIComponent(id)}/read`, {
         method: "POST",
         credentials: "include",
+        keepalive: true, // survives the impending navigation
       });
-    } catch { /* optimistic — server-side retry is fine */ }
-  }
+    } catch { /* server-side retry is fine — local state already cleared */ }
+  }, []);
 
   async function markAllRead() {
     setItems(prev => prev.map(n => n.readAt ? n : { ...n, readAt: new Date().toISOString() }));
@@ -256,7 +263,7 @@ export default function NotificationBell({ enabled = true }: Props) {
             <ul>
               {items.map(n => (
                 <li key={n.id}>
-                  <Row notification={n} onClick={() => void markRead(n.id)} onClose={() => setOpen(false)} />
+                  <Row notification={n} onMarkRead={() => markRead(n.id)} onClose={() => setOpen(false)} />
                 </li>
               ))}
             </ul>
@@ -281,13 +288,14 @@ export default function NotificationBell({ enabled = true }: Props) {
 // ── Row ──────────────────────────────────────────────────────────────────────
 function Row({
   notification,
-  onClick,
+  onMarkRead,
   onClose,
 }: {
   notification: Notification;
-  onClick: () => void;
+  onMarkRead: () => Promise<void>;
   onClose: () => void;
 }) {
+  const router = useRouter();
   const tone =
     notification.severity === "critical" ? { bg: "rgba(220, 38, 38, 0.08)", border: "#dc2626", label: "Critical" } :
     notification.severity === "warning"  ? { bg: "rgba(249, 115, 22, 0.08)", border: "#f97316", label: "Warning" } :
@@ -321,19 +329,20 @@ function Row({
     </div>
   );
 
-  if (notification.link) {
-    return (
-      <Link
-        href={notification.link}
-        onClick={() => { onClick(); onClose(); }}
-        className="block"
-      >
-        {inner}
-      </Link>
-    );
-  }
+  // Awaiting markRead before navigating guarantees the row is persisted
+  // as read by the time the next page mounts and re-fetches; otherwise
+  // the new bell can race the POST and re-show the unread badge.
+  const link = notification.link ?? null;
   return (
-    <button type="button" onClick={onClick} className="block w-full text-left">
+    <button
+      type="button"
+      onClick={async () => {
+        onClose();
+        await onMarkRead();
+        if (link) router.push(link);
+      }}
+      className="block w-full text-left"
+    >
       {inner}
     </button>
   );
