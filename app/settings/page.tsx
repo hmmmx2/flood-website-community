@@ -6,6 +6,7 @@ import Link from "next/link";
 import toast from "react-hot-toast";
 import Navbar from "@/components/Navbar";
 import SearchModal from "@/components/SearchModal";
+import AvatarUploader from "@/components/AvatarUploader";
 import { useSession, signOut } from "next-auth/react";
 import { sessionToAuthUser, getInitials } from "@/lib/auth";
 import { authFetchJson } from "@/lib/fetchJson";
@@ -317,9 +318,13 @@ export default function SettingsPage() {
                     <p className="text-xs text-[var(--color-muted)] mt-1">Email address cannot be changed.</p>
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-[var(--color-muted)] mb-1.5 uppercase tracking-wide">Avatar URL <span className="normal-case font-normal">(optional)</span></label>
-                    <input type="url" value={avatarUrl} onChange={e => setAvatarUrl(e.target.value)} placeholder="https://example.com/avatar.jpg"
-                      className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-2.5 text-sm outline-none focus:border-[var(--color-brand)] focus:ring-2 focus:ring-[var(--color-brand)]/10" />
+                    <label className="block text-xs font-semibold text-[var(--color-muted)] mb-1.5 uppercase tracking-wide">Profile picture</label>
+                    <AvatarUploader
+                      value={avatarUrl || null}
+                      fallbackName={user.displayName ?? user.email ?? "You"}
+                      onChange={(dataUrl) => setAvatarUrl(dataUrl)}
+                      onClear={() => setAvatarUrl("")}
+                    />
                   </div>
                   <button type="submit" disabled={profileSaving}
                     className="rounded-full bg-[var(--color-brand)] px-6 py-2.5 text-sm font-bold text-white transition hover:bg-[var(--color-brand-dark)] disabled:opacity-50">

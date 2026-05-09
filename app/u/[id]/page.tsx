@@ -17,6 +17,7 @@ import { useSession, signIn } from "next-auth/react";
 import Navbar from "@/components/Navbar";
 import PostCard from "@/components/PostCard";
 import SearchModal from "@/components/SearchModal";
+import AvatarUploader from "@/components/AvatarUploader";
 import { authFetchJson } from "@/lib/fetchJson";
 import { sessionToAuthUser, getInitials } from "@/lib/auth";
 import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
@@ -63,14 +64,11 @@ export default function UserProfilePage() {
   const [loadingPosts, setLoadingPosts] = useState(true);
 
   const [editingAvatar, setEditingAvatar] = useState(false);
-  const [avatarDraft, setAvatarDraft] = useState("");
-  const [savingAvatar, setSavingAvatar] = useState(false);
 
   const fetchProfile = useCallback(async () => {
     try {
       const data = await authFetchJson<PublicUserProfile>(`/api/users/${id}`);
       setProfile(data);
-      setAvatarDraft(data.avatarUrl ?? "");
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : "User not found");
     }
@@ -135,23 +133,19 @@ export default function UserProfilePage() {
     }
   }
 
-  async function saveAvatar() {
+  async function persistAvatar(value: string | null) {
     if (!isOwn) return;
-    const url = avatarDraft.trim();
-    setSavingAvatar(true);
     try {
       await authFetchJson("/api/auth/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ avatarUrl: url || null }),
+        body: JSON.stringify({ avatarUrl: value }),
       });
-      setProfile((p) => (p ? { ...p, avatarUrl: url || null } : p));
+      setProfile((p) => (p ? { ...p, avatarUrl: value } : p));
       setEditingAvatar(false);
-      toast.success("Profile picture updated");
+      toast.success(value ? "Profile picture updated" : "Profile picture removed");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't update avatar.");
-    } finally {
-      setSavingAvatar(false);
     }
   }
 
@@ -289,42 +283,27 @@ export default function UserProfilePage() {
                   )}
                 </div>
 
-                {/* Inline avatar editor */}
+                {/* Inline avatar uploader — file picker, no URLs */}
                 {isOwn && editingAvatar && (
                   <div className="mt-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-pill-bg)] p-4">
-                    <label className="block text-xs font-bold text-[var(--color-text)] mb-1.5">
-                      Profile picture URL
-                    </label>
-                    <p className="text-[11px] text-[var(--color-muted)] mb-2">
-                      Paste a public image URL. Leave blank to clear.
-                    </p>
-                    <input
-                      type="url"
-                      value={avatarDraft}
-                      onChange={(e) => setAvatarDraft(e.target.value)}
-                      placeholder="https://example.com/me.jpg"
-                      className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-brand)] focus:ring-2 focus:ring-[var(--color-brand)]/15"
-                    />
-                    <div className="mt-3 flex justify-end gap-2">
+                    <div className="mb-3 flex items-center justify-between">
+                      <p className="text-xs font-bold text-[var(--color-text)]">
+                        Profile picture
+                      </p>
                       <button
                         type="button"
-                        onClick={() => {
-                          setEditingAvatar(false);
-                          setAvatarDraft(profile.avatarUrl ?? "");
-                        }}
-                        className="rounded-full px-4 py-1.5 text-xs font-semibold text-[var(--color-muted)] hover:bg-[var(--color-card)]"
+                        onClick={() => setEditingAvatar(false)}
+                        className="text-[11px] font-semibold text-[var(--color-muted)] hover:text-[var(--color-text)]"
                       >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void saveAvatar()}
-                        disabled={savingAvatar}
-                        className="rounded-full bg-[var(--color-brand)] px-4 py-1.5 text-xs font-bold text-white hover:bg-[var(--color-brand-dark)] disabled:opacity-50"
-                      >
-                        {savingAvatar ? "Saving…" : "Save"}
+                        Done
                       </button>
                     </div>
+                    <AvatarUploader
+                      value={profile.avatarUrl}
+                      fallbackName={profile.displayName}
+                      onChange={(dataUrl) => persistAvatar(dataUrl)}
+                      onClear={() => persistAvatar(null)}
+                    />
                   </div>
                 )}
               </div>
