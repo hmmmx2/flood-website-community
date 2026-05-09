@@ -250,43 +250,58 @@ export default function Navbar({
         {/* ── Desktop auth ─────────────────────────────────────────────── */}
         {user ? (
           <div className="relative hidden sm:block flex-shrink-0" ref={userMenuRef}>
-            <button
-              type="button"
-              onClick={() => setUserMenuOpen((o) => !o)}
-              className="flex items-center gap-2 rounded-full border border-[var(--color-border)] px-3 py-1.5 hover:bg-[var(--color-hover)] transition"
-            >
-              {user.avatarUrl ? (
-                <div className="h-6 w-6 rounded-full overflow-hidden flex-shrink-0 border border-[var(--color-border)]">
-                  <Image
-                    src={user.avatarUrl}
-                    alt={user.displayName}
-                    width={24}
-                    height={24}
-                    className="h-full w-full object-cover"
-                    unoptimized
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).style.display = "none";
-                      const fallback = e.currentTarget.nextElementSibling as HTMLElement | null;
-                      if (fallback) fallback.style.display = "flex";
-                    }}
-                  />
-                  <span
-                    style={{ display: "none" }}
-                    className="h-6 w-6 rounded-full bg-[var(--color-brand)] items-center justify-center text-[10px] font-bold text-white"
-                  >
+            {/* Reddit / X / Facebook pattern: avatar = direct link to profile,
+                name + chevron = dropdown trigger. Both sit inside one rounded
+                pill so visually it still reads as a single chip. */}
+            <div className="flex items-center gap-1 rounded-full border border-[var(--color-border)] pl-1 pr-1 py-1 hover:border-[var(--color-brand)]/60 transition">
+              <Link
+                href={`/u/${user.id}`}
+                aria-label="View your profile"
+                title="View your profile"
+                className="flex items-center justify-center rounded-full hover:opacity-90 transition"
+              >
+                {user.avatarUrl ? (
+                  <div className="h-7 w-7 rounded-full overflow-hidden flex-shrink-0 border border-[var(--color-border)]">
+                    <Image
+                      src={user.avatarUrl}
+                      alt={user.displayName}
+                      width={28}
+                      height={28}
+                      className="h-full w-full object-cover"
+                      unoptimized
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).style.display = "none";
+                        const fallback = e.currentTarget.nextElementSibling as HTMLElement | null;
+                        if (fallback) fallback.style.display = "flex";
+                      }}
+                    />
+                    <span
+                      style={{ display: "none" }}
+                      className="h-7 w-7 rounded-full bg-[var(--color-brand)] items-center justify-center text-[11px] font-bold text-white"
+                    >
+                      {getInitials(user.displayName)}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="h-7 w-7 rounded-full bg-[var(--color-brand)] flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0">
                     {getInitials(user.displayName)}
-                  </span>
-                </div>
-              ) : (
-                <div className="h-6 w-6 rounded-full bg-[var(--color-brand)] flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0">
-                  {getInitials(user.displayName)}
-                </div>
-              )}
-              <span className="text-sm font-semibold text-[var(--color-text)] max-w-[120px] truncate">
-                {user.displayName}
-              </span>
-              <ChevronDownIcon />
-            </button>
+                  </div>
+                )}
+              </Link>
+              <button
+                type="button"
+                onClick={() => setUserMenuOpen((o) => !o)}
+                aria-label="Open account menu"
+                aria-haspopup="menu"
+                aria-expanded={userMenuOpen}
+                className="flex items-center gap-1 px-2 py-1 rounded-full hover:bg-[var(--color-hover)] transition"
+              >
+                <span className="text-sm font-semibold text-[var(--color-text)] max-w-[120px] truncate">
+                  {user.displayName}
+                </span>
+                <ChevronDownIcon />
+              </button>
+            </div>
 
             {userMenuOpen && (
               <div className="absolute right-0 top-full mt-1 w-56 bg-[var(--color-card)] rounded-xl border border-[var(--color-border)] shadow-lg overflow-hidden z-50">
