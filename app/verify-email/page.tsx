@@ -4,11 +4,14 @@
  * /verify-email — second step of the registration flow.
  *
  * The /register form POSTs to /api/auth/register, which now creates the
- * user with email_verified=false and emails a 6-digit code. That route
- * pushes the user here with the email (and, in dev mode, the code) as
- * query params. The user enters the code, we POST it to /api/auth/verify-email,
- * Spring marks the account verified, returns a real session, and we
- * sign the user in via NextAuth.
+ * user with email_verified=false and emails a 6-digit code, then bumps
+ * the user here with the email (and, in dev mode, the code) as query
+ * params. The user enters the code, we POST it to /api/auth/verify-email,
+ * Spring marks the account verified and returns a real session
+ * (accessToken + refreshToken). We then install the NextAuth cookie
+ * by calling signIn("admin-token", { accessToken, refreshToken }) —
+ * the existing token-based provider in auth.ts that hydrates a user
+ * from /profile without needing a password. No re-typing required.
  */
 
 import { Suspense, useEffect, useState, type FormEvent } from "react";
@@ -19,6 +22,11 @@ import { signIn } from "next-auth/react";
 import { AuthFooter, AuthTopNav } from "@/components/auth/AuthChrome";
 import { MailIcon } from "@/components/icons";
 
+type VerifyEmailResponse = {
+  session?: { accessToken?: string; refreshToken?: string };
+  user?: { id?: string; email?: string };
+};
+
 function VerifyEmailInner() {
   const router = useRouter();
   const params = useSearchParams();
@@ -27,7 +35,6 @@ function VerifyEmailInner() {
 
   const [email, setEmail] = useState(emailParam);
   const [code, setCode] = useState(devCodeParam);
-  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [error, setError] = useState("");
@@ -50,30 +57,35 @@ function VerifyEmailInner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim().toLowerCase(), code: code.trim() }),
       });
+      const data = (await res.json().catch(() => ({}))) as VerifyEmailResponse & {
+        error?: string;
+      };
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Verification failed.");
       }
-      // Verified server-side — establish the NextAuth session using the
-      // password the user entered moments ago in /login. We don't store
-      // it across the page hop on purpose; if the user landed here from
-      // a fresh tab they'll have to type the password again to sign in.
-      if (!password) {
-        setInfo("Account verified! Sign in below to continue.");
-        setTimeout(() => router.push("/login"), 1200);
-        return;
+
+      // Install the NextAuth session using the tokens Spring just
+      // returned. Token-based provider does not require a password —
+      // mirrors the same pattern as the CRM admin SSO callback.
+      const accessToken = data.session?.accessToken;
+      const refreshToken = data.session?.refreshToken;
+      if (accessToken && refreshToken) {
+        const result = await signIn("admin-token", {
+          accessToken,
+          refreshToken,
+          redirect: false,
+        });
+        if (!result?.error) {
+          router.push("/");
+          return;
+        }
       }
-      const result = await signIn("credentials", {
-        email: email.trim().toLowerCase(),
-        password,
-        redirect: false,
-      });
-      if (result?.error) {
-        setInfo("Account verified! Please sign in.");
-        setTimeout(() => router.push("/login"), 1200);
-        return;
-      }
-      router.push("/");
+
+      // Fallback — verification succeeded but token-handoff failed.
+      // Send the user to /login with a friendly toast rather than a
+      // dead end on the verify page.
+      setInfo("Account verified! Sign in below to continue.");
+      setTimeout(() => router.push("/login"), 1200);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed.");
     } finally {
@@ -181,27 +193,6 @@ function VerifyEmailInner() {
               />
               <p className="mt-1 text-xs" style={{ color: "var(--color-muted)" }}>
                 Code expires in 10 minutes.
-              </p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: "var(--color-text)" }}>
-                Password (so we can sign you in straight after verifying)
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter the password you just chose"
-                autoComplete="new-password"
-                className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-colors focus:ring-2"
-                style={{
-                  background: "var(--color-input-bg)",
-                  borderColor: "var(--color-border)",
-                  color: "var(--color-text)",
-                }}
-              />
-              <p className="mt-1 text-xs" style={{ color: "var(--color-muted)" }}>
-                Optional — leave blank if you want to sign in manually after verification.
               </p>
             </div>
             <button
