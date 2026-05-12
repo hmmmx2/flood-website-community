@@ -178,19 +178,37 @@ export default function NotificationBell({ enabled = true }: Props) {
   // Returns a Promise so the click handler can await persistence before
   // navigating. Without that await, navigation can race the POST and the
   // bell on the next page re-fetches with the row still unread.
+  //
+  // If the server-side write fails for any reason the optimistic decrement
+  // is rolled back and the count is re-synced from the source of truth,
+  // so a reload can never disagree with what the badge shows now.
   const markRead = useCallback(async (id: string) => {
-    // Optimistic local update first so the badge clears instantly even
-    // if the network round-trip is slow.
-    setItems(prev => prev.map(n => n.id === id ? { ...n, readAt: new Date().toISOString() } : n));
-    setUnread(c => Math.max(0, c - 1));
+    // Capture previous state so we can roll back on failure.
+    let rollbackItems: Notification[] | null = null;
+    let rollbackUnread = 0;
+    setItems(prev => {
+      rollbackItems = prev;
+      return prev.map(n => n.id === id ? { ...n, readAt: new Date().toISOString() } : n);
+    });
+    setUnread(c => {
+      rollbackUnread = c;
+      return Math.max(0, c - 1);
+    });
     try {
-      await fetch(`/api/notifications/${encodeURIComponent(id)}/read`, {
+      const res = await fetch(`/api/notifications/${encodeURIComponent(id)}/read`, {
         method: "POST",
         credentials: "include",
         keepalive: true, // survives the impending navigation
       });
-    } catch { /* server-side retry is fine — local state already cleared */ }
-  }, []);
+      if (!res.ok) throw new Error(`mark-read ${res.status}`);
+    } catch {
+      if (rollbackItems) setItems(rollbackItems);
+      setUnread(rollbackUnread);
+      // Re-sync from the server so the badge reflects truth, not the
+      // optimistic guess we just undid.
+      void refreshUnread();
+    }
+  }, [refreshUnread]);
 
   async function markAllRead() {
     setItems(prev => prev.map(n => n.readAt ? n : { ...n, readAt: new Date().toISOString() }));
