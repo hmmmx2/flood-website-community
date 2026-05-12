@@ -97,7 +97,11 @@ export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(functi
           ref={ref}
           id={labelId}
           name={name}
-          type="search"
+          // Use type="text" so the browser does not render its own clear-X
+          // (which used to stack on top of our custom Clear button below).
+          // Keyboard semantics are still preserved via enterKeyHint="search".
+          type="text"
+          role="searchbox"
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}

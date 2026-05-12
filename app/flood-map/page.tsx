@@ -447,13 +447,14 @@ export default function FloodMapPage() {
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       // Search excludes nodeId — residents shouldn't have to interact with
-      // technical hardware IDs. Match against location, area, state, and
-      // (when geocoding lands) the resolved address.
+      // technical hardware IDs. Includes `address` (populated by the
+      // geocode backfill) so river / street names match where available.
       r = r.filter(n =>
         (n.name     ?? "").toLowerCase().includes(q) ||
         (n.location ?? "").toLowerCase().includes(q) ||
         (n.area     ?? "").toLowerCase().includes(q) ||
-        (n.state    ?? "").toLowerCase().includes(q),
+        (n.state    ?? "").toLowerCase().includes(q) ||
+        (n.address  ?? "").toLowerCase().includes(q),
       );
     }
     return r;
@@ -594,7 +595,7 @@ export default function FloodMapPage() {
                     showLabel
                     value={searchQuery}
                     onValueChange={setSearchQuery}
-                    placeholder="Search by area, district, or river…"
+                    placeholder="Search by area, name, or address…"
                     size="sm"
                   />
                 </div>
