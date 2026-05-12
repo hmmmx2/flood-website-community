@@ -12,6 +12,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import UatSurveyForm, { type SurveyRole } from "@/components/survey/UatSurveyForm";
 import { sessionToAuthUser } from "@/lib/auth";
+import { PAGE_CONTAINER, READABLE_CONTAINER } from "@/lib/layout";
 
 export default function CommunityFeedbackPage() {
   const { data: session, status } = useSession();
@@ -52,7 +53,8 @@ export default function CommunityFeedbackPage() {
           </Link>
         </div>
       ) : (
-        <main className="mx-auto max-w-3xl px-6 py-12">
+        <main className={`${PAGE_CONTAINER} py-12`}>
+          <div className={READABLE_CONTAINER}>
           <header className="mb-8">
             <p
               className="text-[11px] font-semibold uppercase tracking-[0.2em]"
@@ -70,6 +72,7 @@ export default function CommunityFeedbackPage() {
             </p>
           </header>
           <UatSurveyForm role={role} source="community" />
+          </div>
         </main>
       )}
 

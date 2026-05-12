@@ -14,6 +14,7 @@ import { sessionToAuthUser } from "@/lib/auth";
 import { fetchJson, authFetchJson } from "@/lib/fetchJson";
 import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
 import { useSensorStream } from "@/components/providers/SensorStreamProvider";
+import { PAGE_CONTAINER } from "@/lib/layout";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type NodeStatus = "active" | "warning" | "critical" | "inactive";
@@ -503,7 +504,7 @@ export default function FloodMapPage() {
         activeLink="sensors"
       />
 
-      <main className="max-w-7xl mx-auto px-4 py-6 space-y-5">
+      <main className={`${PAGE_CONTAINER} py-6 space-y-5`}>
 
         {/* ── Page header ──────────────────────────────────────────────────── */}
         <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

@@ -15,6 +15,7 @@ import { WaveIcon, AlertIcon, InboxIcon } from "@/components/icons";
 import SearchModal from "@/components/SearchModal";
 import { SearchField } from "@/components/ui/search-field";
 import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
+import { PAGE_CONTAINER } from "@/lib/layout";
 
 type SortKey = "new" | "top";
 
@@ -244,7 +245,7 @@ export default function GroupPage() {
         </div>
       )}
 
-      <main className="mx-auto max-w-5xl px-4 py-6 flex gap-6">
+      <main className={`${PAGE_CONTAINER} py-6 flex gap-6`}>
         {/* Feed column */}
         <div className="flex-1 min-w-0">
           {/* Create post bar */}

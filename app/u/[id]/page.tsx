@@ -21,6 +21,7 @@ import AvatarUploader from "@/components/AvatarUploader";
 import { authFetchJson } from "@/lib/fetchJson";
 import { sessionToAuthUser, getInitials } from "@/lib/auth";
 import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
+import { PAGE_CONTAINER, READABLE_CONTAINER } from "@/lib/layout";
 import type { Post } from "@/lib/types";
 
 type PublicUserProfile = {
@@ -158,7 +159,8 @@ export default function UserProfilePage() {
         breadcrumb={{ label: "Community", href: "/" }}
       />
 
-      <main className="mx-auto max-w-3xl px-4 py-6">
+      <main className={`${PAGE_CONTAINER} py-6`}>
+        <div className={READABLE_CONTAINER}>
         <button
           type="button"
           onClick={() => router.back()}
@@ -363,6 +365,7 @@ export default function UserProfilePage() {
             </section>
           </>
         )}
+        </div>
       </main>
 
       {searchOpen && (

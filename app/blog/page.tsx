@@ -11,6 +11,7 @@ import { useSession, signOut } from "next-auth/react";
 import { sessionToAuthUser, timeAgo } from "@/lib/auth";
 import { fetchJson } from "@/lib/fetchJson";
 import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
+import { PAGE_CONTAINER } from "@/lib/layout";
 
 type BlogDto = {
   id: string;
@@ -264,7 +265,7 @@ export default function BlogPage() {
         activeLink="blog"
       />
 
-      <main className="max-w-5xl mx-auto px-4 py-6 flex-1 w-full">
+      <main className={`${PAGE_CONTAINER} py-6 flex-1`}>
         <div className="flex gap-6">
           <div className="flex-1 min-w-0">
             <div className="mb-6">

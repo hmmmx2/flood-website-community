@@ -162,7 +162,9 @@ export default function Navbar({
 
   return (
     <header className="sticky top-0 z-40 bg-[var(--color-card)] border-b border-[var(--color-border)] shadow-sm">
-      <div className="mx-auto max-w-5xl flex items-center gap-3 h-14 px-4">
+      {/* Width tracks lib/layout.ts → PAGE_CONTAINER so the navbar always
+          aligns with the page content below it. */}
+      <div className="mx-auto w-full max-w-7xl flex items-center gap-3 h-14 px-4 sm:px-6">
 
         {/* ── Logo ───────────────────────────────────────────────────────── */}
         <Link

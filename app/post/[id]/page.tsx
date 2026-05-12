@@ -14,6 +14,7 @@ import { authFetchJson } from "@/lib/fetchJson";
 import type { Post } from "@/lib/types";
 import { WaveIcon } from "@/components/icons";
 import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
+import { PAGE_CONTAINER, READABLE_CONTAINER } from "@/lib/layout";
 
 export default function PostPage() {
   const { id } = useParams<{ id: string }>();
@@ -110,7 +111,8 @@ export default function PostPage() {
         breadcrumb={{ label: "Community", href: "/" }}
       />
 
-      <main className="mx-auto max-w-3xl px-4 py-6">
+      <main className={`${PAGE_CONTAINER} py-6`}>
+        <div className={READABLE_CONTAINER}>
         {/* Back */}
         <button type="button" onClick={() => router.back()}
           className="flex items-center gap-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-brand)] mb-4 transition-colors">
@@ -153,6 +155,7 @@ export default function PostPage() {
             </div>
           </>
         )}
+        </div>
       </main>
 
       {searchOpen && (

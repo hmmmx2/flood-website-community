@@ -11,6 +11,7 @@ import { sessionToAuthUser, timeAgo } from "@/lib/auth";
 import { StarIcon, ClockIcon, NewspaperIcon, ArrowLeftIcon, ArrowRightIcon } from "@/components/icons";
 import { fetchJson } from "@/lib/fetchJson";
 import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
+import { PAGE_CONTAINER, READABLE_CONTAINER } from "@/lib/layout";
 
 type BlogDto = {
   id: string;
@@ -98,7 +99,8 @@ export default function BlogDetailPage() {
   if (error || !blog) {
     return shell(
       <>
-        <main className="max-w-3xl mx-auto px-4 py-8 flex-1 w-full">
+        <main className={`${PAGE_CONTAINER} py-8 flex-1`}>
+          <div className={READABLE_CONTAINER}>
           <Link href="/blog" className="inline-flex items-center gap-2 text-sm text-[var(--color-muted)] hover:text-[var(--color-brand)] transition-colors mb-8 font-medium">
             <ArrowLeftIcon className="h-4 w-4 shrink-0" />
             Back to Blog
@@ -113,6 +115,7 @@ export default function BlogDetailPage() {
               Back to Blog
             </Link>
           </div>
+          </div>
         </main>
       </>
     );
@@ -120,7 +123,8 @@ export default function BlogDetailPage() {
 
   return shell(
     <>
-      <main className="max-w-3xl mx-auto px-4 py-6 flex-1 w-full">
+      <main className={`${PAGE_CONTAINER} py-6 flex-1`}>
+        <div className={READABLE_CONTAINER}>
         <Link href="/blog" className="inline-flex items-center gap-2 text-sm text-[var(--color-muted)] hover:text-[var(--color-brand)] mb-6 transition-colors font-medium">
           <ArrowLeftIcon className="h-4 w-4 shrink-0" />
           Back to Blog
@@ -184,6 +188,7 @@ export default function BlogDetailPage() {
             </div>
           </div>
         </article>
+        </div>
       </main>
     </>
   );

@@ -7,6 +7,7 @@ import PostCard from "@/components/PostCard";
 import CreatePostModal from "@/components/CreatePostModal";
 import SearchModal from "@/components/SearchModal";
 import Footer from "@/components/Footer";
+import { PAGE_CONTAINER } from "@/lib/layout";
 import { SearchField } from "@/components/ui/search-field";
 import { AlertIcon, WaveIcon } from "@/components/icons";
 import { useSession, signOut, signIn } from "next-auth/react";
@@ -159,7 +160,7 @@ export default function HomePage() {
         activeLink="community"
       />
 
-      <main className="mx-auto max-w-5xl px-4 py-6 flex gap-6">
+      <main className={`${PAGE_CONTAINER} py-6 flex gap-6`}>
         {/* Feed column */}
         <div className="flex-1 min-w-0">
           {/* Create post bar */}

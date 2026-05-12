@@ -7,6 +7,7 @@ import toast from "react-hot-toast";
 import Navbar from "@/components/Navbar";
 import SearchModal from "@/components/SearchModal";
 import AvatarUploader from "@/components/AvatarUploader";
+import { PAGE_CONTAINER, READABLE_CONTAINER } from "@/lib/layout";
 import { useSession, signOut } from "next-auth/react";
 import { sessionToAuthUser, getInitials } from "@/lib/auth";
 import { authFetchJson } from "@/lib/fetchJson";
@@ -235,7 +236,8 @@ export default function SettingsPage() {
         searchPlaceholder="Search posts & communities…"
       />
 
-      <main className="mx-auto max-w-3xl px-4 py-8">
+      <main className={`${PAGE_CONTAINER} py-8`}>
+        <div className={READABLE_CONTAINER}>
         <div className="mb-6">
           <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-brand)] transition-colors mb-4">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
@@ -558,6 +560,7 @@ export default function SettingsPage() {
               </div>
             )}
           </div>
+        </div>
         </div>
       </main>
 
