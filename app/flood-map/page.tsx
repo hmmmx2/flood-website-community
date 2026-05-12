@@ -9,6 +9,7 @@ import { SearchField } from "@/components/ui/search-field";
 import NodeMap, { STATUS_HEX } from "@/components/NodeMap";
 import SavedLocationsPanel, { type SavedLocationsPanelHandle } from "@/components/SavedLocationsPanel";
 import ShortcutsModal from "@/components/flood-map/ShortcutsModal";
+import PlaceCard, { type PlaceCardModel } from "@/components/flood-map/PlaceCard";
 import toast from "react-hot-toast";
 import { useSession, signOut } from "next-auth/react";
 import { sessionToAuthUser } from "@/lib/auth";
@@ -154,6 +155,16 @@ export default function FloodMapPage() {
   // ── Keyboard shortcuts (P1-13) ────────────────────────────────────────────
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
+  // ── Place Card (P1-5 + P1-8) ──────────────────────────────────────────────
+  // One card serves all three entry points: zone click, right-click on
+  // map, autocomplete pick. Closing returns to a bare map.
+  const [placeCardOpen, setPlaceCardOpen] = useState(false);
+  const [placeCardModel, setPlaceCardModel] = useState<PlaceCardModel | null>(null);
+  function openPlaceCard(model: PlaceCardModel) {
+    setPlaceCardModel(model);
+    setPlaceCardOpen(true);
+  }
+
   // Auto-centre the map on the user's current position the first time
   // they land here. Browser auto-prompts for permission. We never poll
   // — just one read at mount; the recenter button on the map re-runs.
@@ -258,29 +269,30 @@ export default function FloodMapPage() {
     focusOnPoint(target.centroidLat, target.centroidLng, 13);
   }, [zoneIdParam, zones]);
 
-  // Right-click on the map → reverse-geocode, then open the saved-place
-  // editor. The Geocoder lives in the same google.maps namespace as the
-  // Autocomplete loaded by the map, so it's available client-side once
-  // the map mounts.
+  // Right-click on the map → reverse-geocode, then open the Place Card.
+  // The card carries a Save button that opens the existing
+  // SavedLocationsPanel editor with the same prefill, so the old
+  // "right-click to save" muscle memory keeps working — just with one
+  // extra click for the new affordances (directions, copy coords, share).
   const handleMapRightClick = useCallback(async (lat: number, lng: number) => {
-    if (!session) {
-      toast("Sign in to save a place.");
-      return;
-    }
     let address = "";
+    let name = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
     try {
       if (typeof google !== "undefined" && google.maps?.Geocoder) {
         const geocoder = new google.maps.Geocoder();
         const res = await geocoder.geocode({ location: { lat, lng } });
         address = res.results[0]?.formatted_address ?? "";
+        // Prefer a short locality name when available so the card's
+        // title isn't a giant address line.
+        const locality =
+          res.results[0]?.address_components.find(c =>
+            c.types.includes("locality") || c.types.includes("sublocality"),
+          )?.long_name;
+        if (locality) name = locality;
       }
     } catch { /* reverse geocode is best-effort */ }
-    savedLocationsRef.current?.openWithPrefill({
-      latitude: lat,
-      longitude: lng,
-      address,
-    });
-  }, [session]);
+    openPlaceCard({ kind: "place", name, address, lat, lng });
+  }, []);
 
   // ── Data fetching ──────────────────────────────────────────────────────────
   const inFlightAbort = useRef<AbortController | null>(null);
@@ -753,7 +765,14 @@ export default function FloodMapPage() {
                   defaultZoom={11}
                   focusLatLng={focusLatLng}
                   onMapRightClick={(lat, lng) => void handleMapRightClick(lat, lng)}
-                  onPlaceSelect={(lat, lng) => focusOnPoint(lat, lng, 14)}
+                  onPlaceSelect={(lat, lng, name) => {
+                    focusOnPoint(lat, lng, 14);
+                    openPlaceCard({ kind: "place", name, lat, lng });
+                  }}
+                  onZoneClick={(z) => {
+                    focusOnPoint(z.centroidLat, z.centroidLng, 13);
+                    openPlaceCard({ kind: "zone", zone: z });
+                  }}
                   savedLocations={savedLocations}
                   myLocation={myLocation}
                   onRecenterRequest={requestGeolocation}
@@ -917,6 +936,37 @@ export default function FloodMapPage() {
       {/* Keyboard cheat-sheet (P1-13) — opened via the `?` key or the
           floating header button. */}
       <ShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+
+      {/* Place Card (P1-5 + P1-8) — single surface for zone clicks,
+          right-click pins, and autocomplete picks. */}
+      <PlaceCard
+        open={placeCardOpen}
+        model={placeCardModel}
+        onClose={() => setPlaceCardOpen(false)}
+        onSave={
+          placeCardModel?.kind === "place"
+            ? () => {
+                if (!session) {
+                  toast("Sign in to save a place.");
+                  return;
+                }
+                if (placeCardModel?.kind !== "place") return;
+                setPlaceCardOpen(false);
+                savedLocationsRef.current?.openWithPrefill({
+                  latitude: placeCardModel.lat,
+                  longitude: placeCardModel.lng,
+                  address: placeCardModel.address ?? placeCardModel.name,
+                });
+              }
+            : undefined
+        }
+        onShare={() => {
+          if (!placeCardModel) return;
+          const lat = placeCardModel.kind === "place" ? placeCardModel.lat : placeCardModel.zone.centroidLat;
+          const lng = placeCardModel.kind === "place" ? placeCardModel.lng : placeCardModel.zone.centroidLng;
+          handleShareView({ centerLat: lat, centerLng: lng, zoom: 14 });
+        }}
+      />
     </div>
   );
 }

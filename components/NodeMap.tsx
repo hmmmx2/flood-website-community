@@ -136,6 +136,12 @@ type NodeMapProps = {
    * center + zoom; the page composes the URL and copies / shares.
    */
   onShareView?: (vp: { centerLat: number; centerLng: number; zoom: number }) => void;
+  /**
+   * Fires when the user clicks a flood zone circle. The page opens
+   * its Place Card with the zone variant. Zone circles only become
+   * clickable when this handler is provided.
+   */
+  onZoneClick?: (zone: Zone) => void;
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -152,6 +158,7 @@ export default function NodeMap({
   onRecenterRequest,
   onViewportChanged,
   onShareView,
+  onZoneClick,
 }: NodeMapProps) {
   const [mapError, setMapError] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -431,7 +438,8 @@ export default function NodeMap({
       >
         {trafficOn && <TrafficLayer />}
 
-        {/* Per-zone circles — one per aggregated zone, coloured by worst level. */}
+        {/* Per-zone circles — one per aggregated zone, coloured by worst
+            level. Clickable when the page provides `onZoneClick`. */}
         {zones.map(z => {
           const colour = getZoneColour(z);
           return (
@@ -439,13 +447,14 @@ export default function NodeMap({
               key={`zone-${z.id}`}
               center={{ lat: z.centroidLat, lng: z.centroidLng }}
               radius={z.radiusM}
+              onClick={onZoneClick ? () => onZoneClick(z) : undefined}
               options={{
                 fillColor: colour,
                 fillOpacity: 0.35,
                 strokeColor: colour,
                 strokeOpacity: 0.85,
                 strokeWeight: 2,
-                clickable: false,
+                clickable: Boolean(onZoneClick),
                 zIndex: 2,
               }}
             />
