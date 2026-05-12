@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { authFetchJson } from "@/lib/fetchJson";
+import { showErrorToast } from "@/lib/errorToast";
 
 type Variant = "stacked" | "inline";
 
@@ -51,10 +52,14 @@ export default function CommentVoteButtons({
         setLocalScore(res.score);
         setLocalVote(mv);
         onVoteResult(res.score, mv);
-      } catch {
+      } catch (err) {
+        // Rollback optimistic state on server failure, then surface the
+        // error in a way that dedupes across rapid clicks (and shares the
+        // single sticky "rate-limit" id with the Like button).
         setLocalScore(score);
         setLocalVote(myVote);
         onVoteResult(score, myVote);
+        showErrorToast(err, "comment-vote-error", "Couldn't register vote.");
       } finally {
         setBusy(false);
       }

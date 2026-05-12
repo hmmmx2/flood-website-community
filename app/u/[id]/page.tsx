@@ -19,6 +19,7 @@ import PostCard from "@/components/PostCard";
 import SearchModal from "@/components/SearchModal";
 import AvatarUploader from "@/components/AvatarUploader";
 import { authFetchJson } from "@/lib/fetchJson";
+import { showErrorToast } from "@/lib/errorToast";
 import { sessionToAuthUser, getInitials } from "@/lib/auth";
 import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
 import { PAGE_CONTAINER, READABLE_CONTAINER } from "@/lib/layout";
@@ -118,7 +119,7 @@ export default function UserProfilePage() {
         ),
       );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to update like.");
+      showErrorToast(e, "like-error", "Failed to update like.");
     }
   }
 

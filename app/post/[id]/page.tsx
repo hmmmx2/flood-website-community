@@ -11,6 +11,7 @@ import { useSession, signIn } from "next-auth/react";
 import toast from "react-hot-toast";
 import { sessionToAuthUser } from "@/lib/auth";
 import { authFetchJson } from "@/lib/fetchJson";
+import { showErrorToast } from "@/lib/errorToast";
 import type { Post } from "@/lib/types";
 import { WaveIcon } from "@/components/icons";
 import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
@@ -62,7 +63,7 @@ export default function PostPage() {
         prev ? { ...prev, likedByMe: data.liked, likesCount: Math.max(0, data.likesCount) } : prev,
       );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to update like.");
+      showErrorToast(e, "like-error", "Failed to update like.");
     }
   }
 

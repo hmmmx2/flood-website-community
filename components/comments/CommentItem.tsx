@@ -178,12 +178,13 @@ export default function CommentItem({
             {n.authorId && !n.deleted ? (
               <Link
                 href={`/u/${n.authorId}`}
-                className="text-sm font-bold text-[var(--color-text)] hover:underline"
+                className="text-sm font-bold text-[var(--color-text)] hover:underline truncate max-w-[160px]"
+                title={n.authorName}
               >
                 {n.authorName}
               </Link>
             ) : (
-              <span className="text-sm font-bold text-[var(--color-text)]">
+              <span className="text-sm font-bold text-[var(--color-text)] truncate max-w-[160px]" title={n.authorName}>
                 {n.authorName}
               </span>
             )}
@@ -235,8 +236,12 @@ export default function CommentItem({
                 }}
                 rows={3}
                 autoFocus
+                maxLength={1500}
                 className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-brand)] focus:ring-2 focus:ring-[var(--color-brand)]/15 resize-y min-h-[72px]"
               />
+              <p className={`text-right text-[11px] tabular-nums ${editText.length >= 1500 ? "text-red-500" : editText.length >= 1350 ? "text-amber-500" : "text-[var(--color-muted)]"}`}>
+                {editText.length} / 1500
+              </p>
               <div className="flex gap-2 justify-end">
                 <button
                   type="button"
@@ -258,7 +263,7 @@ export default function CommentItem({
               </div>
             </form>
           ) : (
-            <p className="mt-1 text-sm text-[var(--color-text)] whitespace-pre-wrap break-words">
+            <p className="mt-1 text-sm text-[var(--color-text)] whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
               {n.content}
             </p>
           )}

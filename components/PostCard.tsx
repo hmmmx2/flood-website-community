@@ -39,6 +39,29 @@ export default function PostCard({
   const kebabRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
+  // Local Like lock — kills the spam-click 500 surface area entirely. The
+  // server is already race-safe (composite PK + caught unique violation),
+  // but coalescing rapid clicks here means we avoid:
+  //   (a) 30 wasted POSTs in a second tripping our own rate limiter, and
+  //   (b) the optimistic UI flicker that came from interleaved responses
+  //       arriving out of order.
+  // The button stays disabled until the parent's `onLike` settles. The
+  // parent handler is sync from this side — we wrap it in Promise.resolve
+  // so a non-promise handler (handleLike returns void) is still awaitable.
+  const [likeBusy, setLikeBusy] = useState(false);
+  async function handleLikeClick() {
+    if (likeBusy) return;
+    setLikeBusy(true);
+    try {
+      await Promise.resolve(onLike(post.id));
+    } finally {
+      // Tiny tail so a double-click that lands during the response can't
+      // immediately fire a second POST. 250 ms is below the perceptible
+      // delay (~300 ms) but long enough to swallow accidental dbl-clicks.
+      setTimeout(() => setLikeBusy(false), 250);
+    }
+  }
+
   // Anchor the dropdown under the kebab using viewport-fixed coords.
   // The card itself has `overflow-hidden` for the rounded corners +
   // hover image, which would clip an absolutely-positioned popover.
@@ -152,8 +175,10 @@ export default function PostCard({
           <div className="flex flex-col items-center gap-0.5 bg-[var(--color-pill-bg)] px-2.5 py-3 rounded-l-2xl min-w-[44px]">
             <button
               type="button"
-              onClick={() => onLike(post.id)}
-              className={`flex flex-col items-center p-1 rounded-lg transition-all ${
+              onClick={handleLikeClick}
+              disabled={likeBusy}
+              aria-pressed={post.likedByMe}
+              className={`flex flex-col items-center p-1 rounded-lg transition-all disabled:opacity-60 ${
                 post.likedByMe
                   ? "text-[var(--color-brand)]"
                   : "text-[var(--color-muted)] hover:text-[var(--color-upvote)] hover:bg-[var(--color-hover)]"
@@ -204,7 +229,8 @@ export default function PostCard({
                 </Link>
                 <Link
                   href={`/u/${post.authorId}`}
-                  className="text-xs font-semibold text-[var(--color-text)] truncate hover:underline"
+                  className="text-xs font-semibold text-[var(--color-text)] truncate hover:underline max-w-[160px]"
+                  title={post.authorName}
                 >
                   {post.authorName}
                 </Link>
@@ -233,15 +259,19 @@ export default function PostCard({
               )}
             </div>
 
-            {/* Title */}
+            {/* Title — break-words + overflow-wrap:anywhere stops a single
+                400-char unbroken token (e.g. "wwww…wwww") from blowing past
+                the card edge. The card has overflow-hidden for its rounded
+                corners but without these utilities the inner text node
+                still defines the layout width on Chrome ≥120. */}
             <Link href={`/post/${post.id}`}>
-              <h2 className="font-semibold text-[var(--color-text)] text-[15px] leading-snug hover:text-[var(--color-brand)] transition-colors mb-2">
+              <h2 className="font-semibold text-[var(--color-text)] text-[15px] leading-snug hover:text-[var(--color-brand)] transition-colors mb-2 break-words [overflow-wrap:anywhere]">
                 {post.title}
               </h2>
             </Link>
 
             {/* Content (truncated in compact mode) */}
-            <p className={`text-sm text-[var(--color-muted)] leading-relaxed mb-3 ${compact ? "line-clamp-3" : ""}`}>
+            <p className={`text-sm text-[var(--color-muted)] leading-relaxed mb-3 whitespace-pre-wrap break-words [overflow-wrap:anywhere] ${compact ? "line-clamp-3" : ""}`}>
               {post.content}
             </p>
 
@@ -375,13 +405,19 @@ export default function PostCard({
               {editError && <div className="rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 px-4 py-3 text-sm text-red-600 dark:text-red-400">{editError}</div>}
               <div>
                 <label className="block text-xs font-semibold text-[var(--color-muted)] mb-1.5 uppercase tracking-wide">Title</label>
-                <input type="text" value={editTitle} onChange={e => setEditTitle(e.target.value)} required maxLength={500}
+                <input type="text" value={editTitle} onChange={e => setEditTitle(e.target.value)} required maxLength={120}
                   className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-2.5 text-sm outline-none focus:border-[var(--color-brand)] focus:ring-2 focus:ring-[var(--color-brand)]/10" />
+                <p className={`text-right text-[11px] mt-1 tabular-nums ${editTitle.length >= 120 ? "text-red-500" : editTitle.length >= 108 ? "text-amber-500" : "text-[var(--color-muted)]"}`}>
+                  {editTitle.length} / 120
+                </p>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-[var(--color-muted)] mb-1.5 uppercase tracking-wide">Content</label>
-                <textarea value={editContent} onChange={e => setEditContent(e.target.value)} rows={4}
+                <textarea value={editContent} onChange={e => setEditContent(e.target.value)} rows={4} maxLength={4000}
                   className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-2.5 text-sm outline-none focus:border-[var(--color-brand)] focus:ring-2 focus:ring-[var(--color-brand)]/10 resize-none" />
+                <p className={`text-right text-[11px] mt-1 tabular-nums ${editContent.length >= 4000 ? "text-red-500" : editContent.length >= 3600 ? "text-amber-500" : "text-[var(--color-muted)]"}`}>
+                  {editContent.length} / 4000
+                </p>
               </div>
 
               {/* Image section */}

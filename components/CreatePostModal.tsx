@@ -11,6 +11,12 @@ type Props = {
   defaultGroupSlug?: string;
 };
 
+// Caps mirror the backend DTO `CreateCommunityPostRequest`. Keep these
+// in sync — the server enforces these via @Size and will 400 anything
+// over the cap; the frontend just gives feedback before the round-trip.
+const TITLE_MAX = 120;
+const CONTENT_MAX = 4000;
+
 export default function CreatePostModal({ onClose, onCreated, defaultGroupSlug }: Props) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -21,6 +27,16 @@ export default function CreatePostModal({ onClose, onCreated, defaultGroupSlug }
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Counter colour: amber at 90%, red at 100% (matches the harden-plan spec).
+  const titleTone =
+    title.length >= TITLE_MAX ? "text-red-500" :
+    title.length >= TITLE_MAX * 0.9 ? "text-amber-500" :
+    "text-[var(--color-muted)]";
+  const contentTone =
+    content.length >= CONTENT_MAX ? "text-red-500" :
+    content.length >= CONTENT_MAX * 0.9 ? "text-amber-500" :
+    "text-[var(--color-muted)]";
 
   useEffect(() => {
     void (async () => {
@@ -107,11 +123,13 @@ export default function CreatePostModal({ onClose, onCreated, defaultGroupSlug }
               type="text"
               value={title}
               onChange={e => setTitle(e.target.value)}
-              maxLength={500}
+              maxLength={TITLE_MAX}
               placeholder="An interesting title"
               className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-3 text-sm font-semibold outline-none focus:border-[var(--color-brand)] focus:ring-2 focus:ring-[var(--color-brand)]/10 placeholder:font-normal"
             />
-            <p className="text-right text-[11px] text-[var(--color-muted)] mt-1">{title.length}/500</p>
+            <p className={`text-right text-[11px] mt-1 tabular-nums ${titleTone}`}>
+              {title.length} / {TITLE_MAX}
+            </p>
           </div>
 
           {/* Content */}
@@ -120,12 +138,12 @@ export default function CreatePostModal({ onClose, onCreated, defaultGroupSlug }
               value={content}
               onChange={e => setContent(e.target.value)}
               rows={6}
-              maxLength={5000}
+              maxLength={CONTENT_MAX}
               placeholder="Share your flood update, safety tip, or community notice…"
               className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-3 text-sm outline-none focus:border-[var(--color-brand)] focus:ring-2 focus:ring-[var(--color-brand)]/10 resize-none"
             />
-            <p className={`text-right text-[11px] mt-1 ${content.length > 4800 ? "text-red-500" : "text-[var(--color-muted)]"}`}>
-              {content.length}/5000
+            <p className={`text-right text-[11px] mt-1 tabular-nums ${contentTone}`}>
+              {content.length} / {CONTENT_MAX}
             </p>
           </div>
 
@@ -165,7 +183,12 @@ export default function CreatePostModal({ onClose, onCreated, defaultGroupSlug }
               className="rounded-full border border-[var(--color-border)] px-5 py-2.5 text-sm font-semibold text-[var(--color-muted)] hover:bg-[var(--color-pill-bg)] transition">
               Cancel
             </button>
-            <button type="submit" disabled={!title.trim() || !content.trim() || loading}
+            <button
+              type="submit"
+              disabled={
+                !title.trim() || !content.trim() || loading ||
+                title.length > TITLE_MAX || content.length > CONTENT_MAX
+              }
               className="rounded-full bg-[var(--color-brand)] px-6 py-2.5 text-sm font-bold text-white transition hover:bg-[var(--color-brand-dark)] disabled:opacity-50 disabled:cursor-not-allowed">
               {loading ? "Publishing…" : "Post"}
             </button>
