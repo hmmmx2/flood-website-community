@@ -62,28 +62,45 @@ const socialLinks = [
 ];
 
 export default function Footer() {
+  // Colour palette is intentionally hard-coded to the shared FloodWatch
+  // footer tokens (defined once in lib/theme/tokens.css). The colour
+  // stays identical between the community site and the CRM, regardless
+  // of light or dark theme, so users always recognise the same brand
+  // bar at the bottom of every site.
   return (
-    <footer className="bg-[var(--color-card)] border-t border-[var(--color-border)] mt-8">
-      <div className="mx-auto max-w-5xl px-4 py-10">
+    <footer
+      className="mt-8"
+      style={{ background: "var(--color-footer-bg)", color: "var(--color-footer-fg)" }}
+    >
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 py-10">
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
           {/* Brand */}
           <div className="lg:col-span-1">
             <div className="flex items-center gap-3 mb-3">
-              <div className="h-10 w-10 rounded-xl bg-[var(--color-card)] border border-[var(--color-border)] flex items-center justify-center p-1 flex-shrink-0">
+              <div className="h-10 w-10 rounded-xl bg-white flex items-center justify-center p-1 flex-shrink-0">
                 <Image src="/images/logo.png" alt="Pop Up Advertising And Information Enterprise" width={32} height={32} />
               </div>
               <div>
-                <p className="font-bold text-sm text-[var(--color-text)] leading-tight">FloodWatch</p>
-                <p className="text-[10px] text-[var(--color-muted)] leading-tight">by Pop Up Advertising &amp; Information Enterprise</p>
+                <p className="font-bold text-sm leading-tight">FloodWatch</p>
+                <p className="text-[10px] leading-tight" style={{ color: "var(--color-footer-muted)" }}>
+                  by Pop Up Advertising &amp; Information Enterprise
+                </p>
               </div>
             </div>
-            <p className="text-xs text-[var(--color-muted)] leading-relaxed mb-4">
+            <p className="text-xs leading-relaxed mb-4" style={{ color: "var(--color-footer-muted)" }}>
               A community platform for Malaysians to share real-time flood updates and stay safe together.
             </p>
             <div className="flex items-center gap-2">
               {socialLinks.map(s => (
-                <a key={s.label} href={s.href} target="_blank" rel="noopener noreferrer" aria-label={s.label}
-                  className="h-8 w-8 rounded-lg border border-[var(--color-border)] flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-brand)] hover:border-[var(--color-brand)] transition-colors">
+                <a
+                  key={s.label}
+                  href={s.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={s.label}
+                  className="h-8 w-8 rounded-lg flex items-center justify-center transition-colors hover:bg-white/20"
+                  style={{ background: "var(--color-footer-bar)" }}
+                >
                   {s.icon}
                 </a>
               ))}
@@ -93,12 +110,15 @@ export default function Footer() {
           {/* Nav columns */}
           {footerLinks.map(col => (
             <div key={col.heading}>
-              <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text)] mb-3">{col.heading}</h4>
+              <h4 className="text-xs font-bold uppercase tracking-wider mb-3">{col.heading}</h4>
               <ul className="space-y-2">
                 {col.links.map(l => (
                   <li key={l.label}>
-                    <Link href={l.href}
-                      className="text-xs text-[var(--color-muted)] hover:text-[var(--color-brand)] transition-colors">
+                    <Link
+                      href={l.href}
+                      className="text-xs transition-colors hover:text-white"
+                      style={{ color: "var(--color-footer-muted)" }}
+                    >
                       {l.label}
                     </Link>
                   </li>
@@ -108,11 +128,14 @@ export default function Footer() {
           ))}
         </div>
 
-        <div className="mt-8 pt-6 border-t border-[var(--color-border)] flex flex-col sm:flex-row items-center justify-between gap-2">
-          <p className="text-xs text-[var(--color-muted)]">
+        <div
+          className="mt-8 pt-6 flex flex-col sm:flex-row items-center justify-between gap-2 border-t"
+          style={{ borderColor: "var(--color-footer-bar)" }}
+        >
+          <p className="text-xs" style={{ color: "var(--color-footer-muted)" }}>
             © {new Date().getFullYear()} Pop Up Advertising And Information Enterprise. All rights reserved.
           </p>
-          <p className="text-xs text-[var(--color-muted)]">
+          <p className="text-xs" style={{ color: "var(--color-footer-muted)" }}>
             Built for Malaysia&apos;s flood resilience community
           </p>
         </div>

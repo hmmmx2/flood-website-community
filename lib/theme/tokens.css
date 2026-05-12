@@ -41,6 +41,13 @@ html.dark {
   --color-brand-dark: #1e40af;
   --color-brand-light: #dbeafe;
   --color-upvote: #2563eb;
+  /* Footer chrome — stays constant across light and dark themes and
+     matches the CRM footer so users see one consistent brand bar at
+     the bottom of every site. */
+  --color-footer-bg:    #1e3a8a;
+  --color-footer-fg:    #ffffff;
+  --color-footer-muted: rgba(255, 255, 255, 0.7);
+  --color-footer-bar:   rgba(255, 255, 255, 0.08);
 
   --color-chart-grid: #e5e5e5;
   --color-chart-text: #4e4b4b;
