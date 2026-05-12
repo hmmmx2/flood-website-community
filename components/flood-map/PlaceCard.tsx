@@ -47,6 +47,12 @@ type Props = {
   onSave?: () => void;
   /** Copies a share-link of the current view + pin to the clipboard. */
   onShare?: () => void;
+  /**
+   * Opens the in-app flood-aware Directions panel with this place as
+   * the destination. When provided, the Directions button calls this
+   * instead of opening the Google Maps deep-link.
+   */
+  onDirections?: (dest: { lat: number; lng: number; label: string }) => void;
   onClose: () => void;
 };
 
@@ -81,7 +87,7 @@ function googleDirectionsHref(lat: number, lng: number, label?: string): string 
   return `https://www.google.com/maps/dir/?api=1&destination=${dest}${q}`;
 }
 
-export default function PlaceCard({ open, model, onSave, onShare, onClose }: Props) {
+export default function PlaceCard({ open, model, onSave, onShare, onDirections, onClose }: Props) {
   // Latch the last model so the card animates out gracefully on close.
   const [latched, setLatched] = useState<PlaceCardModel | null>(model);
   useEffect(() => {
@@ -187,19 +193,34 @@ export default function PlaceCard({ open, model, onSave, onShare, onClose }: Pro
         </header>
 
         <div className="grid grid-cols-2 gap-2 px-4 py-3 sm:grid-cols-2">
-          <a
-            href={googleDirectionsHref(lat, lng, title)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="col-span-2 inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--color-brand)] px-3 py-2.5 text-sm font-bold text-white transition hover:bg-[var(--color-brand-dark)]"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                 className="h-4 w-4">
-              <polygon points="3 11 22 2 13 21 11 13 3 11" />
-            </svg>
-            {isPlace ? "Directions" : "Directions away"}
-          </a>
+          {onDirections ? (
+            <button
+              type="button"
+              onClick={() => onDirections({ lat, lng, label: title })}
+              className="col-span-2 inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--color-brand)] px-3 py-2.5 text-sm font-bold text-white transition hover:bg-[var(--color-brand-dark)]"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                   className="h-4 w-4">
+                <polygon points="3 11 22 2 13 21 11 13 3 11" />
+              </svg>
+              {isPlace ? "Directions" : "Directions away"}
+            </button>
+          ) : (
+            <a
+              href={googleDirectionsHref(lat, lng, title)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="col-span-2 inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--color-brand)] px-3 py-2.5 text-sm font-bold text-white transition hover:bg-[var(--color-brand-dark)]"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                   className="h-4 w-4">
+                <polygon points="3 11 22 2 13 21 11 13 3 11" />
+              </svg>
+              {isPlace ? "Directions" : "Directions away"}
+            </a>
+          )}
 
           {onSave && (
             <button

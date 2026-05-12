@@ -10,6 +10,8 @@ import NodeMap, { STATUS_HEX } from "@/components/NodeMap";
 import SavedLocationsPanel, { type SavedLocationsPanelHandle } from "@/components/SavedLocationsPanel";
 import ShortcutsModal from "@/components/flood-map/ShortcutsModal";
 import PlaceCard, { type PlaceCardModel } from "@/components/flood-map/PlaceCard";
+import DirectionsPanel, { type DirectionsRequest } from "@/components/flood-map/DirectionsPanel";
+import type { ScoredRoute } from "@/lib/useFloodAwareRoute";
 import toast from "react-hot-toast";
 import { useSession, signOut } from "next-auth/react";
 import { sessionToAuthUser } from "@/lib/auth";
@@ -128,11 +130,20 @@ export default function FloodMapPage() {
   const isFirstFetch                  = useRef(true);
 
   // ── Filters ────────────────────────────────────────────────────────────────
+  // Filter panel is collapsed by default on small screens (so the map
+  // is what greets a mobile evacuee) and open on desktop where the
+  // chrome doesn't crowd the map. We don't import a media-query hook
+  // — the SSR-safe initial value is OK to "open" everywhere, then
+  // closed for sub-md viewports once we know we're in the browser.
   const [searchQuery, setSearchQuery]       = useState("");
   const [filterState, setFilterState]       = useState("");
   const [filterCity, setFilterCity]         = useState("");
   const [filterStatuses, setFilterStatuses] = useState<Set<StatusKey>>(new Set());
   const [panelOpen, setPanelOpen]           = useState(true);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.innerWidth < 768) setPanelOpen(false);
+  }, []);
 
   // ── Map focus ──────────────────────────────────────────────────────────────
   const [focusLatLng, setFocusLatLng] =
@@ -163,6 +174,18 @@ export default function FloodMapPage() {
   function openPlaceCard(model: PlaceCardModel) {
     setPlaceCardModel(model);
     setPlaceCardOpen(true);
+  }
+
+  // ── Directions Panel (P1-6) ───────────────────────────────────────────────
+  const [directionsOpen, setDirectionsOpen] = useState(false);
+  const [directionsRequest, setDirectionsRequest] = useState<DirectionsRequest | null>(null);
+  const [activeRoutes, setActiveRoutes] = useState<
+    ScoredRoute<google.maps.DirectionsRoute>[] | null
+  >(null);
+  const [selectedRouteIndex, setSelectedRouteIndex] = useState(0);
+  function openDirections(req: DirectionsRequest | null) {
+    setDirectionsRequest(req);
+    setDirectionsOpen(true);
   }
 
   // Auto-centre the map on the user's current position the first time
@@ -778,6 +801,9 @@ export default function FloodMapPage() {
                   onRecenterRequest={requestGeolocation}
                   onViewportChanged={setViewport}
                   onShareView={handleShareView}
+                  onOpenDirections={() => openDirections(null)}
+                  routes={activeRoutes}
+                  selectedRouteIndex={selectedRouteIndex}
                 />
               </div>
 
@@ -943,6 +969,10 @@ export default function FloodMapPage() {
         open={placeCardOpen}
         model={placeCardModel}
         onClose={() => setPlaceCardOpen(false)}
+        onDirections={(dest) => {
+          setPlaceCardOpen(false);
+          openDirections({ destination: dest });
+        }}
         onSave={
           placeCardModel?.kind === "place"
             ? () => {
@@ -965,6 +995,22 @@ export default function FloodMapPage() {
           const lat = placeCardModel.kind === "place" ? placeCardModel.lat : placeCardModel.zone.centroidLat;
           const lng = placeCardModel.kind === "place" ? placeCardModel.lng : placeCardModel.zone.centroidLng;
           handleShareView({ centerLat: lat, centerLng: lng, zoom: 14 });
+        }}
+      />
+
+      {/* Directions panel (P1-6) — flood-aware in-app routing. */}
+      <DirectionsPanel
+        open={directionsOpen}
+        request={directionsRequest}
+        zones={zones}
+        myLocation={myLocation}
+        onRoutesChange={(routes, idx) => {
+          setActiveRoutes(routes);
+          setSelectedRouteIndex(idx);
+        }}
+        onClose={() => {
+          setDirectionsOpen(false);
+          setActiveRoutes(null);
         }}
       />
     </div>

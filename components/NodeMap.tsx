@@ -36,10 +36,13 @@ import {
   Circle,
   GoogleMap,
   Marker,
+  Polyline,
   TrafficLayer,
   useJsApiLoader,
   type Libraries,
 } from "@react-google-maps/api";
+
+import type { ScoredRoute } from "@/lib/useFloodAwareRoute";
 
 import type { FloodLevel, Zone } from "@/lib/types";
 
@@ -142,6 +145,18 @@ type NodeMapProps = {
    * clickable when this handler is provided.
    */
   onZoneClick?: (zone: Zone) => void;
+  /**
+   * Fires when the user taps the Directions floating button. The page
+   * is responsible for opening the panel; the map just provides the
+   * affordance. Hidden when no handler is provided.
+   */
+  onOpenDirections?: () => void;
+  /**
+   * Routes rendered as polylines on the map. The selected one gets a
+   * bold stroke; the others are dimmed so the comparison is visible.
+   */
+  routes?: ScoredRoute<google.maps.DirectionsRoute>[] | null;
+  selectedRouteIndex?: number;
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -159,6 +174,9 @@ export default function NodeMap({
   onViewportChanged,
   onShareView,
   onZoneClick,
+  onOpenDirections,
+  routes = null,
+  selectedRouteIndex = 0,
 }: NodeMapProps) {
   const [mapError, setMapError] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -201,6 +219,38 @@ export default function NodeMap({
   // when we're already north-up. We listen to `heading_changed` which
   // fires for any setHeading() call as well as the (rare) user gesture.
   const [heading, setHeading] = useState(0);
+
+  // ── Measure distance tool (P1-9) ──────────────────────────────────────────
+  // Pure-client overlay. While `measuring` is true, map clicks add
+  // vertices; Esc ends the measurement; right-click clears the
+  // current vertices. We deliberately suppress the page-level
+  // right-click handler for "save place" during measure mode so a
+  // user can wipe the polyline cleanly without saving anything.
+  const [measuring, setMeasuring] = useState(false);
+  const [measurePts, setMeasurePts] = useState<google.maps.LatLngLiteral[]>([]);
+  const measureTotalM = useMemo(() => {
+    if (typeof google === "undefined" || !google.maps?.geometry?.spherical) return 0;
+    if (measurePts.length < 2) return 0;
+    return google.maps.geometry.spherical.computeLength(
+      measurePts.map(p => new google.maps.LatLng(p.lat, p.lng)),
+    );
+  }, [measurePts]);
+  useEffect(() => {
+    if (!measuring) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setMeasuring(false);
+        setMeasurePts([]);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [measuring]);
+
+  // ── Street View pegman (P2-1) ─────────────────────────────────────────────
+  // We re-enable Google's built-in StreetView control in a corner that
+  // doesn't fight our floating cluster. `disableDefaultUI` hides the
+  // pegman by default, so we opt back in explicitly.
 
   // Lock body scroll while the map is fullscreen so the page underneath
   // doesn't scroll behind the overlay.
@@ -300,9 +350,19 @@ export default function NodeMap({
   }
 
   const handleRightClick = useCallback((e: google.maps.MapMouseEvent) => {
+    if (measuring) {
+      // In measure mode, right-click wipes the current polyline.
+      setMeasurePts([]);
+      return;
+    }
     if (!onMapRightClick || !e.latLng) return;
     onMapRightClick(e.latLng.lat(), e.latLng.lng());
-  }, [onMapRightClick]);
+  }, [measuring, onMapRightClick]);
+
+  const handleMapClick = useCallback((e: google.maps.MapMouseEvent) => {
+    if (!measuring || !e.latLng) return;
+    setMeasurePts(prev => [...prev, { lat: e.latLng!.lat(), lng: e.latLng!.lng() }]);
+  }, [measuring]);
 
   const handlePlaceChanged = useCallback(() => {
     const ac = autocompleteRef.current;
@@ -429,11 +489,20 @@ export default function NodeMap({
           // we let Google's default rendering through.
           styles: mapType === "roadmap" ? mapStyles : undefined,
           gestureHandling: "greedy",
-          streetViewControl: false,
+          // Street View pegman — opt back in explicitly since
+          // disableDefaultUI hides everything by default.
+          streetViewControl: true,
+          streetViewControlOptions: typeof google !== "undefined"
+            ? { position: google.maps.ControlPosition.RIGHT_BOTTOM }
+            : undefined,
           mapTypeControl: false,
           rotateControl: false,
+          // While measuring, switch the cursor so the user knows
+          // clicks are adding vertices.
+          draggableCursor: measuring ? "crosshair" : undefined,
         }}
         onLoad={onMapLoad}
+        onClick={handleMapClick}
         onRightClick={handleRightClick}
       >
         {trafficOn && <TrafficLayer />}
@@ -460,6 +529,62 @@ export default function NodeMap({
             />
           );
         })}
+
+        {/* Direction-service routes (P1-6). The selected one is bold
+            and on top; the alternatives sit underneath dimmed so the
+            user can compare. */}
+        {routes && routes.map((s, i) => {
+          const path = s.route.overview_path ?? [];
+          if (path.length < 2) return null;
+          const isSelected = i === selectedRouteIndex;
+          const stroke =
+            s.impact === "critical" ? "#dc2626" :
+            s.impact === "warning"  ? "#f97316" :
+            "#1d4ed8";
+          return (
+            <Polyline
+              key={`route-${i}`}
+              path={path.map(ll => ({ lat: ll.lat(), lng: ll.lng() }))}
+              options={{
+                strokeColor: stroke,
+                strokeOpacity: isSelected ? 0.95 : 0.4,
+                strokeWeight: isSelected ? 6 : 4,
+                clickable: false,
+                zIndex: isSelected ? 50 : 30,
+              }}
+            />
+          );
+        })}
+
+        {/* Measure-distance polyline + vertex dots (P1-9). */}
+        {measuring && measurePts.length >= 2 && (
+          <Polyline
+            path={measurePts}
+            options={{
+              strokeColor: "#0f172a",
+              strokeOpacity: 0.95,
+              strokeWeight: 4,
+              clickable: false,
+              zIndex: 60,
+            }}
+          />
+        )}
+        {measuring && measurePts.map((p, i) => (
+          <Circle
+            key={`measure-${i}`}
+            center={p}
+            radius={20}
+            options={{
+              fillColor: "#0f172a",
+              fillOpacity: 1,
+              strokeColor: "#ffffff",
+              strokeOpacity: 1,
+              strokeWeight: 2,
+              clickable: false,
+              zIndex: 61,
+            }}
+          />
+        ))}
 
         {/* "You are here" — accuracy ring + crisp blue dot. */}
         {myLocation && (
@@ -532,6 +657,33 @@ export default function NodeMap({
           </React.Fragment>
         ))}
       </GoogleMap>
+
+      {/* Measure chip — bottom-center, only while measuring. */}
+      {measuring && (
+        <div className={`absolute left-1/2 z-20 -translate-x-1/2 ${
+          isFullscreen ? "bottom-8" : "bottom-3"
+        }`}>
+          <div className="flex items-center gap-3 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow-lg ring-1 ring-black/20">
+            <span className="tabular-nums">
+              {measureTotalM < 1000
+                ? `${Math.round(measureTotalM)} m`
+                : `${(measureTotalM / 1000).toFixed(measureTotalM < 10_000 ? 2 : 1)} km`}
+            </span>
+            <span className="text-[10px] text-slate-300">
+              {measurePts.length < 2
+                ? "Click to start"
+                : `${measurePts.length} points · Esc to end · right-click to clear`}
+            </span>
+            <button
+              type="button"
+              onClick={() => { setMeasuring(false); setMeasurePts([]); }}
+              className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold hover:bg-white/20"
+            >
+              End
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Floating Places search bar — top-left of the map. */}
       <div className={`pointer-events-none absolute left-3 z-10 sm:right-auto sm:max-w-sm ${
@@ -692,6 +844,48 @@ export default function NodeMap({
           </svg>
         </button>
 
+        {/* Directions (P1-6) — opens the routing panel. */}
+        {onOpenDirections && (
+          <button
+            type="button"
+            onClick={onOpenDirections}
+            title="Directions"
+            aria-label="Open directions panel"
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-lg ring-1 ring-black/10 transition hover:bg-slate-50"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                 stroke="#0f172a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                 className="h-5 w-5">
+              <polygon points="3 11 22 2 13 21 11 13 3 11" />
+            </svg>
+          </button>
+        )}
+
+        {/* Measure distance (P1-9) — toggle. Clicking the button when
+            already measuring ends the measurement. */}
+        <button
+          type="button"
+          onClick={() => {
+            setMeasuring(m => {
+              if (m) setMeasurePts([]);
+              return !m;
+            });
+          }}
+          title={measuring ? "End measurement (Esc)" : "Measure distance"}
+          aria-label={measuring ? "End measurement" : "Measure distance"}
+          aria-pressed={measuring}
+          className={`flex h-11 w-11 items-center justify-center rounded-full shadow-lg ring-1 ring-black/10 transition ${
+            measuring ? "bg-slate-900 text-white" : "bg-white hover:bg-slate-50"
+          }`}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+               stroke={measuring ? "#ffffff" : "#0f172a"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+               className="h-5 w-5">
+            <path d="M3 8l4-4 14 14-4 4z" />
+            <path d="M7 4l3 3M11 8l3 3M15 12l3 3" />
+          </svg>
+        </button>
+
         {/* Share view (P1-10) — copies a deep-linkable URL of the
             current pan + zoom. Only mounted when the page provides a
             handler so it doesn't appear on screens that don't make
@@ -717,6 +911,7 @@ export default function NodeMap({
         )}
 
         {/* Compass — visible only when the map is rotated. */}
+        {/* (Sibling — the measure chip renders separately below) */}
         {Math.round(heading) % 360 !== 0 && (
           <button
             type="button"
