@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
 import SearchModal from "@/components/SearchModal";
 import { SearchField } from "@/components/ui/search-field";
 import NodeMap, { type MapNode, type FloodLevel, STATUS_HEX } from "@/components/NodeMap";
@@ -875,6 +876,8 @@ export default function FloodMapPage() {
           </div>
         )}
       </main>
+
+      <Footer />
 
       {searchOpen && (
         <SearchModal onClose={closeSearch} placeholder="Search posts & communities…" />
