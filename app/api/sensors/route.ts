@@ -1,18 +1,26 @@
 import { NextResponse } from "next/server";
-import { javaFetch } from "@/lib/javaApi";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Public sensor list — Java GET /sensors is permitAll; no session required.
- * (Avoids coupling this route to auth() so the map always receives data when the API is up.)
+ * Deprecated: the public flood-map surface no longer exposes
+ * per-sensor coordinates. The browser must use {@code /api/zones}
+ * (privacy-aggregated zones) instead. The Java backend is the source
+ * of truth and is locked behind authentication for /sensors — see
+ * {@code SecurityConfig.java} + {@code InternalApiKeyFilter.java}.
+ *
+ * We keep the route mounted as a 410 Gone so that any older
+ * snapshots / CDN edges that still point here get an obvious signal
+ * (and a hint to the new endpoint) rather than silently 404.
  */
 export async function GET() {
-  try {
-    const data = await javaFetch<unknown>("/sensors");
-    return NextResponse.json(data);
-  } catch (error) {
-    const status = (error as { status?: number }).status ?? 500;
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed" }, { status });
-  }
+  return NextResponse.json(
+    {
+      code: "GONE",
+      message:
+        "This endpoint has been retired for privacy. " +
+        "Use /api/zones for the public flood map data.",
+    },
+    { status: 410 },
+  );
 }

@@ -6,76 +6,24 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import SearchModal from "@/components/SearchModal";
 import { SearchField } from "@/components/ui/search-field";
-import NodeMap, { type MapNode, type FloodLevel, STATUS_HEX } from "@/components/NodeMap";
+import NodeMap, { STATUS_HEX } from "@/components/NodeMap";
 import SavedLocationsPanel, { type SavedLocationsPanelHandle } from "@/components/SavedLocationsPanel";
-import NodeBellMenu, { type NodeChannelPrefs } from "@/components/NodeBellMenu";
+import ShortcutsModal from "@/components/flood-map/ShortcutsModal";
 import toast from "react-hot-toast";
 import { useSession, signOut } from "next-auth/react";
 import { sessionToAuthUser } from "@/lib/auth";
-import { fetchJson, authFetchJson } from "@/lib/fetchJson";
+import { fetchJson } from "@/lib/fetchJson";
 import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
-import { useSensorStream } from "@/components/providers/SensorStreamProvider";
 import { PAGE_CONTAINER } from "@/lib/layout";
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-type NodeStatus = "active" | "warning" | "critical" | "inactive";
-
-type SensorNodeDto = {
-  id: string;
-  nodeId: string;
-  name?: string;
-  area: string;
-  location: string;
-  state: string;
-  /** Reverse-geocoded full address line. Populated by Phase 2's
-   *  GeocodeBackfillRunner; null on pre-backfill rows. */
-  address?: string | null;
-  latitude: number;
-  longitude: number;
-  currentLevel: FloodLevel;
-  status: NodeStatus;
-  distance: string;
-  lastUpdated?: string;
-};
+import type { FloodLevel, Zone } from "@/lib/types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const LEVEL_LABEL: Record<FloodLevel, string> = { 0: "Normal", 1: "Alert", 2: "Warning", 3: "Critical" };
 const OFFLINE_HEX = "#6b7280";
 
-type FavouriteNodeDto = SensorNodeDto & {
-  favouritedAt?: string;
-  emailEnabled?: boolean;
-  smsEnabled?: boolean;
-  whatsappEnabled?: boolean;
-  pushEnabled?: boolean;
-};
-
-const DEFAULT_NODE_CHANNEL_PREFS: NodeChannelPrefs = {
-  emailEnabled: true,
-  smsEnabled: true,
-  whatsappEnabled: true,
-  pushEnabled: true,
-};
-
-function toMapNode(n: SensorNodeDto): MapNode {
-  return {
-    id:           n.id,
-    nodeId:       n.nodeId,
-    name:         n.name,
-    area:         n.area,
-    location:     n.location,
-    state:        n.state,
-    address:      n.address,
-    latitude:     n.latitude,
-    longitude:    n.longitude,
-    currentLevel: n.currentLevel,
-    isOffline:    n.status === "inactive",
-    lastUpdated:  n.lastUpdated,
-  };
-}
-
-// Haversine distance in km — used to determine which sensors fall
-// inside each saved-place radius for the "Nodes in Radius" panel.
+// Haversine distance in km — used to score which zones fall inside each
+// saved-place radius. We use the (already-rounded) zone centroid, NOT
+// any per-sensor coord — privacy is preserved end-to-end.
 function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number): number {
   const R = 6371;
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -86,13 +34,13 @@ function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number): nu
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
 }
 
-function nodeStatusLabel(n: SensorNodeDto): string {
-  if (n.status === "inactive") return "Offline";
-  return LEVEL_LABEL[n.currentLevel];
+function zoneStatusLabel(z: Zone): string {
+  if (z.allOffline) return "Offline";
+  return LEVEL_LABEL[z.worstLevel];
 }
-function nodeStatusHex(n: SensorNodeDto): string {
-  if (n.status === "inactive") return "#6b7280";
-  return STATUS_HEX[n.currentLevel];
+function zoneStatusHex(z: Zone): string {
+  if (z.allOffline) return OFFLINE_HEX;
+  return STATUS_HEX[z.worstLevel];
 }
 
 // ── Status filter keys ────────────────────────────────────────────────────────
@@ -106,11 +54,11 @@ const STATUS_OPTIONS: { key: StatusKey; label: string; dotHex: string }[] = [
   { key: "offline",  label: "Offline",  dotHex: OFFLINE_HEX   },
 ];
 
-function nodeStatusKey(node: SensorNodeDto): StatusKey {
-  if (node.status === "inactive") return "offline";
-  if (node.currentLevel === 0)    return "dry";
-  if (node.currentLevel === 1)    return "normal";
-  if (node.currentLevel === 2)    return "warning";
+function zoneStatusKey(z: Zone): StatusKey {
+  if (z.allOffline) return "offline";
+  if (z.worstLevel === 0) return "dry";
+  if (z.worstLevel === 1) return "normal";
+  if (z.worstLevel === 2) return "warning";
   return "critical";
 }
 
@@ -162,32 +110,30 @@ function AlertTriangleIcon(p: React.SVGProps<SVGSVGElement>) {
   );
 }
 
+// How often we re-poll /api/zones. The Java service ticks roughly every
+// 10 s; we sample slightly slower than that to amortise the cost of the
+// BFF aggregator without lagging behind the real flood state.
+const POLL_INTERVAL_MS = 15_000;
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function FloodMapPage() {
-  const { subscribeSensorUpdates } = useSensorStream();
   const { data: session } = useSession();
   const user = session?.user ? sessionToAuthUser(session.user) : null;
   const { searchOpen, openSearch, closeSearch } = useSiteSearchModal();
-  const [nodes, setNodes]             = useState<SensorNodeDto[]>([]);
-  const [favIds, setFavIds]           = useState<Set<string>>(new Set());
-  // Per-node notification channel preferences. Keyed by sensor business
-  // nodeId. Hydrated from /api/favourites and updated optimistically when
-  // the user toggles channels via the bell menu.
-  const [favChannelPrefs, setFavChannelPrefs] =
-    useState<Record<string, NodeChannelPrefs>>({});
+  const [zones, setZones]             = useState<Zone[]>([]);
   const [loading, setLoading]         = useState(true);
   const [fetchError, setFetchError]   = useState(false);
   const [lastFetch, setLastFetch]     = useState<Date | null>(null);
   const isFirstFetch                  = useRef(true);
 
   // ── Filters ────────────────────────────────────────────────────────────────
-  const [searchQuery, setSearchQuery]     = useState("");
-  const [filterState, setFilterState]     = useState("");
-  const [filterCity, setFilterCity]       = useState("");
+  const [searchQuery, setSearchQuery]       = useState("");
+  const [filterState, setFilterState]       = useState("");
+  const [filterCity, setFilterCity]         = useState("");
   const [filterStatuses, setFilterStatuses] = useState<Set<StatusKey>>(new Set());
-  const [panelOpen, setPanelOpen]         = useState(true);
+  const [panelOpen, setPanelOpen]           = useState(true);
 
-  // ── Map focus (zone-level only — never per-sensor) ────────────────────────
+  // ── Map focus ──────────────────────────────────────────────────────────────
   const [focusLatLng, setFocusLatLng] =
     useState<{ lat: number; lng: number; zoom?: number } | null>(null);
   const [myLocation, setMyLocation] =
@@ -195,32 +141,100 @@ export default function FloodMapPage() {
   const mapCardRef = useRef<HTMLDivElement>(null);
   const savedLocationsRef = useRef<SavedLocationsPanelHandle | null>(null);
 
+  // ── Viewport tracking (P1-12 rollup pill) ─────────────────────────────────
+  // Updated on every `idle` event from the map. We use the bounds to
+  // rank zones inside the current viewport for the worst-status pill.
+  const [viewport, setViewport] = useState<{
+    centerLat: number;
+    centerLng: number;
+    zoom: number;
+    bounds: { north: number; south: number; east: number; west: number };
+  } | null>(null);
+
+  // ── Keyboard shortcuts (P1-13) ────────────────────────────────────────────
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
   // Auto-centre the map on the user's current position the first time
-  // they land here (login / register / refresh — by virtue of being a
-  // mount-only effect). Browser auto-prompts for permission. We never
-  // poll — just one read at mount. If the user denies or the browser
-  // doesn't expose the API, we silently skip; the map stays centred on
-  // the default Sabah viewport.
-  useEffect(() => {
+  // they land here. Browser auto-prompts for permission. We never poll
+  // — just one read at mount; the recenter button on the map re-runs.
+  const requestGeolocation = useCallback(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) return;
-    let cancelled = false;
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        if (cancelled) return;
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
         const accuracyM = pos.coords.accuracy;
         setMyLocation({ lat, lng, accuracyM });
         setFocusLatLng({ lat, lng, zoom: 13 });
       },
-      () => { /* user denied or geolocation failed — silently skip */ },
+      () => { /* user denied — silently skip */ },
       { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
     );
-    return () => { cancelled = true; };
   }, []);
 
-  // ── Saved locations (Phase 4) — sourced from SavedLocationsPanel via its
-  //    onLocationsChange callback so the map can render the radius circles.
+  useEffect(() => {
+    requestGeolocation();
+  }, [requestGeolocation]);
+
+  // ── Deep-link from a shared URL (P1-10) ───────────────────────────────────
+  // `?lat=…&lng=…&z=…` lets a user paste a Share-this-view link and land
+  // on the exact frame the sharer saw. We read the params once at mount
+  // and forward them through `focusLatLng` so the map pans on first load.
+  const initialQuery = useSearchParams();
+  useEffect(() => {
+    const lat = Number(initialQuery?.get("lat"));
+    const lng = Number(initialQuery?.get("lng"));
+    const z   = Number(initialQuery?.get("z"));
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      setFocusLatLng({
+        lat,
+        lng,
+        zoom: Number.isFinite(z) ? Math.min(20, Math.max(2, z)) : 13,
+      });
+    }
+    // intentionally mount-only — re-running on subsequent searchParams
+    // changes would fight the user's own panning
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Global keyboard shortcuts (P1-13) ─────────────────────────────────────
+  // We add a small handler at the page level. Each key falls through if
+  // the user is typing in an input/textarea so we never hijack typing.
+  useEffect(() => {
+    const isTyping = (el: EventTarget | null) => {
+      if (!(el instanceof HTMLElement)) return false;
+      const tag = el.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable;
+    };
+    const onKey = (e: KeyboardEvent) => {
+      // `?` (shift + /) and `/` arrive with different key values across
+      // browsers; check both. Always allow Esc.
+      if (e.key === "Escape") {
+        setShortcutsOpen(false);
+        return;
+      }
+      if (isTyping(e.target)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
+        e.preventDefault();
+        setShortcutsOpen((v) => !v);
+        return;
+      }
+      if (e.key === "/") {
+        // Focus the in-map search box. We tag it with a data attr so
+        // we don't depend on a fragile className path.
+        const input = document.querySelector<HTMLInputElement>('input[aria-label="Search for a place"]');
+        if (input) {
+          e.preventDefault();
+          input.focus();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // ── Saved locations — sourced from SavedLocationsPanel via callback ───────
   const [savedLocations, setSavedLocations] = useState<{
     id: string; label: string; latitude: number; longitude: number; alertRadiusKm: number;
   }[]>([]);
@@ -230,28 +244,24 @@ export default function FloodMapPage() {
     mapCardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
-  // Deep-link from the bell notification: /flood-map?node=<businessNodeId>
-  // pans + zooms onto that sensor once the node list has loaded. Tracked
-  // via a ref so the focus runs at most once per ?node= value, even if
-  // the node list re-fetches (we don't want to keep snapping the user
-  // back after they pan away).
+  // Deep-link: /flood-map?zone=<zoneId> pans onto that zone once loaded.
   const search = useSearchParams();
-  const nodeIdParam = search?.get("node") ?? null;
-  const focusedNodeIdRef = useRef<string | null>(null);
+  const zoneIdParam = search?.get("zone") ?? null;
+  const focusedZoneIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!nodeIdParam) return;
-    if (focusedNodeIdRef.current === nodeIdParam) return;
-    if (nodes.length === 0) return;
-    const target = nodes.find((n) => n.nodeId === nodeIdParam || n.id === nodeIdParam);
+    if (!zoneIdParam) return;
+    if (focusedZoneIdRef.current === zoneIdParam) return;
+    if (zones.length === 0) return;
+    const target = zones.find((z) => z.id === zoneIdParam);
     if (!target) return;
-    focusedNodeIdRef.current = nodeIdParam;
-    focusOnPoint(target.latitude, target.longitude, 16);
-  }, [nodeIdParam, nodes]);
+    focusedZoneIdRef.current = zoneIdParam;
+    focusOnPoint(target.centroidLat, target.centroidLng, 13);
+  }, [zoneIdParam, zones]);
 
-  // Right-click on the map: reverse-geocode for a friendly label, then
-  // open the saved-place editor with the coords + address prefilled.
-  // The Geocoder lives in the same google.maps namespace as the Autocomplete
-  // (loaded by the ZoneMap), so it's available client-side once the map mounts.
+  // Right-click on the map → reverse-geocode, then open the saved-place
+  // editor. The Geocoder lives in the same google.maps namespace as the
+  // Autocomplete loaded by the map, so it's available client-side once
+  // the map mounts.
   const handleMapRightClick = useCallback(async (lat: number, lng: number) => {
     if (!session) {
       toast("Sign in to save a place.");
@@ -273,147 +283,70 @@ export default function FloodMapPage() {
   }, [session]);
 
   // ── Data fetching ──────────────────────────────────────────────────────────
-  // Track an in-flight sensor fetch so concurrent triggers (manual refresh
-  // while initial load is still pending, etc.) cancel the older one cleanly
-  // and leave only the latest result in state.
-  const inFlightSensorAbort = useRef<AbortController | null>(null);
+  const inFlightAbort = useRef<AbortController | null>(null);
 
-  const fetchSensors = useCallback(async () => {
-    // Abort any earlier sensor request — only the newest call wins
-    inFlightSensorAbort.current?.abort();
+  const fetchZones = useCallback(async () => {
+    inFlightAbort.current?.abort();
     const controller = new AbortController();
-    inFlightSensorAbort.current = controller;
+    inFlightAbort.current = controller;
 
     if (isFirstFetch.current) setLoading(true);
     setFetchError(false);
     try {
-      const data = await fetchJson<SensorNodeDto[]>("/api/sensors", { signal: controller.signal });
-      // Guard: if a newer fetch superseded us, don't write stale data
-      if (inFlightSensorAbort.current !== controller) return;
-      setNodes(Array.isArray(data) ? data : []);
+      const data = await fetchJson<Zone[]>("/api/zones", { signal: controller.signal });
+      if (inFlightAbort.current !== controller) return;
+      setZones(Array.isArray(data) ? data : []);
       setLastFetch(new Date());
       isFirstFetch.current = false;
     } catch (err) {
       if ((err as { name?: string }).name === "AbortError") return;
-      if (inFlightSensorAbort.current !== controller) return;
+      if (inFlightAbort.current !== controller) return;
       setFetchError(true);
     } finally {
-      if (inFlightSensorAbort.current === controller) {
-        inFlightSensorAbort.current = null;
+      if (inFlightAbort.current === controller) {
+        inFlightAbort.current = null;
         setLoading(false);
       }
     }
   }, []);
 
-  // Sensor effect — runs ONCE on mount. Doesn't depend on session, so the
-  // NextAuth poll (every 5 min + on window-focus) can no longer retrigger
-  // a full /api/sensors refetch and stomp on in-flight data.
+  // Initial fetch + lightweight polling. We don't subscribe to the
+  // per-sensor SSE stream on this page — that endpoint carries raw
+  // coordinates which would defeat the BFF aggregation. A zone-level
+  // SSE is a future improvement; until then, 15-second polls are
+  // plenty for a public-facing flood map.
   useEffect(() => {
-    void fetchSensors();
+    void fetchZones();
+    const id = window.setInterval(() => { void fetchZones(); }, POLL_INTERVAL_MS);
 
-    const unsub = subscribeSensorUpdates((raw) => {
-      try {
-        const updated = raw as unknown as SensorNodeDto;
-        setNodes(prev => {
-          const idx = prev.findIndex(n => n.id === updated.id);
-          if (idx === -1) return [...prev, updated];
-          const next = [...prev];
-          next[idx] = updated;
-          return next;
-        });
-        setLastFetch(new Date());
-        isFirstFetch.current = false;
-      } catch {
-        /* malformed payload — ignore */
-      }
-    });
+    // Refetch when the tab regains focus so a user returning after a
+    // background period sees fresh data instantly.
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void fetchZones();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
-      inFlightSensorAbort.current?.abort();
-      inFlightSensorAbort.current = null;
-      unsub();
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisibility);
+      inFlightAbort.current?.abort();
+      inFlightAbort.current = null;
     };
-    // fetchSensors / subscribeSensorUpdates are both stable (empty-dep useCallback)
-  }, [fetchSensors, subscribeSensorUpdates]);
-
-  // ── Favourites — per-node "notify me about this sensor" ───────────────────
-  // The Nodes-in-Radius card has a star button on each row; starring a node
-  // also makes the multichannel dispatcher pick this user up regardless of
-  // saved-location radius (see UserRepository.findNotificationSubscribersForFloodAt).
-  const sessionUserId = session?.user?.id ?? null;
-  useEffect(() => {
-    if (!sessionUserId) {
-      setFavIds(new Set());
-      setFavChannelPrefs({});
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const data = await authFetchJson<FavouriteNodeDto[]>("/api/favourites");
-        if (cancelled) return;
-        const ids = new Set<string>();
-        const prefs: Record<string, NodeChannelPrefs> = {};
-        for (const f of data) {
-          if (typeof f.nodeId !== "string" || f.nodeId.length === 0) continue;
-          ids.add(f.nodeId);
-          prefs[f.nodeId] = {
-            emailEnabled:    f.emailEnabled    ?? true,
-            smsEnabled:      f.smsEnabled      ?? true,
-            whatsappEnabled: f.whatsappEnabled ?? true,
-            pushEnabled:     f.pushEnabled     ?? true,
-          };
-        }
-        setFavIds(ids);
-        setFavChannelPrefs(prefs);
-      } catch { /* non-critical */ }
-    })();
-    return () => { cancelled = true; };
-  }, [sessionUserId]);
-
-  /**
-   * Make sure a favourite row exists for this sensor before the user can
-   * tweak its channel toggles. No-op if already favourited. Called by
-   * <NodeBellMenu /> the first time a user touches a channel switch.
-   */
-  const subscribeNode = useCallback(async (sensorNodeId: string) => {
-    if (favIds.has(sensorNodeId)) return;
-    await authFetchJson("/api/favourites", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nodeId: sensorNodeId }),
-    });
-    setFavIds(prev => {
-      const next = new Set(prev);
-      next.add(sensorNodeId);
-      return next;
-    });
-    // Hydrate default prefs locally — backend defaults match these.
-    setFavChannelPrefs(prev =>
-      prev[sensorNodeId] ? prev : { ...prev, [sensorNodeId]: DEFAULT_NODE_CHANNEL_PREFS },
-    );
-  }, [favIds]);
-
-  const updateChannelPrefs = useCallback(
-    (sensorNodeId: string, next: NodeChannelPrefs) => {
-      setFavChannelPrefs(prev => ({ ...prev, [sensorNodeId]: next }));
-    },
-    [],
-  );
+  }, [fetchZones]);
 
   // ── Derived: dropdown options ──────────────────────────────────────────────
   const availableStates = useMemo(() => {
     const s = new Set<string>();
-    nodes.forEach(n => { if (n.state) s.add(n.state); });
+    zones.forEach(z => { if (z.state) s.add(z.state); });
     return [...s].sort();
-  }, [nodes]);
+  }, [zones]);
 
   const availableCities = useMemo(() => {
-    const src = filterState ? nodes.filter(n => n.state === filterState) : nodes;
+    const src = filterState ? zones.filter(z => z.state === filterState) : zones;
     const c = new Set<string>();
-    src.forEach(n => { if (n.area) c.add(n.area); });
+    src.forEach(z => { if (z.area) c.add(z.area); });
     return [...c].sort();
-  }, [nodes, filterState]);
+  }, [zones, filterState]);
 
   useEffect(() => { setFilterCity(""); }, [filterState]);
 
@@ -439,61 +372,109 @@ export default function FloodMapPage() {
     return n;
   }, [filterState, filterCity, filterStatuses, searchQuery]);
 
-  // ── Filtered nodes ─────────────────────────────────────────────────────────
-  const filteredNodes = useMemo(() => {
-    let r = nodes;
-    if (filterState) r = r.filter(n => n.state === filterState);
-    if (filterCity)  r = r.filter(n => n.area  === filterCity);
-    if (filterStatuses.size > 0) r = r.filter(n => filterStatuses.has(nodeStatusKey(n)));
+  // ── Filtered zones ─────────────────────────────────────────────────────────
+  const filteredZones = useMemo(() => {
+    let r = zones;
+    if (filterState) r = r.filter(z => z.state === filterState);
+    if (filterCity)  r = r.filter(z => z.area  === filterCity);
+    if (filterStatuses.size > 0) r = r.filter(z => filterStatuses.has(zoneStatusKey(z)));
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
-      // Search excludes nodeId — residents shouldn't have to interact with
-      // technical hardware IDs. Includes `address` (populated by the
-      // geocode backfill) so river / street names match where available.
-      r = r.filter(n =>
-        (n.name     ?? "").toLowerCase().includes(q) ||
-        (n.location ?? "").toLowerCase().includes(q) ||
-        (n.area     ?? "").toLowerCase().includes(q) ||
-        (n.state    ?? "").toLowerCase().includes(q) ||
-        (n.address  ?? "").toLowerCase().includes(q),
+      r = r.filter(z =>
+        (z.name  ?? "").toLowerCase().includes(q) ||
+        (z.area  ?? "").toLowerCase().includes(q) ||
+        (z.state ?? "").toLowerCase().includes(q),
       );
     }
     return r;
-  }, [nodes, filterState, filterCity, filterStatuses, searchQuery]);
+  }, [zones, filterState, filterCity, filterStatuses, searchQuery]);
 
-  // ── Per-node mapping ──────────────────────────────────────────────────────
-  const mapNodes: MapNode[] = useMemo(
-    () => filteredNodes.map(toMapNode),
-    [filteredNodes],
-  );
+  // Worst status visible inside the current viewport (P1-12). Uses the
+  // bounds the map gives us on `idle`. Falls back to "all zones" when
+  // we don't have a viewport yet (initial mount) so the pill still
+  // shows something useful.
+  const viewportRollup = useMemo(() => {
+    if (!viewport) {
+      return {
+        critical: filteredZones.filter(z => !z.allOffline && z.worstLevel === 3).length,
+        warning:  filteredZones.filter(z => !z.allOffline && z.worstLevel === 2).length,
+        inView:   filteredZones.length,
+      };
+    }
+    const { bounds } = viewport;
+    const inside = filteredZones.filter(z =>
+      z.centroidLat <= bounds.north &&
+      z.centroidLat >= bounds.south &&
+      z.centroidLng <= bounds.east &&
+      z.centroidLng >= bounds.west,
+    );
+    return {
+      critical: inside.filter(z => !z.allOffline && z.worstLevel === 3).length,
+      warning:  inside.filter(z => !z.allOffline && z.worstLevel === 2).length,
+      inView:   inside.length,
+    };
+  }, [filteredZones, viewport]);
 
-  // For each saved place, compute the list of sensors inside its radius —
-  // sorted by distance. Respects all active filters (state, area, status,
-  // search) so the panel stays in sync with the rest of the map.
-  const nodesByPlace = useMemo(() => {
+  // Share-view handler — produces a URL with the current center + zoom
+  // and writes it to the clipboard. The map calls this from its
+  // floating Share button with the live viewport so we always share
+  // what the user is currently looking at (not a stale react state).
+  const handleShareView = useCallback((vp: { centerLat: number; centerLng: number; zoom: number }) => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("lat", vp.centerLat.toFixed(5));
+    url.searchParams.set("lng", vp.centerLng.toFixed(5));
+    url.searchParams.set("z", String(Math.round(vp.zoom)));
+    // We never include zone/sensor ids in the share link — the URL
+    // is a frame, not a node.
+    url.searchParams.delete("zone");
+    url.searchParams.delete("node");
+    const href = url.toString();
+    void (async () => {
+      try {
+        if (navigator.share) {
+          await navigator.share({ title: "Flood Map", url: href });
+          return;
+        }
+        await navigator.clipboard.writeText(href);
+        toast.success("Link copied to clipboard");
+      } catch (err) {
+        // User cancelled the share sheet, or clipboard was denied.
+        if ((err as { name?: string })?.name !== "AbortError") {
+          toast.error("Couldn't copy the link.");
+        }
+      }
+    })();
+  }, []);
+
+  // For each saved place, compute the zones within its radius — sorted
+  // by distance to the rounded zone centroid (never to a sensor).
+  const zonesByPlace = useMemo(() => {
     if (savedLocations.length === 0) return [];
     return savedLocations.map(place => {
-      const matched = filteredNodes
-        .map(n => ({ n, d: haversineKm(place.latitude, place.longitude, n.latitude, n.longitude) }))
+      const matched = filteredZones
+        .map(z => ({
+          z,
+          d: haversineKm(place.latitude, place.longitude, z.centroidLat, z.centroidLng),
+        }))
         .filter(({ d }) => d <= place.alertRadiusKm)
         .sort((a, b) => a.d - b.d);
       return { place, items: matched };
     });
-  }, [savedLocations, filteredNodes]);
+  }, [savedLocations, filteredZones]);
 
   // ── Stats ──────────────────────────────────────────────────────────────────
   const stats = useMemo(() => ({
-    total:    filteredNodes.length,
-    totalAll: nodes.length,
-    online:   filteredNodes.filter(n => n.status !== "inactive").length,
-    offline:  filteredNodes.filter(n => n.status === "inactive").length,
-    dry:      filteredNodes.filter(n => n.status !== "inactive" && n.currentLevel === 0).length,
-    normal:   filteredNodes.filter(n => n.status !== "inactive" && n.currentLevel === 1).length,
-    warning:  filteredNodes.filter(n => n.status !== "inactive" && n.currentLevel === 2).length,
-    critical: filteredNodes.filter(n => n.status !== "inactive" && n.currentLevel === 3).length,
-  }), [filteredNodes, nodes]);
+    total:    filteredZones.length,
+    totalAll: zones.length,
+    online:   filteredZones.filter(z => !z.allOffline).length,
+    offline:  filteredZones.filter(z => z.allOffline).length,
+    dry:      filteredZones.filter(z => !z.allOffline && z.worstLevel === 0).length,
+    normal:   filteredZones.filter(z => !z.allOffline && z.worstLevel === 1).length,
+    warning:  filteredZones.filter(z => !z.allOffline && z.worstLevel === 2).length,
+    critical: filteredZones.filter(z => !z.allOffline && z.worstLevel === 3).length,
+  }), [filteredZones, zones]);
 
-  // ── Shared card class ──────────────────────────────────────────────────────
   const card = "bg-[var(--color-card)] rounded-2xl border border-[var(--color-border)] shadow-sm";
 
   return (
@@ -513,8 +494,8 @@ export default function FloodMapPage() {
           <div>
             <h1 className="text-2xl font-bold text-[var(--color-text)]">Flood Map</h1>
             <p className="text-sm text-[var(--color-muted)] mt-0.5">
-              Real-time water-level sensors across Sabah, coloured by status.
-              Search for a place, or <strong className="text-[var(--color-text)]">right-click anywhere on the map</strong> to save it as a place and get email alerts.
+              Real-time flood zones across Sabah, aggregated for privacy.
+              Search for a place, or <strong className="text-[var(--color-text)]">right-click anywhere on the map</strong> to save it as a place and get alerts.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -528,7 +509,7 @@ export default function FloodMapPage() {
             )}
             <button
               type="button"
-              onClick={() => void fetchSensors()}
+              onClick={() => void fetchZones()}
               className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-brand)] hover:text-[var(--color-brand)] transition"
               title="Refresh"
             >
@@ -537,14 +518,8 @@ export default function FloodMapPage() {
           </div>
         </header>
 
-        {/* The four KPI summary cards (Total / Online / Warning / Critical)
-            previously lived here. They were redundant with the right-side
-            "Live Monitoring" card on the same page, so they've been removed
-            to declutter the UI. The map is the single source of truth now. */}
-
         {/* ── Filter panel ─────────────────────────────────────────────────── */}
         <div className={card}>
-          {/* Panel header */}
           <div className="flex items-center justify-between px-5 py-4">
             <button
               type="button"
@@ -569,7 +544,7 @@ export default function FloodMapPage() {
                 <span className="font-bold text-[var(--color-text)]">{stats.total}</span>
                 {" "}of{" "}
                 <span className="font-bold text-[var(--color-text)]">{stats.totalAll}</span>
-                {" "}nodes
+                {" "}zones
               </span>
               {activeFilterCount > 0 && (
                 <button
@@ -584,24 +559,20 @@ export default function FloodMapPage() {
             </div>
           </div>
 
-          {/* Collapsible body */}
           {panelOpen && (
             <div className="border-t border-[var(--color-border)] px-5 pb-5 pt-4">
               <div className="grid gap-4 sm:grid-cols-2">
-
-                {/* Search */}
                 <div>
                   <SearchField
                     label="Search"
                     showLabel
                     value={searchQuery}
                     onValueChange={setSearchQuery}
-                    placeholder="Search by area, name, or address…"
+                    placeholder="Search by area or state…"
                     size="sm"
                   />
                 </div>
 
-                {/* State */}
                 <div>
                   <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
                     State
@@ -619,7 +590,6 @@ export default function FloodMapPage() {
                   </div>
                 </div>
 
-                {/* City / Area */}
                 <div>
                   <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
                     City / Area
@@ -638,7 +608,6 @@ export default function FloodMapPage() {
                   </div>
                 </div>
 
-                {/* Status chips */}
                 <div>
                   <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
                     Status
@@ -665,7 +634,6 @@ export default function FloodMapPage() {
                 </div>
               </div>
 
-              {/* Active filter chips */}
               {activeFilterCount > 0 && (
                 <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] pt-3">
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
@@ -697,7 +665,7 @@ export default function FloodMapPage() {
           <div className="flex min-h-[400px] items-center justify-center">
             <div className="flex flex-col items-center gap-4">
               <div className="h-12 w-12 animate-spin rounded-full border-4 border-[var(--color-border)] border-t-[var(--color-brand)]" />
-              <p className="text-sm font-medium text-[var(--color-muted)]">Loading sensor data…</p>
+              <p className="text-sm font-medium text-[var(--color-muted)]">Loading flood zones…</p>
             </div>
           </div>
         ) : fetchError ? (
@@ -706,10 +674,10 @@ export default function FloodMapPage() {
               <AlertTriangleIcon className="h-10 w-10 text-red-400 mx-auto mb-4" />
               <h2 className="text-lg font-semibold text-[var(--color-text)] mb-2">Connection Error</h2>
               <p className="text-sm text-[var(--color-muted)] mb-4">
-                Could not load sensor data. The server may be starting up.
+                Could not load flood data. The server may be starting up.
               </p>
               <button
-                type="button" onClick={() => void fetchSensors()}
+                type="button" onClick={() => void fetchZones()}
                 className="rounded-xl bg-[var(--color-brand)] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[var(--color-brand-dark)] transition"
               >
                 Retry Connection
@@ -718,15 +686,44 @@ export default function FloodMapPage() {
           </div>
         ) : (
 
-          /* ── Main content stack ─────────────────────────────────────────── */
           <div className="flex flex-col gap-5">
 
-            {/* Map card — now full width */}
+            {/* Map card */}
             <article ref={mapCardRef} className={card + " p-5"}>
               <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-[var(--color-muted)]">Live View</p>
-                  <h2 className="text-lg font-semibold text-[var(--color-text)]">Live map</h2>
+                <div className="flex items-center gap-3 min-w-0">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-[var(--color-muted)]">Live View</p>
+                    <h2 className="text-lg font-semibold text-[var(--color-text)]">Live map</h2>
+                  </div>
+                  {/* Viewport rollup pill (P1-12) — summarises the worst
+                      status currently in frame so a user can scan
+                      whether the area they're looking at is safe. */}
+                  {(viewportRollup.critical > 0 || viewportRollup.warning > 0) && (
+                    <span
+                      className={`hidden sm:inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold ${
+                        viewportRollup.critical > 0
+                          ? "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300"
+                          : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+                      }`}
+                      title="Flood status in the area currently on screen"
+                    >
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{ backgroundColor: viewportRollup.critical > 0 ? STATUS_HEX[3] : STATUS_HEX[2] }}
+                      />
+                      In view:
+                      {viewportRollup.critical > 0 && (
+                        <span><span className="font-bold">{viewportRollup.critical}</span> Critical</span>
+                      )}
+                      {viewportRollup.critical > 0 && viewportRollup.warning > 0 && (
+                        <span aria-hidden>·</span>
+                      )}
+                      {viewportRollup.warning > 0 && (
+                        <span><span className="font-bold">{viewportRollup.warning}</span> Warning</span>
+                      )}
+                    </span>
+                  )}
                 </div>
                 <div className="flex flex-wrap items-center gap-4 text-sm font-semibold text-[var(--color-text)]">
                   <span>Online: <span className="text-green-600">{stats.online}</span></span>
@@ -736,13 +733,22 @@ export default function FloodMapPage() {
                       ({stats.total} / {stats.totalAll} shown)
                     </span>
                   )}
+                  {/* Cheat-sheet shortcut — also bound to `?` */}
+                  <button
+                    type="button"
+                    onClick={() => setShortcutsOpen(true)}
+                    title="Keyboard shortcuts (?)"
+                    aria-label="Keyboard shortcuts"
+                    className="hidden md:inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--color-border)] text-[10px] font-bold text-[var(--color-muted)] hover:border-[var(--color-brand)] hover:text-[var(--color-brand)] transition"
+                  >
+                    ?
+                  </button>
                 </div>
               </div>
 
-              {/* Per-node circle map */}
               <div className="rounded-2xl border border-[var(--color-border)] overflow-hidden">
                 <NodeMap
-                  nodes={mapNodes}
+                  zones={filteredZones}
                   height={620}
                   defaultZoom={11}
                   focusLatLng={focusLatLng}
@@ -750,25 +756,62 @@ export default function FloodMapPage() {
                   onPlaceSelect={(lat, lng) => focusOnPoint(lat, lng, 14)}
                   savedLocations={savedLocations}
                   myLocation={myLocation}
+                  onRecenterRequest={requestGeolocation}
+                  onViewportChanged={setViewport}
+                  onShareView={handleShareView}
                 />
               </div>
 
-              {/* Water level legend */}
-              <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-[var(--color-muted)]">
-                <span className="font-semibold text-[var(--color-text)]">Water Level:</span>
-                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[0] }} /> Normal ({stats.dry})</span>
-                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[1] }} /> Alert ({stats.normal})</span>
-                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[2] }} /> Warning ({stats.warning})</span>
-                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_HEX[3] }} /> Critical ({stats.critical})</span>
+              {/* Click-to-filter legend (P1-11). Each chip toggles the
+                  matching status filter — the same set the Filters panel
+                  uses, so the two stay in sync. An active chip is
+                  highlighted; tapping again clears it. */}
+              <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-[var(--color-muted)]">
+                <span className="font-semibold text-[var(--color-text)] mr-1">Water Level:</span>
+                {STATUS_OPTIONS.filter(o => o.key !== "offline").map(opt => {
+                  const count =
+                    opt.key === "dry"      ? stats.dry      :
+                    opt.key === "normal"   ? stats.normal   :
+                    opt.key === "warning"  ? stats.warning  :
+                    /* critical */           stats.critical;
+                  const on = filterStatuses.has(opt.key);
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => toggleStatus(opt.key)}
+                      aria-pressed={on}
+                      title={on ? `Click to clear "${opt.label}" filter` : `Filter to ${opt.label} only`}
+                      className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
+                        on
+                          ? "bg-[var(--color-brand)] text-white"
+                          : "bg-[var(--color-input-bg)] text-[var(--color-muted)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
+                      }`}
+                    >
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{ backgroundColor: on ? "rgba(255,255,255,0.9)" : opt.dotHex }}
+                      />
+                      {opt.label} ({count})
+                    </button>
+                  );
+                })}
+                {filterStatuses.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setFilterStatuses(new Set())}
+                    className="ml-auto rounded-full bg-[var(--color-input-bg)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-brand)] hover:bg-[var(--color-hover)]"
+                  >
+                    Clear status filter
+                  </button>
+                )}
               </div>
             </article>
 
-            {/* ── Below-map stack: My Saved Places on top, Nodes in Radius below ── */}
+            {/* ── Below-map stack: My Saved Places + Zones in Radius ───────── */}
             {user && (
               <div className="flex flex-col gap-5">
 
-                {/* My Saved Places — sits at the top so users see what they
-                    have saved before scanning the per-place sensor lists. */}
                 <SavedLocationsPanel
                   ref={savedLocationsRef}
                   onFocusLocation={(lat, lng) => focusOnPoint(lat, lng, 14)}
@@ -779,17 +822,16 @@ export default function FloodMapPage() {
                   })))}
                 />
 
-                {/* Nodes in Radius — for each saved place, lists sensors
-                    inside its alert radius, sorted by distance. */}
-                {nodesByPlace.length > 0 && (
+                {zonesByPlace.length > 0 && (
                   <div className={card + " p-4"}>
                     <div className="flex items-center justify-between mb-3">
                       <div>
                         <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--color-text)]">
-                          Nodes in Radius
+                          Zones in Radius
                         </h3>
                         <p className="text-[11px] text-[var(--color-muted)] mt-0.5">
-                          Sensors inside each of your saved places{activeFilterCount > 0 ? " (filtered)" : ""}.
+                          Aggregated flood zones inside each of your saved places{activeFilterCount > 0 ? " (filtered)" : ""}.
+                          Click a zone to focus the map.
                         </p>
                       </div>
                       {activeFilterCount > 0 && (
@@ -804,7 +846,7 @@ export default function FloodMapPage() {
                     </div>
 
                     <div className="space-y-4">
-                      {nodesByPlace.map(({ place, items }) => (
+                      {zonesByPlace.map(({ place, items }) => (
                         <div
                           key={place.id}
                           className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-input-bg)] p-3"
@@ -820,50 +862,39 @@ export default function FloodMapPage() {
                           </div>
                           {items.length === 0 ? (
                             <p className="rounded-lg bg-[var(--color-card)] px-3 py-2 text-[11px] text-[var(--color-muted)]">
-                              No sensors within the radius{activeFilterCount > 0 ? " match the active filters" : ""}.
+                              No flood zones within the radius{activeFilterCount > 0 ? " match the active filters" : ""}.
                             </p>
                           ) : (
                             <ul
                               className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-2 max-h-[280px] overflow-y-auto pr-1"
                               style={{ scrollbarWidth: "thin" }}
                             >
-                              {items.map(({ n, d }) => {
-                                const isFav = favIds.has(n.nodeId);
-                                const prefs = favChannelPrefs[n.nodeId] ?? DEFAULT_NODE_CHANNEL_PREFS;
-                                return (
-                                  <li
-                                    key={n.id}
-                                    className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-2.5 transition-colors hover:border-[var(--color-brand)]"
+                              {items.map(({ z, d }) => (
+                                <li
+                                  key={z.id}
+                                  className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-2.5 transition-colors hover:border-[var(--color-brand)]"
+                                >
+                                  <div className="flex items-start justify-between gap-1.5 mb-1.5">
+                                    <span
+                                      className="mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                                      style={{ backgroundColor: zoneStatusHex(z) }}
+                                      aria-hidden
+                                    />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => focusOnPoint(z.centroidLat, z.centroidLng, 14)}
+                                    className="block w-full text-left"
                                   >
-                                    <div className="flex items-start justify-between gap-1.5 mb-1.5">
-                                      <span
-                                        className="mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full"
-                                        style={{ backgroundColor: nodeStatusHex(n) }}
-                                        aria-hidden
-                                      />
-                                      <NodeBellMenu
-                                        nodeId={n.nodeId}
-                                        isFavourited={isFav}
-                                        prefs={prefs}
-                                        onPrefsChange={(next) => updateChannelPrefs(n.nodeId, next)}
-                                        onSubscribe={() => subscribeNode(n.nodeId)}
-                                      />
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => focusOnPoint(n.latitude, n.longitude, 14)}
-                                      className="block w-full text-left"
-                                    >
-                                      <p className="truncate text-xs font-semibold text-[var(--color-text)]">
-                                        {n.area || n.location || "Sensor"}
-                                      </p>
-                                      <p className="truncate text-[10px] text-[var(--color-muted)] mt-0.5">
-                                        {nodeStatusLabel(n)} · {d.toFixed(1)} km
-                                      </p>
-                                    </button>
-                                  </li>
-                                );
-                              })}
+                                    <p className="truncate text-xs font-semibold text-[var(--color-text)]">
+                                      {z.name || z.area || "Zone"}
+                                    </p>
+                                    <p className="truncate text-[10px] text-[var(--color-muted)] mt-0.5">
+                                      {zoneStatusLabel(z)} · {d.toFixed(1)} km
+                                    </p>
+                                  </button>
+                                </li>
+                              ))}
                             </ul>
                           )}
                         </div>
@@ -882,11 +913,14 @@ export default function FloodMapPage() {
       {searchOpen && (
         <SearchModal onClose={closeSearch} placeholder="Search posts & communities…" />
       )}
+
+      {/* Keyboard cheat-sheet (P1-13) — opened via the `?` key or the
+          floating header button. */}
+      <ShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </div>
   );
 }
 
-// ── FilterChip sub-component ──────────────────────────────────────────────────
 function FilterChip({ label, value, onRemove }: { label: string; value: string; onRemove: () => void }) {
   return (
     <span className="flex items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-input-bg)] px-2.5 py-1 text-xs font-medium text-[var(--color-text)]">

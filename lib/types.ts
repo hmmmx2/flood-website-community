@@ -65,3 +65,33 @@ export type PagedPosts = {
   number: number;
   last: boolean;
 };
+
+// ── Flood map ────────────────────────────────────────────────────────
+//
+// `Zone` is the public-facing shape served by /api/zones. It exposes
+// only an aggregated centroid + radius — never per-sensor coordinates.
+// See `lib/zoneAggregate.ts` for the privacy contract.
+
+export type FloodLevel = 0 | 1 | 2 | 3;
+export type ZoneSensorBand = "single" | "few" | "many";
+
+export type Zone = {
+  /** Stable, derived from (state|area) — never a sensor / node id. */
+  id: string;
+  /** Display name (e.g. "Tabuan Jaya"). */
+  name: string;
+  state: string;
+  area: string;
+  /** Rounded to 3 d.p. (~110 m) before it ever leaves the server. */
+  centroidLat: number;
+  centroidLng: number;
+  /** Clamped to >= 800 m so a single-sensor zone can't shrink to a point. */
+  radiusM: number;
+  worstLevel: FloodLevel;
+  anyOffline: boolean;
+  /** When true, every member sensor in the zone is offline. */
+  allOffline: boolean;
+  /** Coarse cluster-size band — the raw `sensorCount` is never published. */
+  sensorBand: ZoneSensorBand;
+  lastUpdated?: string;
+};

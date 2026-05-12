@@ -16,6 +16,12 @@ type Opts = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
   token?: string;
+  /**
+   * Extra request headers. Used (e.g.) by the public flood-map route
+   * to send the `X-Internal-Key` service secret to the Java backend
+   * without crossing the browser. Values here win over the defaults.
+   */
+  headers?: Record<string, string>;
   /** Next.js ISR revalidation window in seconds. 0 = no-store (default for auth/mutation routes). */
   revalidate?: number;
   /** Hard timeout in ms. Defaults to 10 s — prevents hanging on Railway cold starts. */
@@ -23,9 +29,17 @@ type Opts = {
 };
 
 export async function javaFetch<T>(path: string, opts: Opts = {}): Promise<T> {
-  const { method = "GET", body, token, revalidate = 0, timeoutMs = 10_000 } = opts;
+  const {
+    method = "GET",
+    body,
+    token,
+    headers: extraHeaders,
+    revalidate = 0,
+    timeoutMs = 10_000,
+  } = opts;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (extraHeaders) Object.assign(headers, extraHeaders);
 
   const p = path.startsWith("/") ? path : `/${path}`;
   const res = await fetch(`${JAVA_API}${p}`, {
