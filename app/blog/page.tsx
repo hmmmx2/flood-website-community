@@ -266,8 +266,12 @@ export default function BlogPage() {
       />
 
       <main className={`${PAGE_CONTAINER} py-6 flex-1`}>
-        <div className="flex gap-6">
-          <div className="flex-1 min-w-0">
+        {/* Single-column layout. The right-rail (About + Back-to-Community
+            + Categories) used to live here but the category list duplicated
+            the pill row above the search bar, and "Back to Community" is
+            already in the top navbar. Removing the rail makes the page
+            read like a focused archive instead of a triple-card layout. */}
+        <div className="w-full min-w-0">
             <div className="mb-6">
               <h1 className="text-2xl font-bold text-[var(--color-text)]">Blog & News</h1>
               <p className="text-sm text-[var(--color-muted)] mt-1">
@@ -298,7 +302,6 @@ export default function BlogPage() {
                 onValueChange={setArticleQuery}
                 placeholder="Search articles by title or keyword…"
                 label="Search articles"
-                className="max-w-xl"
               />
             </div>
 
@@ -366,43 +369,6 @@ export default function BlogPage() {
               </>
             )}
           </div>
-
-          <aside className="hidden lg:block w-64 flex-shrink-0">
-            <div className="bg-[var(--color-card)] rounded-2xl border border-[var(--color-border)] p-4 mb-4">
-              <h3 className="font-semibold text-[var(--color-text)] mb-2 text-sm">About Blog</h3>
-              <p className="text-xs text-[var(--color-muted)] leading-relaxed">
-                Official news, safety guides, and flood monitoring insights from the FloodWatch team.
-              </p>
-              <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
-                <Link
-                  href="/"
-                  className="block text-center w-full py-2 rounded-full bg-[var(--color-brand)] hover:bg-[var(--color-brand-dark)] text-white text-sm font-semibold transition-colors"
-                >
-                  Back to Community
-                </Link>
-              </div>
-            </div>
-            <div className="bg-[var(--color-card)] rounded-2xl border border-[var(--color-border)] p-4">
-              <h3 className="font-semibold text-[var(--color-text)] mb-3 text-sm">Categories</h3>
-              <div className="space-y-1">
-                {categoryTabs.map((cat) => (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => handleCategoryChange(cat)}
-                    className={`w-full text-left px-3 py-1.5 rounded-xl text-sm transition-colors ${
-                      activeCategory === cat
-                        ? "bg-[var(--color-brand)]/10 text-[var(--color-brand)] font-medium"
-                        : "text-[var(--color-muted)] hover:bg-[var(--color-bg)]"
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </aside>
-        </div>
       </main>
 
       <Footer />
