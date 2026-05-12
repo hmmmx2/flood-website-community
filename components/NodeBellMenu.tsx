@@ -3,26 +3,37 @@
 /**
  * <NodeBellMenu /> — per-sensor notification channel picker.
  *
- * Click the bell on a sensor card to mute / unmute it and pick exactly
- * which channels deliver alerts for THAT sensor: in-app, email, SMS,
- * WhatsApp. Toggling any switch issues a PATCH to the BFF which updates
- * the user_favourite_nodes row server-side. The dispatcher (Java)
- * applies these per-favourite toggles as a mask on top of the user's
- * global notification preferences — a channel must be enabled in BOTH
- * places for an alert to fire.
+ * Click the bell on a sensor card to mute / unmute it and pick which
+ * external channels deliver alerts for THAT sensor (Email, SMS,
+ * WhatsApp). The in-app website bell is always on as long as the user
+ * has favourited the sensor — it is the baseline channel and is not
+ * exposed as a toggle, mirroring how Twitter / Facebook treat their
+ * own in-app notifications.
+ *
+ * Toggling any switch issues a PATCH to the BFF which updates the
+ * user_favourite_nodes row server-side. The dispatcher (Java) applies
+ * these per-favourite toggles as a mask on top of the user's global
+ * notification preferences — a channel must be enabled in BOTH places
+ * for an alert to fire.
  *
  * Bell visual states:
- *   • all 4 channels off → hollow bell with diagonal slash (muted)
- *   • any channel on     → solid amber bell (alerts will fire)
- *
- * The button itself is keyboard-accessible (Enter / Space toggles open).
- * Click outside the popover or press Escape to close.
+ *   • favourited and at least one external channel on → solid amber bell
+ *   • favourited but every external channel off       → hollow muted bell
+ *   • not favourited yet                               → hollow muted bell
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 import { authFetchJson } from "@/lib/fetchJson";
+
+/** External (toggleable) channels — push / in-app is intentionally excluded. */
+type ChannelKey = "emailEnabled" | "smsEnabled" | "whatsappEnabled";
+const EXTERNAL_CHANNELS: { key: ChannelKey; label: string }[] = [
+  { key: "emailEnabled",    label: "Email" },
+  { key: "smsEnabled",      label: "SMS" },
+  { key: "whatsappEnabled", label: "WhatsApp" },
+];
 
 export type NodeChannelPrefs = {
   emailEnabled: boolean;
@@ -85,10 +96,17 @@ export default function NodeBellMenu({
     };
   }, [open, recalcPos]);
 
-  const anyOn =
-    prefs.emailEnabled || prefs.smsEnabled || prefs.whatsappEnabled || prefs.pushEnabled;
-  // "Muted" means: subscribed but every channel turned off OR not subscribed at all.
-  const muted = !isFavourited || !anyOn;
+  // Push (in-app bell) is always on as long as the favourite exists, so
+  // it does not factor into the muted calculation. The bell is "muted"
+  // when the user has not subscribed yet, OR when every external channel
+  // is off (Email + SMS + WhatsApp all unchecked).
+  const externalOnCount =
+    (prefs.emailEnabled ? 1 : 0) +
+    (prefs.smsEnabled ? 1 : 0) +
+    (prefs.whatsappEnabled ? 1 : 0);
+  const allExternalOn = externalOnCount === EXTERNAL_CHANNELS.length;
+  const someExternalOn = externalOnCount > 0 && !allExternalOn;
+  const muted = !isFavourited || externalOnCount === 0;
 
   // Close on outside-click + ESC. Both the trigger button AND the popover
   // (rendered in a portal) count as "inside".
@@ -109,22 +127,22 @@ export default function NodeBellMenu({
     };
   }, [open]);
 
-  const setChannel = useCallback(async (key: keyof NodeChannelPrefs, value: boolean) => {
-    if (busy) return;
-    const previous = prefs;
-    const next = { ...prefs, [key]: value };
-    onPrefsChange(next); // optimistic
+  /**
+   * Persist a partial channel-prefs patch. Push is always implicitly on
+   * when the favourite row exists, so the body never carries pushEnabled.
+   * The Java DTO treats missing fields as "no change", so a partial PATCH
+   * only flips the keys we send.
+   */
+  const persist = useCallback(async (patch: Partial<NodeChannelPrefs>, previous: NodeChannelPrefs) => {
     setBusy(true);
     try {
-      // Auto-subscribe (create favourite row) the first time the user
-      // touches a toggle — otherwise PATCH would 404 with no row to update.
       if (!isFavourited) {
         await onSubscribe();
       }
       await authFetchJson(`/api/favourites/${nodeId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [key]: value }),
+        body: JSON.stringify(patch),
       });
     } catch (e) {
       onPrefsChange(previous); // roll back
@@ -132,7 +150,28 @@ export default function NodeBellMenu({
     } finally {
       setBusy(false);
     }
-  }, [nodeId, prefs, isFavourited, onSubscribe, onPrefsChange, busy]);
+  }, [nodeId, isFavourited, onSubscribe, onPrefsChange]);
+
+  const setChannel = useCallback((key: ChannelKey, value: boolean) => {
+    if (busy) return;
+    const previous = prefs;
+    const next = { ...prefs, [key]: value, pushEnabled: true };
+    onPrefsChange(next);
+    void persist({ [key]: value, pushEnabled: true }, previous);
+  }, [busy, prefs, onPrefsChange, persist]);
+
+  const setAllExternal = useCallback((value: boolean) => {
+    if (busy) return;
+    const previous = prefs;
+    const next: NodeChannelPrefs = {
+      emailEnabled: value,
+      smsEnabled: value,
+      whatsappEnabled: value,
+      pushEnabled: true,
+    };
+    onPrefsChange(next);
+    void persist(next, previous);
+  }, [busy, prefs, onPrefsChange, persist]);
 
   return (
     <>
@@ -183,33 +222,27 @@ export default function NodeBellMenu({
               Notify me via
             </p>
             <p className="text-[10px] text-[var(--color-muted)] mt-0.5">
-              Turn off all to mute alerts for this sensor.
+              The website bell is always on. Turn off all three to mute external alerts.
             </p>
           </div>
           <ChannelRow
-            label="Website (in-app bell)"
-            checked={prefs.pushEnabled}
+            label="Select all"
+            checked={allExternalOn}
+            indeterminate={someExternalOn}
             disabled={busy}
-            onChange={(v) => void setChannel("pushEnabled", v)}
+            emphasised
+            onChange={(v) => setAllExternal(v)}
           />
-          <ChannelRow
-            label="Email"
-            checked={prefs.emailEnabled}
-            disabled={busy}
-            onChange={(v) => void setChannel("emailEnabled", v)}
-          />
-          <ChannelRow
-            label="SMS"
-            checked={prefs.smsEnabled}
-            disabled={busy}
-            onChange={(v) => void setChannel("smsEnabled", v)}
-          />
-          <ChannelRow
-            label="WhatsApp"
-            checked={prefs.whatsappEnabled}
-            disabled={busy}
-            onChange={(v) => void setChannel("whatsappEnabled", v)}
-          />
+          <div className="my-1 h-px bg-[var(--color-border)]" aria-hidden />
+          {EXTERNAL_CHANNELS.map((ch) => (
+            <ChannelRow
+              key={ch.key}
+              label={ch.label}
+              checked={prefs[ch.key]}
+              disabled={busy}
+              onChange={(v) => setChannel(ch.key, v)}
+            />
+          ))}
         </div>,
         document.body,
       )}
@@ -220,28 +253,44 @@ export default function NodeBellMenu({
 function ChannelRow({
   label,
   checked,
+  indeterminate,
   disabled,
+  emphasised,
   onChange,
 }: {
   label: string;
   checked: boolean;
+  indeterminate?: boolean;
   disabled?: boolean;
+  /** Bold the row label — used for the master "Select all" row. */
+  emphasised?: boolean;
   onChange: (next: boolean) => void;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  // The browser exposes indeterminate as a property, not an HTML attribute,
+  // so it has to be set imperatively after render.
+  useEffect(() => {
+    if (inputRef.current) inputRef.current.indeterminate = Boolean(indeterminate);
+  }, [indeterminate]);
+
   return (
     <label
       className={`flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-xs transition ${
         disabled ? "opacity-60" : "hover:bg-[var(--color-hover)] cursor-pointer"
       }`}
     >
-      <span className="text-[var(--color-text)]">{label}</span>
+      <span className={`${emphasised ? "font-semibold" : ""} text-[var(--color-text)]`}>
+        {label}
+      </span>
       <input
+        ref={inputRef}
         type="checkbox"
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
         className="h-4 w-4 cursor-pointer rounded accent-[var(--color-brand)]"
         aria-label={label}
+        aria-checked={indeterminate ? "mixed" : checked}
       />
     </label>
   );
