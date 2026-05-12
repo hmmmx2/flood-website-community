@@ -40,8 +40,11 @@ export const CACHE_TTL = {
   posts: 30,
   /** Groups list — 2 min (low churn) */
   groups: 120,
-  /** Blog articles — 10 min */
-  blogs: 600,
+  /** Blog articles — 30 s so a fresh admin publish on the CRM lands on
+   *  the community feed quickly. Articles are low-churn read-heavy, so
+   *  this still gives Redis a strong hit rate inside any single user's
+   *  browsing session while staying near-real-time for admin edits. */
+  blogs: 30,
   /** User profile — 5 min */
   profile: 300,
   /** Sensor alerts — 60 s */
