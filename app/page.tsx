@@ -191,13 +191,16 @@ export default function HomePage() {
             </div>
           )}
 
-          <div className="mb-4">
+          {/* Search bar — wrapped in the same rounded-2xl card chrome the
+              compose box and sort tabs use, so all three rows share one
+              outer shape and width. */}
+          <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-2 mb-4">
             <SearchField
               value={feedSearch}
               onValueChange={setFeedSearch}
               placeholder="Search posts by title or keyword…"
               label="Filter feed"
-              className="max-w-xl"
+              wrapperClassName="border-transparent shadow-none"
             />
           </div>
 
