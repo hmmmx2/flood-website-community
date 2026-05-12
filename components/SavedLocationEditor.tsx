@@ -18,6 +18,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Autocomplete } from "@react-google-maps/api";
 
+import { useGoogleMapsReady } from "@/lib/useGoogleMapsReady";
+
 export type SavedLocationDraft = {
   label: string;
   address: string;
@@ -51,6 +53,12 @@ export default function SavedLocationEditor({ initial, prefill, onClose, onSave 
   const [showManual, setShowManual] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+  // Defence-in-depth: while the editor only opens after the user has
+  // right-clicked on the loaded map (so `google` is always defined in
+  // practice), we still gate the Autocomplete behind this hook so a
+  // future code path that opens the editor eagerly can't crash with
+  // `ReferenceError: google is not defined`.
+  const mapsReady = useGoogleMapsReady();
 
   // Lock body scroll while modal is open
   useEffect(() => {
@@ -190,28 +198,43 @@ export default function SavedLocationEditor({ initial, prefill, onClose, onSave 
             <label className="block text-xs font-semibold mb-1" style={{ color: "var(--color-text)" }}>
               Search a place <span style={{ color: "#dc2626" }}>*</span>
             </label>
-            <Autocomplete
-              onLoad={(ac) => { autocompleteRef.current = ac; }}
-              onPlaceChanged={handlePlaceChanged}
-              options={{
-                componentRestrictions: { country: ["my"] },
-                fields: ["geometry", "name", "formatted_address"],
-              }}
-            >
+            {mapsReady ? (
+              <Autocomplete
+                onLoad={(ac) => { autocompleteRef.current = ac; }}
+                onPlaceChanged={handlePlaceChanged}
+                options={{
+                  componentRestrictions: { country: ["my"] },
+                  fields: ["geometry", "name", "formatted_address"],
+                }}
+              >
+                <input
+                  type="text"
+                  defaultValue={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="e.g. Lintas Square, Kota Kinabalu"
+                  className="w-full rounded-lg px-3 py-2.5 text-sm border focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  style={{
+                    background: "var(--color-input-bg, var(--color-card))",
+                    borderColor: "var(--color-border)",
+                    color: "var(--color-text)",
+                    minHeight: 44,
+                  }}
+                />
+              </Autocomplete>
+            ) : (
               <input
                 type="text"
-                defaultValue={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="e.g. Lintas Square, Kota Kinabalu"
+                disabled
+                placeholder="Loading places…"
                 className="w-full rounded-lg px-3 py-2.5 text-sm border focus:outline-none focus:ring-2 focus:ring-blue-500"
                 style={{
                   background: "var(--color-input-bg, var(--color-card))",
                   borderColor: "var(--color-border)",
-                  color: "var(--color-text)",
+                  color: "var(--color-muted)",
                   minHeight: 44,
                 }}
               />
-            </Autocomplete>
+            )}
             <p className="mt-1.5 text-[11px]" style={{ color: "var(--color-muted)" }}>
               Or right-click on the map to drop a pin, or use your GPS below.
             </p>

@@ -20,6 +20,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Autocomplete } from "@react-google-maps/api";
 
 import type { Zone } from "@/lib/types";
+import { useGoogleMapsReady } from "@/lib/useGoogleMapsReady";
 import {
   useFloodAwareRoutes,
   type FloodImpact,
@@ -112,6 +113,13 @@ export default function DirectionsPanel({
 
   const fromAcRef = useRef<google.maps.places.Autocomplete | null>(null);
   const toAcRef = useRef<google.maps.places.Autocomplete | null>(null);
+
+  // We render `<Autocomplete>` only after the Google Maps JS script
+  // (with the `places` library) has loaded — otherwise its
+  // componentDidMount throws `ReferenceError: google is not defined`
+  // because the panel is mounted at the page root and races the
+  // script loader that lives inside <NodeMap>. See useGoogleMapsReady.
+  const mapsReady = useGoogleMapsReady();
 
   const scored = useFloodAwareRoutes(routes, zones);
 
@@ -293,7 +301,7 @@ export default function DirectionsPanel({
                 <span className="flex-1 truncate rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-3 py-2 text-sm text-[var(--color-text)]">
                   My location
                 </span>
-              ) : (
+              ) : mapsReady ? (
                 <Autocomplete
                   onLoad={(ac) => { fromAcRef.current = ac; }}
                   onPlaceChanged={handleFromChanged}
@@ -310,6 +318,16 @@ export default function DirectionsPanel({
                     className="flex-1 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-brand)]"
                   />
                 </Autocomplete>
+              ) : (
+                /* Map script still loading — render a placeholder that
+                   matches the live Autocomplete's footprint so the
+                   panel doesn't reflow when it swaps in. */
+                <input
+                  type="text"
+                  disabled
+                  placeholder="Loading places…"
+                  className="flex-1 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-3 py-2 text-sm text-[var(--color-muted)] outline-none"
+                />
               )}
             </div>
           </div>
@@ -317,22 +335,31 @@ export default function DirectionsPanel({
           {/* To */}
           <div className="space-y-1.5">
             <label className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">To</label>
-            <Autocomplete
-              onLoad={(ac) => { toAcRef.current = ac; }}
-              onPlaceChanged={handleToChanged}
-              options={{
-                componentRestrictions: { country: ["my"] },
-                fields: ["geometry", "name", "formatted_address"],
-              }}
-            >
+            {mapsReady ? (
+              <Autocomplete
+                onLoad={(ac) => { toAcRef.current = ac; }}
+                onPlaceChanged={handleToChanged}
+                options={{
+                  componentRestrictions: { country: ["my"] },
+                  fields: ["geometry", "name", "formatted_address"],
+                }}
+              >
+                <input
+                  type="text"
+                  value={toText}
+                  onChange={e => setToText(e.target.value)}
+                  placeholder="Where to?"
+                  className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-brand)]"
+                />
+              </Autocomplete>
+            ) : (
               <input
                 type="text"
-                value={toText}
-                onChange={e => setToText(e.target.value)}
-                placeholder="Where to?"
-                className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-brand)]"
+                disabled
+                placeholder="Loading places…"
+                className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-3 py-2 text-sm text-[var(--color-muted)] outline-none"
               />
-            </Autocomplete>
+            )}
           </div>
 
           {/* Mode picker */}
