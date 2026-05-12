@@ -166,6 +166,21 @@ export default function FloodMapPage() {
   // ── Keyboard shortcuts (P1-13) ────────────────────────────────────────────
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
+  // ── Reduced motion (P2-8) ─────────────────────────────────────────────────
+  // Used to skip the pulse animation on the "Live" indicator for users
+  // who set the OS preference to reduce motion. The map itself defers
+  // to Google's animation prefs (which Google already gates on this
+  // media query).
+  const [reducedMotion, setReducedMotion] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReducedMotion(mq.matches);
+    const onChange = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
+    mq.addEventListener?.("change", onChange);
+    return () => mq.removeEventListener?.("change", onChange);
+  }, []);
+
   // ── Place Card (P1-5 + P1-8) ──────────────────────────────────────────────
   // One card serves all three entry points: zone click, right-click on
   // map, autocomplete pick. Closing returns to a bare map.
@@ -535,8 +550,11 @@ export default function FloodMapPage() {
           </div>
           <div className="flex items-center gap-3">
             {lastFetch && (
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+              <div className="flex items-center gap-2" aria-live="polite">
+                <span
+                  className={`h-2 w-2 rounded-full bg-green-500 ${reducedMotion ? "" : "animate-pulse"}`}
+                  aria-hidden
+                />
                 <span className="text-xs text-[var(--color-muted)]">
                   Live · Updated {lastFetch.toLocaleTimeString()}
                 </span>

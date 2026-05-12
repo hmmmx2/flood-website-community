@@ -35,6 +35,7 @@ import {
   Autocomplete,
   Circle,
   GoogleMap,
+  HeatmapLayer,
   Marker,
   Polyline,
   TrafficLayer,
@@ -76,15 +77,16 @@ function getZoneColour(z: Zone): string {
 /**
  * Google Maps libraries loaded eagerly at map mount.
  *
- *  - `places`   — Autocomplete + place details (already used).
- *  - `geometry` — needed by P1-6 flood-aware directions and P1-9
- *                 distance measurement. Bundle cost is small.
- *  - `marker`   — advanced markers, used by clustering later.
+ *  - `places`        — Autocomplete + place details (already used).
+ *  - `geometry`      — needed by flood-aware Directions (P1-6) and
+ *                      distance measurement (P1-9).
+ *  - `marker`        — advanced markers, used by clustering later.
+ *  - `visualization` — HeatmapLayer for the heatmap toggle (P2-3).
  *
- * `drawing` and `visualization` are intentionally **not** loaded
- * here; they're behind P2 features that lazy-load when used.
+ * `drawing` stays deferred — it's only behind annotation tools that
+ * we haven't built yet.
  */
-const MAPS_LIBRARIES: Libraries = ["places", "geometry", "marker"];
+const MAPS_LIBRARIES: Libraries = ["places", "geometry", "marker", "visualization"];
 
 const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ?? "";
 const hasValidApiKey = apiKey.length > 10 && !apiKey.includes("Example");
@@ -97,6 +99,18 @@ const mapStyles: google.maps.MapTypeStyle[] = [
 
 const MAP_TYPE_STORAGE_KEY = "floodmap.mapType";
 const TRAFFIC_STORAGE_KEY = "floodmap.traffic";
+const TRAFFIC_EXPLICIT_KEY = "floodmap.trafficExplicit";
+const HEATMAP_STORAGE_KEY = "floodmap.heatmap";
+const HIGH_CONTRAST_STORAGE_KEY = "floodmap.hiContrast";
+const RECENT_SEARCHES_KEY = "floodmap.recentSearches";
+const RECENT_SEARCHES_LIMIT = 8;
+
+type RecentSearch = {
+  name: string;
+  lat: number;
+  lng: number;
+  at: number;
+};
 
 const MAP_TYPE_OPTIONS: { key: MapTypeKey; label: string; sub?: string }[] = [
   { key: "roadmap",   label: "Default",   sub: "Streets" },
@@ -194,6 +208,12 @@ export default function NodeMap({
   // a flood watch survives a page refresh.
   const [mapType, setMapType] = useState<MapTypeKey>("roadmap");
   const [trafficOn, setTrafficOn] = useState(false);
+  // `trafficExplicit` is set the moment the user touches the toggle in
+  // either direction. Until then, P1-2 may auto-on the layer whenever
+  // a Warning+ zone enters the viewport.
+  const [trafficExplicit, setTrafficExplicit] = useState(false);
+  const [heatmapOn, setHeatmapOn] = useState(false);
+  const [highContrast, setHighContrast] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   useEffect(() => {
     try {
@@ -203,6 +223,9 @@ export default function NodeMap({
       }
       const tr = window.localStorage.getItem(TRAFFIC_STORAGE_KEY);
       if (tr === "1") setTrafficOn(true);
+      if (window.localStorage.getItem(TRAFFIC_EXPLICIT_KEY) === "1") setTrafficExplicit(true);
+      if (window.localStorage.getItem(HEATMAP_STORAGE_KEY) === "1") setHeatmapOn(true);
+      if (window.localStorage.getItem(HIGH_CONTRAST_STORAGE_KEY) === "1") setHighContrast(true);
     } catch { /* no localStorage in some contexts — silent skip */ }
   }, []);
   function persistMapType(t: MapTypeKey) {
@@ -211,8 +234,72 @@ export default function NodeMap({
   }
   function persistTraffic(on: boolean) {
     setTrafficOn(on);
-    try { window.localStorage.setItem(TRAFFIC_STORAGE_KEY, on ? "1" : "0"); } catch { /* noop */ }
+    setTrafficExplicit(true);
+    try {
+      window.localStorage.setItem(TRAFFIC_STORAGE_KEY, on ? "1" : "0");
+      window.localStorage.setItem(TRAFFIC_EXPLICIT_KEY, "1");
+    } catch { /* noop */ }
   }
+  function persistHeatmap(on: boolean) {
+    setHeatmapOn(on);
+    try { window.localStorage.setItem(HEATMAP_STORAGE_KEY, on ? "1" : "0"); } catch { /* noop */ }
+  }
+  function persistHighContrast(on: boolean) {
+    setHighContrast(on);
+    try { window.localStorage.setItem(HIGH_CONTRAST_STORAGE_KEY, on ? "1" : "0"); } catch { /* noop */ }
+  }
+
+  // P1-2 — auto-on traffic the first time a Warning+ zone is in the
+  // current frame, but never override a user who's already explicitly
+  // toggled it.
+  useEffect(() => {
+    if (trafficExplicit || trafficOn) return;
+    const anyRisky = zones.some(z => !z.allOffline && z.worstLevel >= 2);
+    if (anyRisky) setTrafficOn(true);
+  }, [zones, trafficExplicit, trafficOn]);
+
+  // ── Recent searches (P1-7) ────────────────────────────────────────────────
+  // Stored in localStorage, surfaced as a dropdown under the search
+  // input when it's focused but empty. Picking one fires the same
+  // onPlaceSelect callback the live Autocomplete does.
+  const [recents, setRecents] = useState<RecentSearch[]>([]);
+  const [searchFocused, setSearchFocused] = useState(false);
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(RECENT_SEARCHES_KEY);
+      if (!raw) return;
+      const parsed: unknown = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setRecents(
+          parsed
+            .filter((r): r is RecentSearch =>
+              typeof r === "object" && r !== null &&
+              typeof (r as RecentSearch).name === "string" &&
+              typeof (r as RecentSearch).lat === "number" &&
+              typeof (r as RecentSearch).lng === "number",
+            )
+            .slice(0, RECENT_SEARCHES_LIMIT),
+        );
+      }
+    } catch { /* noop */ }
+  }, []);
+  function recordRecent(name: string, lat: number, lng: number) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setRecents(prev => {
+      const next: RecentSearch[] = [
+        { name: trimmed, lat, lng, at: Date.now() },
+        ...prev.filter(r => r.name.toLowerCase() !== trimmed.toLowerCase()),
+      ].slice(0, RECENT_SEARCHES_LIMIT);
+      try { window.localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(next)); } catch { /* noop */ }
+      return next;
+    });
+  }
+  function clearRecents() {
+    setRecents([]);
+    try { window.localStorage.removeItem(RECENT_SEARCHES_KEY); } catch { /* noop */ }
+  }
+
 
   // ── Heading (P1-4 compass) ────────────────────────────────────────────────
   // Tracks the map's current heading so the compass button can hide
@@ -378,6 +465,7 @@ export default function NodeMap({
     }
     setSearchInput(name);
     setSearchedPlace({ lat, lng, name });
+    recordRecent(name, lat, lng);
     onPlaceSelect?.(lat, lng, name);
   }, [onPlaceSelect]);
 
@@ -507,8 +595,31 @@ export default function NodeMap({
       >
         {trafficOn && <TrafficLayer />}
 
+        {/* Heatmap (P2-3) — points are zone centroids weighted by
+            worst level so Critical clusters glow brighter than Alert.
+            Renders below the circles so the per-zone affordances stay
+            tappable. */}
+        {heatmapOn && typeof google !== "undefined" && google.maps?.visualization && (
+          <HeatmapLayer
+            data={zones
+              .filter(z => !z.allOffline)
+              .map(z => ({
+                location: new google.maps.LatLng(z.centroidLat, z.centroidLng),
+                weight: z.worstLevel + 1,
+              }))}
+            options={{
+              radius: 60,
+              opacity: 0.55,
+              dissipating: true,
+            }}
+          />
+        )}
+
         {/* Per-zone circles — one per aggregated zone, coloured by worst
-            level. Clickable when the page provides `onZoneClick`. */}
+            level. Clickable when the page provides `onZoneClick`.
+            High-contrast mode darkens the fill + thickens the stroke
+            so the categories are still distinguishable for users with
+            colour-vision differences. */}
         {zones.map(z => {
           const colour = getZoneColour(z);
           return (
@@ -519,10 +630,10 @@ export default function NodeMap({
               onClick={onZoneClick ? () => onZoneClick(z) : undefined}
               options={{
                 fillColor: colour,
-                fillOpacity: 0.35,
-                strokeColor: colour,
-                strokeOpacity: 0.85,
-                strokeWeight: 2,
+                fillOpacity: highContrast ? 0.55 : 0.35,
+                strokeColor: highContrast ? "#0f172a" : colour,
+                strokeOpacity: highContrast ? 1 : 0.85,
+                strokeWeight: highContrast ? 3 : 2,
                 clickable: Boolean(onZoneClick),
                 zIndex: 2,
               }}
@@ -689,9 +800,19 @@ export default function NodeMap({
       <div className={`pointer-events-none absolute left-3 z-10 sm:right-auto sm:max-w-sm ${
         isFullscreen ? "top-6 right-32 sm:left-6" : "top-3 right-28"
       }`}>
-        <div className="pointer-events-auto rounded-full bg-white shadow-lg ring-1 ring-black/10">
+        <div className="pointer-events-auto rounded-full bg-white shadow-lg ring-1 ring-black/10 flex items-center pr-1">
           <Autocomplete
-            onLoad={(ac) => { autocompleteRef.current = ac; }}
+            onLoad={(ac) => {
+              autocompleteRef.current = ac;
+              // P1-7 — bias suggestions to the user's current location
+              // when we have one, so "Jalan Song" near you outranks the
+              // same name across the country.
+              if (myLocation && typeof google !== "undefined") {
+                const c = new google.maps.LatLng(myLocation.lat, myLocation.lng);
+                const bounds = new google.maps.LatLngBounds(c, c);
+                ac.setBounds(bounds);
+              }
+            }}
             onPlaceChanged={handlePlaceChanged}
             options={{
               componentRestrictions: { country: ["my"] },
@@ -706,12 +827,88 @@ export default function NodeMap({
                 setSearchInput(v);
                 if (v.trim() === "") setSearchedPlace(null);
               }}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => {
+                // Delay so a click in the recents dropdown can fire before
+                // the dropdown is unmounted by the blur.
+                window.setTimeout(() => setSearchFocused(false), 150);
+              }}
               placeholder="Search a place…"
               aria-label="Search for a place"
               className="w-full rounded-full bg-transparent px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
             />
           </Autocomplete>
+          {/* Clear-X — visible whenever there's any text in the box. */}
+          {(searchInput.length > 0 || searchedPlace) && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchInput("");
+                setSearchedPlace(null);
+              }}
+              aria-label="Clear search"
+              className="ml-1 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
+                   className="h-3.5 w-3.5">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          )}
         </div>
+
+        {/* Recent searches dropdown (P1-7) — shown when the input is
+            focused but empty. Each row is a button so a click fires
+            cleanly under the blur delay. */}
+        {searchFocused && searchInput.trim() === "" && recents.length > 0 && (
+          <div
+            className="pointer-events-auto mt-2 max-h-72 w-full overflow-y-auto rounded-2xl bg-white p-2 shadow-xl ring-1 ring-black/10"
+            role="listbox"
+            aria-label="Recent searches"
+          >
+            <div className="flex items-center justify-between px-2 pb-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                Recent searches
+              </p>
+              <button
+                type="button"
+                onClick={clearRecents}
+                className="text-[11px] font-semibold text-slate-500 hover:text-slate-800"
+              >
+                Clear
+              </button>
+            </div>
+            {recents.map((r) => (
+              <button
+                key={`${r.name}-${r.at}`}
+                type="button"
+                role="option"
+                onMouseDown={(e) => e.preventDefault() /* keep focus through click */}
+                onClick={() => {
+                  setSearchInput(r.name);
+                  setSearchedPlace({ lat: r.lat, lng: r.lng, name: r.name });
+                  if (mapRef.current) {
+                    mapRef.current.panTo({ lat: r.lat, lng: r.lng });
+                    mapRef.current.setZoom(14);
+                  }
+                  onPlaceSelect?.(r.lat, r.lng, r.name);
+                  setSearchFocused(false);
+                }}
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-slate-800 hover:bg-slate-100"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                     className="h-3.5 w-3.5 text-slate-400">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+                <span className="truncate">{r.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
         <p className="pointer-events-none mt-2 text-[11px] font-medium text-slate-700/80 sm:text-white sm:[text-shadow:0_1px_2px_rgba(0,0,0,0.4)]">
           Tip: right-click anywhere on the map to save it as a place
         </p>
@@ -821,6 +1018,34 @@ export default function NodeMap({
                     className="h-4 w-4 accent-blue-600"
                     checked={trafficOn}
                     onChange={e => persistTraffic(e.target.checked)}
+                  />
+                </label>
+                <label className="flex w-full cursor-pointer items-center justify-between rounded-xl px-3 py-2 text-sm text-slate-800 hover:bg-slate-100">
+                  <span className="flex flex-col">
+                    <span className="font-semibold">Heatmap</span>
+                    <span className="text-[11px] font-normal text-slate-500">Density of flooded zones</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-blue-600"
+                    checked={heatmapOn}
+                    onChange={e => persistHeatmap(e.target.checked)}
+                  />
+                </label>
+                <div className="my-1 h-px bg-slate-200" />
+                <p className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  Accessibility
+                </p>
+                <label className="flex w-full cursor-pointer items-center justify-between rounded-xl px-3 py-2 text-sm text-slate-800 hover:bg-slate-100">
+                  <span className="flex flex-col">
+                    <span className="font-semibold">High contrast</span>
+                    <span className="text-[11px] font-normal text-slate-500">Bolder zone borders, deeper fills</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-blue-600"
+                    checked={highContrast}
+                    onChange={e => persistHighContrast(e.target.checked)}
                   />
                 </label>
               </div>
