@@ -62,7 +62,6 @@ export default function NodeBellMenu({
   onSubscribe,
 }: Props) {
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -70,10 +69,25 @@ export default function NodeBellMenu({
   // Anchor the popover under the bell button using viewport-fixed coords
   // so the menu can escape any parent with `overflow-y-auto` (the scroll
   // container around Nodes-in-Radius would otherwise clip it).
+  //
+  // Two behaviours we get right here:
+  //   1. recalcPos is rAF-batched so a fast scroll does not queue dozens
+  //      of state updates per frame.
+  //   2. If the trigger button leaves the viewport (the user scrolls past
+  //      the card), the menu closes itself — otherwise it would float at
+  //      the top of the page far away from its anchor, which is what the
+  //      "menu sticks during scroll" report describes.
   const recalcPos = useCallback(() => {
     const b = buttonRef.current;
     if (!b) return;
     const r = b.getBoundingClientRect();
+    const inViewport =
+      r.bottom > 0 && r.top < window.innerHeight &&
+      r.right  > 0 && r.left < window.innerWidth;
+    if (!inViewport) {
+      setOpen(false);
+      return;
+    }
     const POPOVER_W = 224; // matches w-56
     const margin = 8;
     let left = r.right - POPOVER_W;
@@ -87,12 +101,20 @@ export default function NodeBellMenu({
   useLayoutEffect(() => {
     if (!open) return;
     recalcPos();
-    const onScroll = () => recalcPos();
-    window.addEventListener("scroll", onScroll, true);
-    window.addEventListener("resize", onScroll);
+    let frame: number | null = null;
+    const schedule = () => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        recalcPos();
+      });
+    };
+    window.addEventListener("scroll", schedule, true);
+    window.addEventListener("resize", schedule);
     return () => {
-      window.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("resize", onScroll);
+      window.removeEventListener("scroll", schedule, true);
+      window.removeEventListener("resize", schedule);
+      if (frame !== null) cancelAnimationFrame(frame);
     };
   }, [open, recalcPos]);
 
@@ -132,9 +154,14 @@ export default function NodeBellMenu({
    * when the favourite row exists, so the body never carries pushEnabled.
    * The Java DTO treats missing fields as "no change", so a partial PATCH
    * only flips the keys we send.
+   *
+   * We deliberately do NOT gate this behind the local `busy` flag — the
+   * Java service handles concurrent PATCHes against the same row safely
+   * (each is its own short transaction), and dropping rapid clicks made
+   * the toggles feel laggy. The optimistic update has already moved the
+   * UI; this just persists the intent in the background.
    */
   const persist = useCallback(async (patch: Partial<NodeChannelPrefs>, previous: NodeChannelPrefs) => {
-    setBusy(true);
     try {
       if (!isFavourited) {
         await onSubscribe();
@@ -147,21 +174,17 @@ export default function NodeBellMenu({
     } catch (e) {
       onPrefsChange(previous); // roll back
       toast.error(e instanceof Error ? e.message : "Could not update notifications.");
-    } finally {
-      setBusy(false);
     }
   }, [nodeId, isFavourited, onSubscribe, onPrefsChange]);
 
   const setChannel = useCallback((key: ChannelKey, value: boolean) => {
-    if (busy) return;
     const previous = prefs;
     const next = { ...prefs, [key]: value, pushEnabled: true };
-    onPrefsChange(next);
+    onPrefsChange(next); // optimistic — flips the UI instantly
     void persist({ [key]: value, pushEnabled: true }, previous);
-  }, [busy, prefs, onPrefsChange, persist]);
+  }, [prefs, onPrefsChange, persist]);
 
   const setAllExternal = useCallback((value: boolean) => {
-    if (busy) return;
     const previous = prefs;
     const next: NodeChannelPrefs = {
       emailEnabled: value,
@@ -171,7 +194,7 @@ export default function NodeBellMenu({
     };
     onPrefsChange(next);
     void persist(next, previous);
-  }, [busy, prefs, onPrefsChange, persist]);
+  }, [prefs, onPrefsChange, persist]);
 
   return (
     <>
@@ -229,7 +252,6 @@ export default function NodeBellMenu({
             label="Select all"
             checked={allExternalOn}
             indeterminate={someExternalOn}
-            disabled={busy}
             emphasised
             onChange={(v) => setAllExternal(v)}
           />
@@ -239,7 +261,6 @@ export default function NodeBellMenu({
               key={ch.key}
               label={ch.label}
               checked={prefs[ch.key]}
-              disabled={busy}
               onChange={(v) => setChannel(ch.key, v)}
             />
           ))}
@@ -254,14 +275,12 @@ function ChannelRow({
   label,
   checked,
   indeterminate,
-  disabled,
   emphasised,
   onChange,
 }: {
   label: string;
   checked: boolean;
   indeterminate?: boolean;
-  disabled?: boolean;
   /** Bold the row label — used for the master "Select all" row. */
   emphasised?: boolean;
   onChange: (next: boolean) => void;
@@ -274,11 +293,7 @@ function ChannelRow({
   }, [indeterminate]);
 
   return (
-    <label
-      className={`flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-xs transition ${
-        disabled ? "opacity-60" : "hover:bg-[var(--color-hover)] cursor-pointer"
-      }`}
-    >
+    <label className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-xs transition hover:bg-[var(--color-hover)] cursor-pointer">
       <span className={`${emphasised ? "font-semibold" : ""} text-[var(--color-text)]`}>
         {label}
       </span>
@@ -286,7 +301,6 @@ function ChannelRow({
         ref={inputRef}
         type="checkbox"
         checked={checked}
-        disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
         className="h-4 w-4 cursor-pointer rounded accent-[var(--color-brand)]"
         aria-label={label}
