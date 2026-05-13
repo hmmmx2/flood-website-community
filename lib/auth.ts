@@ -26,6 +26,25 @@ export function sessionToAuthUser(user: {
   };
 }
 
+/**
+ * Compact a count to a short social-media style label: 1234 → "1.2k",
+ * 1_500_000 → "1.5M". Numbers below 1000 render as-is. Negative
+ * inputs are clamped to zero — vote / like / comment counts should
+ * never be presented as negative even if the API drifts.
+ *
+ * Used by PostCard / CommentItem (and anywhere we display a count
+ * that could grow into the thousands). Centralised so the format is
+ * consistent across the app.
+ */
+export function compactCount(n: number): string {
+  const v = Math.max(0, n | 0);
+  if (v < 1000) return String(v);
+  if (v < 10_000) return (v / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+  if (v < 1_000_000) return Math.round(v / 1000) + "k";
+  if (v < 10_000_000) return (v / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  return Math.round(v / 1_000_000) + "M";
+}
+
 export function getInitials(name: string): string {
   return name
     .split(" ")
