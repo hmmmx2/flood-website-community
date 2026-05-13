@@ -113,6 +113,13 @@ export function aggregateZones(rows: RawSensorRow[]): Zone[] {
 
     out.push({
       id: stableNodeKey(r),
+      // The original `nodeId` IS forwarded server-side so the bell-menu
+      // in the "Nearby flood points" panel can subscribe / unsubscribe
+      // this node via the existing /api/favourites endpoint. The UI
+      // never renders this value as text — it's only ever passed to
+      // the favourites API as an opaque subscription key. The previous
+      // privacy promise stands: a casual visitor never reads it.
+      nodeId: r.nodeId,
       // We still surface area/state because filters and the place card
       // use them for a coarse "where is this?" label. We do NOT surface
       // the node's own `name` field — that often encodes the original

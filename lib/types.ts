@@ -76,22 +76,30 @@ export type FloodLevel = 0 | 1 | 2 | 3;
 export type ZoneSensorBand = "single" | "few" | "many";
 
 export type Zone = {
-  /** Stable, derived from (state|area) — never a sensor / node id. */
+  /** Hashed key for React rendering. Never the raw uuid / node_id. */
   id: string;
-  /** Display name (e.g. "Tabuan Jaya"). */
+  /**
+   * Subscription identifier — opaque to the user but accepted by the
+   * favourites API so the bell menu can mute / unmute this node
+   * without ever displaying its identity. Present only when the row
+   * came from the live `nodes` table; the UI MUST NOT render this
+   * value as text anywhere.
+   */
+  nodeId?: string;
+  /** Display name. Currently the row's `area`. Never the row's `name` (often encodes node_id). */
   name: string;
   state: string;
   area: string;
-  /** Rounded to 3 d.p. (~110 m) before it ever leaves the server. */
+  /** Rounded to 4 d.p. (~11 m) before it ever leaves the server. */
   centroidLat: number;
   centroidLng: number;
-  /** Clamped to >= 800 m so a single-sensor zone can't shrink to a point. */
+  /** Fixed per-node visualisation radius (250 m). */
   radiusM: number;
   worstLevel: FloodLevel;
   anyOffline: boolean;
-  /** When true, every member sensor in the zone is offline. */
+  /** Per-node: true iff this node is offline. */
   allOffline: boolean;
-  /** Coarse cluster-size band — the raw `sensorCount` is never published. */
+  /** Always "single" — kept for backward-compat with downstream code. */
   sensorBand: ZoneSensorBand;
   lastUpdated?: string;
 };

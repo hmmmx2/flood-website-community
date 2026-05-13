@@ -245,16 +245,17 @@ export default function DirectionsPanel({
       <aside
         role="dialog"
         aria-label="Directions"
-        // Desktop right offset = max(1rem, distance from viewport
-        // right edge to the page container's right edge). On a 1920 px
-        // screen with the max-w-7xl (1280 px) container, that lands
-        // the panel flush against the map's right edge inside the
-        // container's px-6 padding — instead of floating in the dark
-        // space outside the container. On narrow viewports it clamps
-        // to 1 rem so the panel never falls off-screen.
+        // Desktop right offset is driven by --map-panel-right (set in
+        // app/flood-map/page.tsx via a resize listener) so the panel
+        // lands flush against the map card's right edge inside the
+        // max-w-7xl page container — not in the dark space at the
+        // viewport edge. Using a CSS variable instead of a Tailwind
+        // arbitrary value with calc()/max() is more robust under
+        // JIT class scanning on Vercel.
+        style={open ? { right: "var(--map-panel-right, 1rem)" } : undefined}
         className={`fixed z-40 bg-[var(--color-card)] shadow-2xl ring-1 ring-black/10 transition-transform duration-200
           inset-x-0 bottom-0 rounded-t-2xl max-h-[80vh] overflow-y-auto
-          sm:inset-x-auto sm:right-[max(1rem,calc((100vw-80rem)/2+1.5rem))] sm:top-24 sm:bottom-auto sm:w-[360px] sm:rounded-2xl sm:max-h-[calc(100vh-8rem)]
+          sm:inset-x-auto sm:top-24 sm:bottom-auto sm:w-[360px] sm:rounded-2xl sm:max-h-[calc(100vh-8rem)]
           lg:w-[400px]
           ${
             open

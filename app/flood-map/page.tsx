@@ -8,6 +8,7 @@ import SearchModal from "@/components/SearchModal";
 import { SearchField } from "@/components/ui/search-field";
 import NodeMap, { STATUS_HEX } from "@/components/NodeMap";
 import SavedLocationsPanel, { type SavedLocationsPanelHandle } from "@/components/SavedLocationsPanel";
+import NodeBellMenu, { type NodeChannelPrefs } from "@/components/NodeBellMenu";
 import ShortcutsModal from "@/components/flood-map/ShortcutsModal";
 import PlaceCard, { type PlaceCardModel } from "@/components/flood-map/PlaceCard";
 import DirectionsPanel, { type DirectionsRequest } from "@/components/flood-map/DirectionsPanel";
@@ -16,7 +17,7 @@ import type { ScoredRoute } from "@/lib/useFloodAwareRoute";
 import toast from "react-hot-toast";
 import { useSession, signOut } from "next-auth/react";
 import { sessionToAuthUser } from "@/lib/auth";
-import { fetchJson } from "@/lib/fetchJson";
+import { fetchJson, authFetchJson } from "@/lib/fetchJson";
 import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
 import { PAGE_CONTAINER } from "@/lib/layout";
 import type { FloodLevel, Zone } from "@/lib/types";
@@ -203,6 +204,114 @@ export default function FloodMapPage() {
     setDirectionsRequest(req);
     setDirectionsOpen(true);
   }
+
+  // ── Side-panel offset (PlaceCard / DirectionsPanel) ───────────────────────
+  // The Tailwind arbitrary value `right-[max(1rem,calc(…))]` was getting
+  // stripped at build time on Vercel (calc + max inside a square-bracket
+  // arbitrary class isn't always picked up by the JIT). We instead set a
+  // single CSS custom property — `--map-panel-right` — on the document
+  // root and the panels read it via Tailwind's `var(...)` arbitrary
+  // value. The variable resolves to the distance from the viewport
+  // right edge to the map card's right edge so the panels sit flush
+  // against the map regardless of screen width.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const PAGE_MAX_PX = 1280;     // matches max-w-7xl
+    const PAGE_PAD_PX = 24;       // matches px-6
+    const FALLBACK_PX = 16;       // 1 rem when the viewport is narrow
+    const recompute = () => {
+      const w = window.innerWidth;
+      const offset = w <= PAGE_MAX_PX
+        ? FALLBACK_PX
+        : Math.floor((w - PAGE_MAX_PX) / 2 + PAGE_PAD_PX);
+      document.documentElement.style.setProperty(
+        "--map-panel-right",
+        `${offset}px`,
+      );
+    };
+    recompute();
+    window.addEventListener("resize", recompute);
+    return () => window.removeEventListener("resize", recompute);
+  }, []);
+
+  // ── Favourite nodes (per-sensor notification preferences) ──────────────────
+  // Restored: previously the "Nodes in Radius" panel had a bell-menu on
+  // each sensor row that toggled Email / SMS / WhatsApp per node. The
+  // pivot to anonymous-circle rendering hid that UI; the bell is back
+  // now, keyed by the (server-only) nodeId the BFF aggregator forwards
+  // alongside each Zone. The user never sees the nodeId — it's an
+  // opaque subscription handle passed to the existing favourites API.
+  const [favIds, setFavIds] = useState<Set<string>>(new Set());
+  const [favChannelPrefs, setFavChannelPrefs] = useState<
+    Record<string, NodeChannelPrefs>
+  >({});
+  const DEFAULT_NODE_PREFS: NodeChannelPrefs = {
+    emailEnabled: true,
+    smsEnabled: true,
+    whatsappEnabled: true,
+    pushEnabled: true,
+  };
+  const sessionUserId = session?.user?.id ?? null;
+  useEffect(() => {
+    if (!sessionUserId) {
+      setFavIds(new Set());
+      setFavChannelPrefs({});
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        type Fav = {
+          nodeId?: string;
+          emailEnabled?: boolean;
+          smsEnabled?: boolean;
+          whatsappEnabled?: boolean;
+          pushEnabled?: boolean;
+        };
+        const data = await authFetchJson<Fav[]>("/api/favourites");
+        if (cancelled) return;
+        const ids = new Set<string>();
+        const prefs: Record<string, NodeChannelPrefs> = {};
+        for (const f of data) {
+          if (typeof f.nodeId !== "string" || f.nodeId.length === 0) continue;
+          ids.add(f.nodeId);
+          prefs[f.nodeId] = {
+            emailEnabled:    f.emailEnabled    ?? true,
+            smsEnabled:      f.smsEnabled      ?? true,
+            whatsappEnabled: f.whatsappEnabled ?? true,
+            pushEnabled:     f.pushEnabled     ?? true,
+          };
+        }
+        setFavIds(ids);
+        setFavChannelPrefs(prefs);
+      } catch { /* non-critical */ }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionUserId]);
+
+  const subscribeNode = useCallback(async (nodeId: string) => {
+    if (favIds.has(nodeId)) return;
+    await authFetchJson("/api/favourites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nodeId }),
+    });
+    setFavIds(prev => {
+      const next = new Set(prev);
+      next.add(nodeId);
+      return next;
+    });
+    setFavChannelPrefs(prev =>
+      prev[nodeId] ? prev : { ...prev, [nodeId]: DEFAULT_NODE_PREFS },
+    );
+  }, [favIds]);
+
+  const updateChannelPrefs = useCallback(
+    (nodeId: string, next: NodeChannelPrefs) => {
+      setFavChannelPrefs(prev => ({ ...prev, [nodeId]: next }));
+    },
+    [],
+  );
 
   // Auto-centre the map on the user's current position the first time
   // they land here. Browser auto-prompts for permission. We never poll
@@ -657,6 +766,117 @@ export default function FloodMapPage() {
               openPlaceCard({ kind: "zone", zone: z });
             }}
           />
+        )}
+
+        {/* ── Nearby flood points — per-node bell-menu list ─────────────────
+            Restores the previous design where each sensor within a
+            saved-place radius can be muted / unmuted individually and
+            its per-channel notification preferences toggled. The list
+            never renders the node identifier — only the area, the
+            distance, the status pill, and the bell. */}
+        {user && placesWithStatus.some(p => p.items.length > 0) && (
+          <section className={card + " p-4"}>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--color-text)]">
+                  Nearby flood points
+                </h3>
+                <p className="text-[11px] text-[var(--color-muted)] mt-0.5">
+                  Tap the bell on any point to choose the channels that
+                  alert you when it triggers.
+                </p>
+              </div>
+            </div>
+            <div className="space-y-4">
+              {placesWithStatus.map(({ place, items }) => (
+                <div
+                  key={place.id}
+                  className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-input-bg)] p-3"
+                >
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-text)] truncate min-w-0">
+                      <span
+                        aria-hidden
+                        className="inline-block h-2 w-2 rounded-full bg-[var(--color-brand)]"
+                      />
+                      <span className="truncate">{place.label}</span>
+                    </p>
+                    <span className="rounded-full bg-[var(--color-card)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-muted)] border border-[var(--color-border)]">
+                      {items.length} · {place.alertRadiusKm} km
+                    </span>
+                  </div>
+                  {items.length === 0 ? (
+                    <p className="rounded-lg bg-[var(--color-card)] px-3 py-2 text-[11px] text-[var(--color-muted)]">
+                      No flood points within the radius{activeFilterCount > 0 ? " match the active filters" : ""}.
+                    </p>
+                  ) : (
+                    <ul
+                      className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-2 max-h-[280px] overflow-y-auto pr-1"
+                      style={{ scrollbarWidth: "thin" }}
+                    >
+                      {items.map(({ z, d }) => {
+                        // Bell needs the server-only nodeId. Without
+                        // it, this node can't be subscribed (older
+                        // BFF response) — render the row without a
+                        // bell rather than hiding it entirely.
+                        const subId = z.nodeId;
+                        const isFav = subId ? favIds.has(subId) : false;
+                        const prefs = subId
+                          ? (favChannelPrefs[subId] ?? DEFAULT_NODE_PREFS)
+                          : DEFAULT_NODE_PREFS;
+                        const statusHex = z.allOffline
+                          ? OFFLINE_HEX
+                          : STATUS_HEX[z.worstLevel];
+                        const statusLabel = z.allOffline
+                          ? "Offline"
+                          : LEVEL_LABEL[z.worstLevel];
+                        return (
+                          <li
+                            key={z.id}
+                            className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-2.5 transition-colors hover:border-[var(--color-brand)]"
+                          >
+                            <div className="flex items-start justify-between gap-1.5 mb-1.5">
+                              <span
+                                className="mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                                style={{ backgroundColor: statusHex }}
+                                aria-hidden
+                              />
+                              {subId && (
+                                <NodeBellMenu
+                                  nodeId={subId}
+                                  isFavourited={isFav}
+                                  prefs={prefs}
+                                  onPrefsChange={(next) =>
+                                    updateChannelPrefs(subId, next)
+                                  }
+                                  onSubscribe={() => subscribeNode(subId)}
+                                />
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                focusOnPoint(z.centroidLat, z.centroidLng, 14);
+                                openPlaceCard({ kind: "zone", zone: z });
+                              }}
+                              className="block w-full text-left"
+                            >
+                              <p className="truncate text-xs font-semibold text-[var(--color-text)]">
+                                Flood point
+                              </p>
+                              <p className="truncate text-[10px] text-[var(--color-muted)] mt-0.5">
+                                {statusLabel} · {d.toFixed(1)} km · {z.area}
+                              </p>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
         )}
 
         {/* ── Filter panel ─────────────────────────────────────────────────── */}

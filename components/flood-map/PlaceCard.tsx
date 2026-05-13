@@ -144,13 +144,15 @@ export default function PlaceCard({ open, model, onSave, onShare, onDirections, 
         role="dialog"
         aria-modal="false"
         aria-label={isPlace ? "Place details" : "Flood zone details"}
+        style={open ? { right: "var(--map-panel-right, 1rem)" } : undefined}
         className={`fixed z-40 bg-[var(--color-card)] shadow-2xl ring-1 ring-black/10 transition-transform duration-200
           /* Mobile: bottom sheet */
           inset-x-0 bottom-0 rounded-t-2xl
           /* Desktop: right-side card sitting flush against the map's
              right edge (inside the max-w-7xl page container) rather
-             than the viewport edge. See DirectionsPanel for the math. */
-          sm:inset-x-auto sm:right-[max(1rem,calc((100vw-80rem)/2+1.5rem))] sm:top-24 sm:bottom-auto sm:w-[360px] sm:rounded-2xl
+             than the viewport edge. The right offset is supplied by
+             the --map-panel-right CSS variable (see flood-map/page.tsx). */
+          sm:inset-x-auto sm:top-24 sm:bottom-auto sm:w-[360px] sm:rounded-2xl
           ${
             open
               ? "translate-y-0 sm:translate-x-0"
