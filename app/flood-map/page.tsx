@@ -11,6 +11,7 @@ import SavedLocationsPanel, { type SavedLocationsPanelHandle } from "@/component
 import ShortcutsModal from "@/components/flood-map/ShortcutsModal";
 import PlaceCard, { type PlaceCardModel } from "@/components/flood-map/PlaceCard";
 import DirectionsPanel, { type DirectionsRequest } from "@/components/flood-map/DirectionsPanel";
+import SavedPlaceStatusRow, { type SavedPlaceWithStatus } from "@/components/flood-map/SavedPlaceStatusRow";
 import type { ScoredRoute } from "@/lib/useFloodAwareRoute";
 import toast from "react-hot-toast";
 import { useSession, signOut } from "next-auth/react";
@@ -284,6 +285,8 @@ export default function FloodMapPage() {
   }, []);
 
   // ── Saved locations — sourced from SavedLocationsPanel via callback ───────
+  // Raw shape (no status). The status-decorated view that goes to the
+  // map is derived below from `placesWithStatus`.
   const [savedLocations, setSavedLocations] = useState<{
     id: string; label: string; latitude: number; longitude: number; alertRadiusKm: number;
   }[]>([]);
@@ -439,6 +442,8 @@ export default function FloodMapPage() {
     return r;
   }, [zones, filterState, filterCity, filterStatuses, searchQuery]);
 
+  // (savedLocationsForMap moved below placesWithStatus — see further down.)
+
   // Worst status visible inside the current viewport (P1-12). Uses the
   // bounds the map gives us on `idle`. Falls back to "all zones" when
   // we don't have a viewport yet (initial mount) so the pill still
@@ -499,7 +504,9 @@ export default function FloodMapPage() {
 
   // For each saved place, compute the zones within its radius — sorted
   // by distance to the rounded zone centroid (never to a sensor).
-  const zonesByPlace = useMemo(() => {
+  // The returned shape is what the SavedPlaceStatusRow (S6-1 + S6-5)
+  // and the on-map status halo (S6-2) both read.
+  const placesWithStatus = useMemo<SavedPlaceWithStatus[]>(() => {
     if (savedLocations.length === 0) return [];
     return savedLocations.map(place => {
       const matched = filteredZones
@@ -509,9 +516,54 @@ export default function FloodMapPage() {
         }))
         .filter(({ d }) => d <= place.alertRadiusKm)
         .sort((a, b) => a.d - b.d);
-      return { place, items: matched };
+      let worst: FloodLevel = 0;
+      let anyOffline = false;
+      let allOffline = matched.length > 0;
+      let newestUpdate: string | undefined;
+      for (const { z } of matched) {
+        if (z.allOffline) anyOffline = true;
+        else allOffline = false;
+        if (!z.allOffline && z.worstLevel > worst) worst = z.worstLevel;
+        if (!z.allOffline && z.anyOffline) anyOffline = true;
+        if (z.lastUpdated && (!newestUpdate || z.lastUpdated > newestUpdate)) {
+          newestUpdate = z.lastUpdated;
+        }
+      }
+      return {
+        place: {
+          id: place.id,
+          label: place.label,
+          latitude: place.latitude,
+          longitude: place.longitude,
+          alertRadiusKm: place.alertRadiusKm,
+        },
+        items: matched,
+        worstLevel: worst,
+        anyOffline,
+        allOffline,
+        newestUpdate,
+      };
     });
   }, [savedLocations, filteredZones]);
+
+  // Map gets the status-decorated saved locations so the on-map pin
+  // halo and radius colour can follow the worst flood status nearby
+  // (S6-2 + S6-3). When zones are still loading, status defaults to
+  // "clear" (blue) — gentlest fallback.
+  const savedLocationsForMap = useMemo(() =>
+    placesWithStatus.length === savedLocations.length
+      ? placesWithStatus.map(p => ({
+          id: p.place.id,
+          label: p.place.label,
+          latitude: p.place.latitude,
+          longitude: p.place.longitude,
+          alertRadiusKm: p.place.alertRadiusKm,
+          worstLevel: p.worstLevel,
+          allOffline: p.allOffline,
+        }))
+      : savedLocations,
+    [placesWithStatus, savedLocations],
+  );
 
   // ── Stats ──────────────────────────────────────────────────────────────────
   const stats = useMemo(() => ({
@@ -549,7 +601,15 @@ export default function FloodMapPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            {lastFetch && (
+            {loading && !lastFetch ? (
+              <div className="flex items-center gap-2" aria-live="polite">
+                <span
+                  className={`h-3 w-3 rounded-full border-2 border-[var(--color-border)] border-t-[var(--color-brand)] ${reducedMotion ? "" : "animate-spin"}`}
+                  aria-hidden
+                />
+                <span className="text-xs text-[var(--color-muted)]">Loading flood zones…</span>
+              </div>
+            ) : lastFetch ? (
               <div className="flex items-center gap-2" aria-live="polite">
                 <span
                   className={`h-2 w-2 rounded-full bg-green-500 ${reducedMotion ? "" : "animate-pulse"}`}
@@ -559,7 +619,7 @@ export default function FloodMapPage() {
                   Live · Updated {lastFetch.toLocaleTimeString()}
                 </span>
               </div>
-            )}
+            ) : null}
             <button
               type="button"
               onClick={() => void fetchZones()}
@@ -570,6 +630,34 @@ export default function FloodMapPage() {
             </button>
           </div>
         </header>
+
+        {/* ── Saved-place status row (S6-1 / S6-5 / S6-6) ─────────────────────
+            First thing under the page header — answers "am I safe?"
+            at a glance, expands inline to the per-zone list, and falls
+            back to a nudge card for users who haven't saved a place. */}
+        {user && (
+          <SavedPlaceStatusRow
+            placesWithStatus={placesWithStatus}
+            isEmpty={savedLocations.length === 0}
+            hasMyLocation={!!myLocation}
+            reducedMotion={reducedMotion}
+            onAddCurrentLocation={() => {
+              if (!myLocation) {
+                requestGeolocation();
+                return;
+              }
+              // Reuse the right-click + reverse-geocode flow that
+              // already exists; the editor will reverse-geocode on its
+              // own when the saved-place address field is left blank.
+              void handleMapRightClick(myLocation.lat, myLocation.lng);
+            }}
+            onFocus={(lat, lng, zoom = 13) => focusOnPoint(lat, lng, zoom)}
+            onFocusZone={(z) => {
+              focusOnPoint(z.centroidLat, z.centroidLng, 14);
+              openPlaceCard({ kind: "zone", zone: z });
+            }}
+          />
+        )}
 
         {/* ── Filter panel ─────────────────────────────────────────────────── */}
         <div className={card}>
@@ -714,14 +802,12 @@ export default function FloodMapPage() {
         </div>
 
         {/* ── Loading / error ───────────────────────────────────────────────── */}
-        {loading ? (
-          <div className="flex min-h-[400px] items-center justify-center">
-            <div className="flex flex-col items-center gap-4">
-              <div className="h-12 w-12 animate-spin rounded-full border-4 border-[var(--color-border)] border-t-[var(--color-brand)]" />
-              <p className="text-sm font-medium text-[var(--color-muted)]">Loading flood zones…</p>
-            </div>
-          </div>
-        ) : fetchError ? (
+        {/* While loading we used to replace the whole content with a
+            spinner — that meant the user saw "nothing happening". Now
+            the map mounts immediately with a skeleton (S6-7) and the
+            spinner becomes a small overlay chip so the page already
+            looks alive. */}
+        {fetchError ? (
           <div className="flex min-h-[400px] items-center justify-center">
             <div className={`${card} p-8 text-center max-w-sm w-full`}>
               <AlertTriangleIcon className="h-10 w-10 text-red-400 mx-auto mb-4" />
@@ -814,7 +900,7 @@ export default function FloodMapPage() {
                     focusOnPoint(z.centroidLat, z.centroidLng, 13);
                     openPlaceCard({ kind: "zone", zone: z });
                   }}
-                  savedLocations={savedLocations}
+                  savedLocations={savedLocationsForMap}
                   myLocation={myLocation}
                   onRecenterRequest={requestGeolocation}
                   onViewportChanged={setViewport}
@@ -822,6 +908,7 @@ export default function FloodMapPage() {
                   onOpenDirections={() => openDirections(null)}
                   routes={activeRoutes}
                   selectedRouteIndex={selectedRouteIndex}
+                  isFirstLoad={loading}
                 />
               </div>
 
@@ -871,101 +958,21 @@ export default function FloodMapPage() {
               </div>
             </article>
 
-            {/* ── Below-map stack: My Saved Places + Zones in Radius ───────── */}
+            {/* SavedLocationsPanel — full CRUD list for managing
+                saved places (edit radius, delete, etc.). The legacy
+                "Zones in Radius" card that lived here has been folded
+                into <SavedPlaceStatusRow> above the filters (S6-5);
+                this section keeps just the editor list. */}
             {user && (
-              <div className="flex flex-col gap-5">
-
-                <SavedLocationsPanel
-                  ref={savedLocationsRef}
-                  onFocusLocation={(lat, lng) => focusOnPoint(lat, lng, 14)}
-                  onLocationsChange={(locs) => setSavedLocations(locs.map(l => ({
-                    id: l.id, label: l.label,
-                    latitude: l.latitude, longitude: l.longitude,
-                    alertRadiusKm: l.alertRadiusKm,
-                  })))}
-                />
-
-                {zonesByPlace.length > 0 && (
-                  <div className={card + " p-4"}>
-                    <div className="flex items-center justify-between mb-3">
-                      <div>
-                        <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--color-text)]">
-                          Zones in Radius
-                        </h3>
-                        <p className="text-[11px] text-[var(--color-muted)] mt-0.5">
-                          Aggregated flood zones inside each of your saved places{activeFilterCount > 0 ? " (filtered)" : ""}.
-                          Click a zone to focus the map.
-                        </p>
-                      </div>
-                      {activeFilterCount > 0 && (
-                        <button
-                          type="button"
-                          onClick={clearAllFilters}
-                          className="rounded-full bg-[var(--color-input-bg)] px-3 py-1 text-[11px] font-semibold text-[var(--color-brand)] hover:bg-[var(--color-hover)]"
-                        >
-                          Clear filters
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="space-y-4">
-                      {zonesByPlace.map(({ place, items }) => (
-                        <div
-                          key={place.id}
-                          className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-input-bg)] p-3"
-                        >
-                          <div className="mb-2 flex items-center justify-between gap-2">
-                            <p className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-text)] truncate min-w-0">
-                              <MapPinIcon className="h-3.5 w-3.5 flex-shrink-0 text-[var(--color-brand)]" />
-                              <span className="truncate">{place.label}</span>
-                            </p>
-                            <span className="rounded-full bg-[var(--color-card)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-muted)] border border-[var(--color-border)]">
-                              {items.length} · {place.alertRadiusKm} km
-                            </span>
-                          </div>
-                          {items.length === 0 ? (
-                            <p className="rounded-lg bg-[var(--color-card)] px-3 py-2 text-[11px] text-[var(--color-muted)]">
-                              No flood zones within the radius{activeFilterCount > 0 ? " match the active filters" : ""}.
-                            </p>
-                          ) : (
-                            <ul
-                              className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-2 max-h-[280px] overflow-y-auto pr-1"
-                              style={{ scrollbarWidth: "thin" }}
-                            >
-                              {items.map(({ z, d }) => (
-                                <li
-                                  key={z.id}
-                                  className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-2.5 transition-colors hover:border-[var(--color-brand)]"
-                                >
-                                  <div className="flex items-start justify-between gap-1.5 mb-1.5">
-                                    <span
-                                      className="mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full"
-                                      style={{ backgroundColor: zoneStatusHex(z) }}
-                                      aria-hidden
-                                    />
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => focusOnPoint(z.centroidLat, z.centroidLng, 14)}
-                                    className="block w-full text-left"
-                                  >
-                                    <p className="truncate text-xs font-semibold text-[var(--color-text)]">
-                                      {z.name || z.area || "Zone"}
-                                    </p>
-                                    <p className="truncate text-[10px] text-[var(--color-muted)] mt-0.5">
-                                      {zoneStatusLabel(z)} · {d.toFixed(1)} km
-                                    </p>
-                                  </button>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
+              <SavedLocationsPanel
+                ref={savedLocationsRef}
+                onFocusLocation={(lat, lng) => focusOnPoint(lat, lng, 14)}
+                onLocationsChange={(locs) => setSavedLocations(locs.map(l => ({
+                  id: l.id, label: l.label,
+                  latitude: l.latitude, longitude: l.longitude,
+                  alertRadiusKm: l.alertRadiusKm,
+                })))}
+              />
             )}
           </div>
         )}

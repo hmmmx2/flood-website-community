@@ -56,7 +56,57 @@ export type MapSavedLocation = {
   latitude: number;
   longitude: number;
   alertRadiusKm: number;
+  /** Worst flood level across zones inside this place's radius. */
+  worstLevel?: FloodLevel;
+  /** True when every in-radius zone is offline. */
+  allOffline?: boolean;
 };
+
+function placeStatusHex(loc: MapSavedLocation): string {
+  if (loc.allOffline) return "#6b7280";
+  switch (loc.worstLevel) {
+    case 3: return "#dc2626";
+    case 2: return "#f97316";
+    case 1: return "#facc15";
+    default: return "#2563eb"; // clear → the saved-place blue
+  }
+}
+
+/**
+ * SVG data-URL for the saved-place marker — a coloured halo behind a
+ * blue house. The halo colour reflects the worst flood status of
+ * zones inside the place's radius (S6-2). `inRadiusHasFlood` thickens
+ * the ring stroke so risky places jump out more.
+ */
+function placePinSvgUrl(statusColor: string, inRadiusHasFlood: boolean): string {
+  const ringStroke = inRadiusHasFlood ? 4 : 3;
+  const ringOpacity = inRadiusHasFlood ? 0.95 : 0.7;
+  const haloOpacity = inRadiusHasFlood ? 0.22 : 0.16;
+  const svg =
+    `<svg xmlns='http://www.w3.org/2000/svg' width='44' height='48' viewBox='0 0 44 48'>` +
+      `<circle cx='22' cy='22' r='20' fill='${statusColor}' fill-opacity='${haloOpacity}'/>` +
+      `<circle cx='22' cy='22' r='17.5' fill='none' stroke='${statusColor}' stroke-width='${ringStroke}' stroke-opacity='${ringOpacity}'/>` +
+      `<path d='M11 24 L22 13 L33 24 L33 35 L25 35 L25 27 L19 27 L19 35 L11 35 Z' fill='#2563eb' stroke='white' stroke-width='2'/>` +
+    `</svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+/**
+ * Renders a small text label as a Google Maps Marker SVG. Used by S6-3
+ * to label each saved-place radius with "Home · 5 km alert" at zoom
+ * 12+. Pure: no Google APIs at module init.
+ */
+function placeLabelSvgUrl(text: string): string {
+  const safe = text.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const w = Math.min(220, 28 + safe.length * 7);
+  const svg =
+    `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='22' viewBox='0 0 ${w} 22'>` +
+      `<rect x='0' y='1' width='${w}' height='20' rx='10' fill='white' stroke='#d4d4d8' stroke-width='1'/>` +
+      `<text x='${w / 2}' y='15' text-anchor='middle' font-family='-apple-system, system-ui, sans-serif' ` +
+      `font-size='11' font-weight='600' fill='#0f172a'>${safe}</text>` +
+    `</svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
 
 type MapTypeKey = "roadmap" | "satellite" | "hybrid" | "terrain";
 
@@ -160,6 +210,13 @@ type NodeMapProps = {
    */
   onZoneClick?: (zone: Zone) => void;
   /**
+   * True on the very first `/api/zones` fetch — the map renders
+   * skeleton greyed-out circles at default city centres so the user
+   * sees "this surface shows flood zones as circles" before any data
+   * arrives (S6-7). Set back to false once the first poll resolves.
+   */
+  isFirstLoad?: boolean;
+  /**
    * Fires when the user taps the Directions floating button. The page
    * is responsible for opening the panel; the map just provides the
    * affordance. Hidden when no handler is provided.
@@ -191,6 +248,7 @@ export default function NodeMap({
   onOpenDirections,
   routes = null,
   selectedRouteIndex = 0,
+  isFirstLoad = false,
 }: NodeMapProps) {
   const [mapError, setMapError] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -391,6 +449,10 @@ export default function NodeMap({
     map.addListener("heading_changed", () => {
       setHeading(map.getHeading() ?? 0);
     });
+    map.addListener("zoom_changed", () => {
+      setCurrentZoom(map.getZoom() ?? defaultZoom);
+    });
+    setCurrentZoom(map.getZoom() ?? defaultZoom);
     // `idle` fires once after pan + zoom settle. We forward the
     // viewport up so the page can render the rollup pill (P1-12)
     // and so Share-view can capture the user's current frame.
@@ -400,16 +462,19 @@ export default function NodeMap({
       if (!c || !b) return;
       const ne = b.getNorthEast();
       const sw = b.getSouthWest();
+      const nextBounds = {
+        north: ne.lat(),
+        south: sw.lat(),
+        east: ne.lng(),
+        west: sw.lng(),
+      };
+      // Keep a local copy for the out-of-viewport pill (S6-4).
+      setLocalViewport(nextBounds);
       onViewportChangedRef.current?.({
         centerLat: c.lat(),
         centerLng: c.lng(),
         zoom: map.getZoom() ?? 11,
-        bounds: {
-          north: ne.lat(),
-          south: sw.lat(),
-          east: ne.lng(),
-          west: sw.lng(),
-        },
+        bounds: nextBounds,
       });
     });
     const pending = focusLatLngRef.current;
@@ -469,18 +534,60 @@ export default function NodeMap({
     onPlaceSelect?.(lat, lng, name);
   }, [onPlaceSelect]);
 
-  const savedPlaceIcon: google.maps.Symbol | undefined = useMemo(() => {
-    if (typeof google === "undefined" || !isLoaded) return undefined;
+  // Per-place icon built on the fly so the colour can follow the
+  // worst flood status inside the radius. We memoise the actual google
+  // Size + Point objects so they aren't churned every render.
+  const placeIconSize = useMemo(() => {
+    if (typeof google === "undefined" || !isLoaded) return null;
     return {
-      path: "M3 12L12 3L21 12V21H14V14H10V21H3V12Z",
-      fillColor: "#2563eb",
-      fillOpacity: 0.95,
-      strokeColor: "#ffffff",
-      strokeWeight: 2,
-      scale: 1.6,
-      anchor: new google.maps.Point(12, 21),
+      size: new google.maps.Size(44, 48),
+      anchor: new google.maps.Point(22, 24),
+      labelSize: new google.maps.Size(160, 22),
+      labelAnchor: new google.maps.Point(80, 30),
     };
   }, [isLoaded]);
+
+  // Track zoom so we can hide the "Home · 5 km" label at regional
+  // zooms where it would clutter the map. (We listen to zoom_changed
+  // in onMapLoad; this state is the latest known zoom.)
+  const [currentZoom, setCurrentZoom] = useState(defaultZoom);
+
+  // ── Out-of-viewport rollup pill (S6-4) ────────────────────────────────────
+  // Tracks the current map bounds so we can detect "the dataset has
+  // risky zones, but none of them are visible right now". The pill
+  // self-dismisses on tap (60 s grace window via dismissedAt).
+  const [localViewport, setLocalViewport] = useState<{
+    north: number; south: number; east: number; west: number;
+  } | null>(null);
+  const [outOfViewportDismissedAt, setOutOfViewportDismissedAt] = useState<number>(0);
+  const outOfViewportRollup = useMemo(() => {
+    if (!localViewport) return null;
+    if (Date.now() - outOfViewportDismissedAt < 60_000) return null;
+    const risky = zones.filter(z => !z.allOffline && z.worstLevel >= 2);
+    if (risky.length === 0) return null;
+    const insideCount = risky.filter(z =>
+      z.centroidLat <= localViewport.north &&
+      z.centroidLat >= localViewport.south &&
+      z.centroidLng <= localViewport.east &&
+      z.centroidLng >= localViewport.west,
+    ).length;
+    if (insideCount > 0) return null;
+    const critical = risky.filter(z => z.worstLevel === 3).length;
+    const warning = risky.filter(z => z.worstLevel === 2).length;
+    return { risky, critical, warning };
+  }, [localViewport, outOfViewportDismissedAt, zones]);
+
+  /** Pan + zoom the map so every Warning+ zone fits in frame. */
+  function fitToRiskyZones() {
+    if (typeof google === "undefined" || !mapRef.current) return;
+    const risky = zones.filter(z => !z.allOffline && z.worstLevel >= 2);
+    if (risky.length === 0) return;
+    const b = new google.maps.LatLngBounds();
+    for (const z of risky) {
+      b.extend(new google.maps.LatLng(z.centroidLat, z.centroidLng));
+    }
+    mapRef.current.fitBounds(b, 80 /* px padding */);
+  }
 
   const searchedPlaceIcon: google.maps.Symbol | undefined = useMemo(() => {
     if (typeof google === "undefined" || !isLoaded) return undefined;
@@ -595,6 +702,34 @@ export default function NodeMap({
       >
         {trafficOn && <TrafficLayer />}
 
+        {/* First-load skeleton (S6-7) — grey placeholder circles at
+            major city centres so the user immediately understands
+            the surface visualises flood zones as circles, before any
+            data has arrived. Hidden the moment a real zone payload
+            lands. */}
+        {isFirstLoad && zones.length === 0 && [
+          { lat: 5.9788, lng: 116.0753, r: 8000 }, // Kota Kinabalu
+          { lat: 1.5533, lng: 110.3592, r: 8000 }, // Kuching
+          { lat: 4.3989, lng: 114.0030, r: 6000 }, // Miri
+          { lat: 5.8403, lng: 118.1179, r: 6000 }, // Sandakan
+          { lat: 2.2900, lng: 111.8290, r: 6000 }, // Sibu
+        ].map((c, i) => (
+          <Circle
+            key={`skel-${i}`}
+            center={{ lat: c.lat, lng: c.lng }}
+            radius={c.r}
+            options={{
+              fillColor: "#94a3b8",
+              fillOpacity: 0.18,
+              strokeColor: "#94a3b8",
+              strokeOpacity: 0.35,
+              strokeWeight: 1,
+              clickable: false,
+              zIndex: 1,
+            }}
+          />
+        ))}
+
         {/* Heatmap (P2-3) — points are zone centroids weighted by
             worst level so Critical clusters glow brighter than Alert.
             Renders below the circles so the per-zone affordances stay
@@ -619,9 +754,16 @@ export default function NodeMap({
             level. Clickable when the page provides `onZoneClick`.
             High-contrast mode darkens the fill + thickens the stroke
             so the categories are still distinguishable for users with
-            colour-vision differences. */}
+            colour-vision differences. Zones whose `lastUpdated` is
+            older than 5 min render at a lower opacity (S6-8). */}
         {zones.map(z => {
           const colour = getZoneColour(z);
+          const stale =
+            z.lastUpdated
+              ? Date.now() - new Date(z.lastUpdated).getTime() > 5 * 60_000
+              : false;
+          const fillOp = highContrast ? 0.55 : 0.35;
+          const strokeOp = highContrast ? 1 : 0.85;
           return (
             <Circle
               key={`zone-${z.id}`}
@@ -630,9 +772,9 @@ export default function NodeMap({
               onClick={onZoneClick ? () => onZoneClick(z) : undefined}
               options={{
                 fillColor: colour,
-                fillOpacity: highContrast ? 0.55 : 0.35,
+                fillOpacity: stale ? fillOp * 0.5 : fillOp,
                 strokeColor: highContrast ? "#0f172a" : colour,
-                strokeOpacity: highContrast ? 1 : 0.85,
+                strokeOpacity: stale ? strokeOp * 0.6 : strokeOp,
                 strokeWeight: highContrast ? 3 : 2,
                 clickable: Boolean(onZoneClick),
                 zIndex: 2,
@@ -742,32 +884,109 @@ export default function NodeMap({
           />
         )}
 
-        {/* Saved-place radius circles + house pins. */}
-        {savedLocations?.map(loc => (
-          <React.Fragment key={`saved-${loc.id}`}>
-            <Circle
-              center={{ lat: loc.latitude, lng: loc.longitude }}
-              radius={loc.alertRadiusKm * 1000}
-              options={{
-                fillColor: "#2563eb",
-                fillOpacity: 0.07,
-                strokeColor: "#2563eb",
-                strokeOpacity: 0.5,
-                strokeWeight: 1.5,
-                clickable: false,
-                zIndex: 0,
-              }}
-            />
-            <Marker
-              position={{ lat: loc.latitude, lng: loc.longitude }}
-              icon={savedPlaceIcon}
-              title={`${loc.label} — alerts within ${loc.alertRadiusKm} km`}
-              clickable={false}
-              zIndex={5}
-            />
-          </React.Fragment>
-        ))}
+        {/* Saved-place radius circles + house pins. Stroke colour
+            follows the worst flood status inside the radius (S6-3) so
+            the map answers "is my home in trouble?" at a glance. A
+            text label sits at the top of the circle at zoom >= 12. */}
+        {savedLocations?.map(loc => {
+          const colour = placeStatusHex(loc);
+          const inRadiusHasFlood =
+            (loc.worstLevel ?? 0) >= 1 && !loc.allOffline;
+          // Tiny offset upward so the label doesn't sit on the centre
+          // pin — places it on the northern edge of the radius circle.
+          const labelOffsetDeg = (loc.alertRadiusKm / 111) * 1.02;
+          return (
+            <React.Fragment key={`saved-${loc.id}`}>
+              <Circle
+                center={{ lat: loc.latitude, lng: loc.longitude }}
+                radius={loc.alertRadiusKm * 1000}
+                options={{
+                  fillColor: colour,
+                  fillOpacity: inRadiusHasFlood ? 0.12 : 0.08,
+                  strokeColor: colour,
+                  strokeOpacity: inRadiusHasFlood ? 0.85 : 0.6,
+                  strokeWeight: inRadiusHasFlood ? 2 : 1.5,
+                  clickable: false,
+                  zIndex: 1,
+                }}
+              />
+              <Marker
+                position={{ lat: loc.latitude, lng: loc.longitude }}
+                icon={
+                  placeIconSize
+                    ? {
+                        url: placePinSvgUrl(colour, inRadiusHasFlood),
+                        scaledSize: placeIconSize.size,
+                        anchor: placeIconSize.anchor,
+                      }
+                    : undefined
+                }
+                title={`${loc.label} — alerts within ${loc.alertRadiusKm} km`}
+                clickable={false}
+                zIndex={5}
+              />
+              {currentZoom >= 12 && placeIconSize && (
+                <Marker
+                  position={{ lat: loc.latitude + labelOffsetDeg, lng: loc.longitude }}
+                  icon={{
+                    url: placeLabelSvgUrl(`${loc.label} · ${loc.alertRadiusKm} km alert`),
+                    scaledSize: placeIconSize.labelSize,
+                    anchor: placeIconSize.labelAnchor,
+                  }}
+                  clickable={false}
+                  zIndex={6}
+                />
+              )}
+            </React.Fragment>
+          );
+        })}
       </GoogleMap>
+
+      {/* Out-of-viewport rollup pill (S6-4) — bottom-left of the map.
+          Surfaces "1 Critical zone outside this view" so a user who's
+          zoomed into a clear area still learns about distant trouble.
+          Tap fits the map to every Warning+ zone; ✕ snoozes the pill
+          for 60 s. */}
+      {outOfViewportRollup && !measuring && (
+        <div className={`absolute z-20 ${isFullscreen ? "bottom-8 left-6" : "bottom-3 left-3"}`}>
+          <div
+            className={`flex items-center gap-2 rounded-full px-3 py-2 shadow-lg ring-1 backdrop-blur-md ${
+              outOfViewportRollup.critical > 0
+                ? "bg-red-600/95 text-white ring-red-700/40"
+                : "bg-orange-500/95 text-white ring-orange-600/40"
+            }`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
+                 className="h-4 w-4">
+              <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+            <button
+              type="button"
+              onClick={fitToRiskyZones}
+              className="text-xs font-bold underline-offset-2 hover:underline"
+            >
+              {outOfViewportRollup.critical > 0
+                ? `${outOfViewportRollup.critical} Critical zone${outOfViewportRollup.critical === 1 ? "" : "s"} outside this view`
+                : `${outOfViewportRollup.warning} Warning zone${outOfViewportRollup.warning === 1 ? "" : "s"} outside this view`}
+            </button>
+            <button
+              type="button"
+              onClick={() => setOutOfViewportDismissedAt(Date.now())}
+              aria-label="Dismiss"
+              className="ml-1 rounded-full p-0.5 text-white/80 hover:bg-white/15 hover:text-white"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
+                   className="h-3.5 w-3.5">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Measure chip — bottom-center, only while measuring. */}
       {measuring && (
