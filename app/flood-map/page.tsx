@@ -205,33 +205,12 @@ export default function FloodMapPage() {
     setDirectionsOpen(true);
   }
 
-  // ── Side-panel positioning (PlaceCard / DirectionsPanel) ──────────────────
-  // Returns a CSS `right` value the panels apply inline when open on
-  // desktop. Inline style sidesteps Tailwind's JIT class scanner, which
-  // wasn't picking up the previous `right-[max(1rem,calc(…))]`
-  // arbitrary class on Vercel. The math: 1 rem clamp on viewports up to
-  // the max-w-7xl container width, then `(viewport − 1280)/2 + 24 px`
-  // so the panels sit flush against the map card's right edge inside
-  // the page's `px-6` padding on wider screens.
-  // `null` while the viewport is below `sm` so the mobile bottom-sheet
-  // CSS classes keep their default behaviour without an inline-style
-  // override.
-  const [panelRightOffset, setPanelRightOffset] = useState<string | null>(null);
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const compute = () => {
-      const w = window.innerWidth;
-      if (w < 640) {
-        setPanelRightOffset(null);
-        return;
-      }
-      const offset = w <= 1280 ? 16 : Math.floor((w - 1280) / 2 + 24);
-      setPanelRightOffset(`${offset}px`);
-    };
-    compute();
-    window.addEventListener("resize", compute);
-    return () => window.removeEventListener("resize", compute);
-  }, []);
+  // PlaceCard + DirectionsPanel handle their own layout internally now
+  // (see `components/flood-map/useSlideoutLayout.ts`). The earlier
+  // approach of computing a `right` offset here and passing it as a
+  // prop was fragile — any render where the prop briefly held its
+  // null initial value left the Tailwind bottom-sheet classes in
+  // charge, pinning the panel to bottom-left.
 
   // ── Favourite nodes (per-sensor notification preferences) ──────────────────
   // Restored: previously the "Nodes in Radius" panel had a bell-menu on
@@ -1191,7 +1170,6 @@ export default function FloodMapPage() {
       <PlaceCard
         open={placeCardOpen}
         model={placeCardModel}
-        rightOffset={panelRightOffset}
         onClose={() => setPlaceCardOpen(false)}
         onDirections={(dest) => {
           setPlaceCardOpen(false);
@@ -1228,7 +1206,6 @@ export default function FloodMapPage() {
         request={directionsRequest}
         zones={zones}
         myLocation={myLocation}
-        rightOffset={panelRightOffset}
         onRoutesChange={(routes, idx) => {
           setActiveRoutes(routes);
           setSelectedRouteIndex(idx);

@@ -21,6 +21,7 @@ import { Autocomplete } from "@react-google-maps/api";
 
 import type { Zone } from "@/lib/types";
 import { useGoogleMapsReady } from "@/lib/useGoogleMapsReady";
+import { useSlideoutLayout } from "./useSlideoutLayout";
 import {
   useFloodAwareRoutes,
   type FloodImpact,
@@ -40,11 +41,6 @@ type Props = {
   zones: Zone[];
   /** The user's current location, if known. Used as the default From. */
   myLocation?: { lat: number; lng: number } | null;
-  /**
-   * Desktop `right` offset (e.g. `"344px"`) — see PlaceCard for the
-   * rationale. `null` on mobile so the bottom-sheet classes take over.
-   */
-  rightOffset?: string | null;
   /** Fires whenever the scored route list changes so the map can render polylines. */
   onRoutesChange: (
     routes: ScoredRoute<google.maps.DirectionsRoute>[] | null,
@@ -99,10 +95,10 @@ export default function DirectionsPanel({
   request,
   zones,
   myLocation,
-  rightOffset,
   onRoutesChange,
   onClose,
 }: Props) {
+  const layoutStyle = useSlideoutLayout(open);
   const [mode, setMode] = useState<Mode>("DRIVING");
   const [fromText, setFromText] = useState("");
   const [toText, setToText] = useState("");
@@ -251,32 +247,11 @@ export default function DirectionsPanel({
       <aside
         role="dialog"
         aria-label="Directions"
-        // On desktop, the parent supplies the exact `right` offset that
-        // lands the card flush with the map's right edge inside the
-        // max-w-7xl container. Inline style wins over the Tailwind
-        // mobile classes; we also force `left: auto` / `bottom: auto`
-        // / `top: 6rem` / a sane max-height so the bottom-sheet
-        // positioning doesn't fight the side-rail positioning. On
-        // mobile (`rightOffset` is null) we drop the inline style
-        // entirely and let the Tailwind bottom-sheet classes take over.
-        style={open && rightOffset
-          ? {
-              right: rightOffset,
-              left: "auto",
-              top: "6rem",
-              bottom: "auto",
-              maxHeight: "calc(100vh - 8rem)",
-            }
-          : undefined}
-        className={`fixed z-40 bg-[var(--color-card)] shadow-2xl ring-1 ring-black/10 transition-transform duration-200
-          inset-x-0 bottom-0 rounded-t-2xl max-h-[80vh] overflow-y-auto
-          sm:w-[360px] sm:rounded-2xl
-          lg:w-[400px]
-          ${
-            open
-              ? "translate-y-0 sm:translate-x-0"
-              : "translate-y-full sm:translate-y-0 sm:translate-x-[calc(100%+1rem)]"
-          }`}
+        // ALL positioning + sizing + rounding + transform come from the
+        // shared layout hook. The className intentionally carries no
+        // positional utilities so Tailwind can't fight the inline style.
+        style={layoutStyle}
+        className="z-40 bg-[var(--color-card)] shadow-2xl ring-1 ring-black/10 overflow-y-auto transition-transform duration-200"
       >
         <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-[var(--color-border)] sm:hidden" />
 
