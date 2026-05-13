@@ -1,30 +1,37 @@
 /**
- * Server-side privacy aggregator.
+ * Server-side per-node anonymiser.
  *
- * Takes the raw list of sensor rows from the Java service and folds it
- * into a list of zones (group-by area + state). The browser only ever
- * receives the output of this function — never the per-sensor lat/lng.
+ * Takes the raw list of sensor rows from the Java service and emits
+ * one map circle per node — *no grouping*. Each output entry strips
+ * the identifying fields the browser doesn't need (uuid, node_id,
+ * name) and lightly fuzzes the coordinate so an attacker reading the
+ * wire can't pinpoint hardware to within centimetres.
  *
  * Privacy contract enforced here:
- *   1. Each zone's centroid is rounded to 3 decimal places (~110 m on
- *      the equator). Even if someone reverse-engineers the polygon,
- *      they get an area, not a sensor location.
- *   2. Each zone's radius is clamped to >= 800 m. Single-sensor zones
- *      can't shrink to a tight circle around the device.
- *   3. The raw `sensorCount` is never exposed; a coarse band
- *      ("single" / "few" / "many") replaces it on the wire.
- *   4. No `sensorId`, no `nodeId`, and no per-member lat/lng appears
- *      anywhere in the output type.
+ *   1. Lat/lng on the wire are rounded to 4 decimal places (~11 m).
+ *      Anyone with DevTools sees the circle's bucket, not the device's
+ *      GPS reading.
+ *   2. The original UUID and `node_id` never reach the browser. The
+ *      output `id` is a stable FNV-1a hash, used only as a React key.
+ *   3. The original `name` field never reaches the browser.
+ *   4. Rows with invalid or origin coordinates (lat≈0 and lng≈0 —
+ *      seed/test rows like `SUTS_River1`) are dropped.
+ *
+ * Why not group by (state, area) any more? Because the DB doesn't
+ * always populate those columns — when they're NULL every node
+ * collapsed into a single "Unknown|Unknown" zone with the wrong
+ * centroid, and the map looked empty. The user explicitly asked for
+ * "one circle per node, no grouping". That's this function now.
  *
  * The function is pure so it's unit-testable; the BFF route in
  * `app/api/zones/route.ts` is the only caller in production.
  */
 
-import type { FloodLevel, Zone, ZoneSensorBand } from "@/lib/types";
+import type { FloodLevel, Zone } from "@/lib/types";
 
 /**
- * Subset of the Java SensorNodeDto shape that this aggregator needs.
- * Keeping it loose so a future column on the Java row doesn't break us.
+ * Subset of the Java SensorNodeDto shape that this anonymiser needs.
+ * Kept loose so a future column on the Java row doesn't break us.
  */
 export type RawSensorRow = {
   id?: string;
@@ -38,153 +45,97 @@ export type RawSensorRow = {
   currentLevel: FloodLevel;
   /** Server side encoding — "inactive" means the radio went dark. */
   status?: "active" | "warning" | "critical" | "inactive";
+  /** Some Java responses use a boolean column instead of the status enum. */
+  isDead?: boolean;
   lastUpdated?: string;
 };
 
-const RADIUS_MIN_M = 800;
-const RADIUS_MAX_M = 3000;
-/** Multiplier on the farthest-member distance — gives a visible halo. */
-const RADIUS_PADDING = 1.3;
+/** Fixed per-node circle radius. Small enough that adjacent nodes can
+ *  still be distinguished, large enough to be tappable at zoom 11+. */
+const NODE_RADIUS_M = 250;
 
-/** Haversine in metres — used to size the zone radius. */
-function haversineM(aLat: number, aLng: number, bLat: number, bLng: number): number {
-  const R = 6_371_000;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(bLat - aLat);
-  const dLng = toRad(bLng - aLng);
-  const lat1 = toRad(aLat);
-  const lat2 = toRad(bLat);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
-}
-
-/** Rounded to 3 d.p. — the privacy step. */
-function round3(n: number): number {
-  return Math.round(n * 1000) / 1000;
-}
-
-/** Coarse banding so we never publish the raw cluster size. */
-function band(n: number): ZoneSensorBand {
-  if (n <= 1) return "single";
-  if (n <= 4) return "few";
-  return "many";
+/** Rounded to 4 d.p. (~11 m on the equator). Gives modest fuzz on the
+ *  wire while still landing the circle in the right neighbourhood. */
+function round4(n: number): number {
+  return Math.round(n * 10_000) / 10_000;
 }
 
 /**
- * Stable id from (state|area). Two reloads with the same membership
- * give the same id; we use a tiny FNV-1a 32-bit hash so it's stable
- * across server restarts and across language boundaries (a future
- * Java aggregator can reproduce it byte-for-byte).
+ * Stable id derived from whatever the row gives us. Prefers the
+ * server-generated UUID so the id is stable across reloads, falls
+ * back to `nodeId`, then to the rounded coordinate as a last resort.
+ * The returned value is always the FNV-1a hash — never the original
+ * identifier — so the browser can use it as a React key without ever
+ * seeing the underlying node identity.
  */
-function stableZoneId(state: string, area: string): string {
-  const s = `${state.trim().toLowerCase()}|${area.trim().toLowerCase()}`;
+function stableNodeKey(r: RawSensorRow): string {
+  const seed =
+    r.id ?? r.nodeId ?? `${round4(r.latitude)},${round4(r.longitude)}`;
   let h = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    // 32-bit FNV prime, kept in JS safe-int range with imul.
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
     h = Math.imul(h, 0x01000193);
   }
-  // Force unsigned, base36, prefix so it never collides with a UUID
-  // that some older client might still cache as a node id.
-  return "z_" + (h >>> 0).toString(36);
+  return "n_" + (h >>> 0).toString(36);
 }
 
 /**
- * Aggregate a list of raw sensor rows into a list of zones. Pure
- * function — no I/O, no side effects, no globals.
+ * Map a row to its on-wire offline flag. Java's `SensorNodeDto.status`
+ * uses an enum string; the new `nodes` table has an `is_dead` boolean.
+ * Either source flips the same flag downstream.
+ */
+function isOffline(r: RawSensorRow): boolean {
+  if (r.isDead === true) return true;
+  if (r.status === "inactive") return true;
+  return false;
+}
+
+/**
+ * Map raw rows to anonymised per-node `Zone`s. Pure function — no I/O,
+ * no side effects, no globals.
+ *
+ * The function is still called `aggregateZones` to keep its call sites
+ * unchanged (the BFF route, future tests), but semantically it now
+ * emits ONE Zone per input row (the "Zone" type doubles as a
+ * single-node map circle).
  */
 export function aggregateZones(rows: RawSensorRow[]): Zone[] {
-  // Group rows by (state, area). Rows missing either field roll up
-  // under "Unknown" so we don't silently drop them — they'd be dropped
-  // for being a single-sensor area anyway if too sparse.
-  const groups = new Map<string, RawSensorRow[]>();
+  const out: Zone[] = [];
   for (const r of rows) {
+    // Drop rows we can't render or that look like seed/test data.
     if (!Number.isFinite(r.latitude) || !Number.isFinite(r.longitude)) continue;
-    const state = (r.state ?? "Unknown").trim();
-    const area = (r.area ?? r.location ?? "Unknown").trim();
-    const key = `${state}|${area}`;
-    const list = groups.get(key);
-    if (list) list.push(r);
-    else groups.set(key, [r]);
-  }
+    if (Math.abs(r.latitude) < 0.001 && Math.abs(r.longitude) < 0.001) continue;
 
-  const zones: Zone[] = [];
-  for (const [key, members] of groups) {
-    if (members.length === 0) continue;
-    const [state, area] = key.split("|");
+    const state = (r.state ?? "Unknown").trim() || "Unknown";
+    const area = (r.area ?? r.location ?? "Unknown").trim() || "Unknown";
+    const offline = isOffline(r);
+    const level = (r.currentLevel ?? 0) as FloodLevel;
 
-    // Centroid = arithmetic mean. Acceptable since member counts are
-    // small (tens at most) so we never need a great-circle midpoint.
-    let sumLat = 0;
-    let sumLng = 0;
-    for (const m of members) {
-      sumLat += m.latitude;
-      sumLng += m.longitude;
-    }
-    const rawCentroidLat = sumLat / members.length;
-    const rawCentroidLng = sumLng / members.length;
-    const centroidLat = round3(rawCentroidLat);
-    const centroidLng = round3(rawCentroidLng);
-
-    // Radius — farthest member from the RAW centroid (so single-member
-    // groups get radius 0), padded, then clamped to [800 m, 3000 m].
-    // The clamp is the second privacy lever: even a single-sensor zone
-    // gets a 800 m halo so the exact point can't be inferred from the
-    // circle edge.
-    let farthest = 0;
-    for (const m of members) {
-      const d = haversineM(rawCentroidLat, rawCentroidLng, m.latitude, m.longitude);
-      if (d > farthest) farthest = d;
-    }
-    const padded = farthest * RADIUS_PADDING;
-    const radiusM = Math.round(Math.min(RADIUS_MAX_M, Math.max(RADIUS_MIN_M, padded)));
-
-    // Worst status across online members. If every member is offline
-    // we still emit the zone but flag `anyOffline` so the UI can grey
-    // it out — better than the zone vanishing.
-    let worst: FloodLevel = 0;
-    let anyOffline = false;
-    let allOffline = true;
-    for (const m of members) {
-      if (m.status === "inactive") anyOffline = true;
-      else allOffline = false;
-      if (m.status !== "inactive" && (m.currentLevel ?? 0) > worst) {
-        worst = m.currentLevel;
-      }
-    }
-    if (allOffline) anyOffline = true;
-
-    // Most recent updatedAt across the cluster — handy for the "last
-    // updated 3 s ago" line in the legend.
-    let lastUpdated: string | undefined;
-    for (const m of members) {
-      if (!m.lastUpdated) continue;
-      if (!lastUpdated || m.lastUpdated > lastUpdated) lastUpdated = m.lastUpdated;
-    }
-
-    zones.push({
-      id: stableZoneId(state, area),
+    out.push({
+      id: stableNodeKey(r),
+      // We still surface area/state because filters and the place card
+      // use them for a coarse "where is this?" label. We do NOT surface
+      // the node's own `name` field — that often encodes the original
+      // node_id (e.g. "Node NODE_12345") which we treat as sensitive.
       name: area,
       state,
       area,
-      centroidLat,
-      centroidLng,
-      radiusM,
-      worstLevel: worst,
-      anyOffline,
-      allOffline,
-      sensorBand: band(members.length),
-      lastUpdated,
+      centroidLat: round4(r.latitude),
+      centroidLng: round4(r.longitude),
+      radiusM: NODE_RADIUS_M,
+      worstLevel: level,
+      // Per-node — there's no "any vs all", both reflect this one node.
+      anyOffline: offline,
+      allOffline: offline,
+      // Cluster-size band is meaningless for a single node, but keep
+      // the field so downstream code that reads it still type-checks.
+      sensorBand: "single",
+      lastUpdated: r.lastUpdated,
     });
   }
 
-  // Sort by (state, name) so consecutive renders are stable — helps
-  // React keep DOM nodes between polls.
-  zones.sort((a, b) => {
-    if (a.state !== b.state) return a.state.localeCompare(b.state);
-    return a.name.localeCompare(b.name);
-  });
-  return zones;
+  // Stable sort by id so consecutive polls render in the same order
+  // (React reuses DOM nodes; Google Maps reuses Circle overlays).
+  out.sort((a, b) => a.id.localeCompare(b.id));
+  return out;
 }

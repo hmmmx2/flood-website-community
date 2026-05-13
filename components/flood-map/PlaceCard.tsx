@@ -69,11 +69,10 @@ const LEVEL_PILL: Record<FloodLevel, string> = {
   3: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300",
 };
 
-const SENSOR_BAND_LABEL = {
-  single: "Sparse coverage",
-  few: "Several sensors",
-  many: "Dense coverage",
-} as const;
+// The sensorBand text used to surface cluster-size ("Several sensors")
+// while we were grouping nodes into zones. Now that each circle is a
+// single anonymous node we hide it — printing "Sparse coverage" next
+// to every node would be both wrong and uninformative.
 
 /**
  * Builds a Google Maps deep link for driving directions to a lat/lng.
@@ -110,10 +109,15 @@ export default function PlaceCard({ open, model, onSave, onShare, onDirections, 
   const isPlace = m.kind === "place";
   const lat = isPlace ? m.lat : m.zone.centroidLat;
   const lng = isPlace ? m.lng : m.zone.centroidLng;
-  const title = isPlace ? m.name : m.zone.name;
+  // For the "this is a flood point on the map" variant, the title is
+  // deliberately generic. We don't want to print the node's name (it
+  // often encodes node_id) and the area string alone reads like a
+  // location name on the map, which it isn't (one area can have many
+  // node circles). "Flood point" is what Google would say.
+  const title = isPlace ? m.name : "Flood point";
   const subtitle = isPlace
-    ? (m.address ?? `${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}`)
-    : `${m.zone.area}${m.zone.state ? ` · ${m.zone.state}` : ""}`;
+    ? (m.address ?? "")
+    : `${m.zone.area}${m.zone.state && m.zone.state !== m.zone.area ? ` · ${m.zone.state}` : ""}`;
 
   async function copyCoords() {
     const text = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
@@ -173,9 +177,6 @@ export default function PlaceCard({ open, model, onSave, onShare, onDirections, 
                   }`}
                 >
                   {m.zone.allOffline ? "Offline" : LEVEL_LABEL[m.zone.worstLevel]}
-                </span>
-                <span className="text-[11px] text-[var(--color-muted)]">
-                  {SENSOR_BAND_LABEL[m.zone.sensorBand]}
                 </span>
               </div>
             )}
