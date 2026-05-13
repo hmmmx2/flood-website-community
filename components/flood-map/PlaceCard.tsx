@@ -43,6 +43,14 @@ export type PlaceCardModel =
 type Props = {
   open: boolean;
   model: PlaceCardModel | null;
+  /**
+   * Desktop `right` offset (e.g. `"344px"`). Computed by the page so
+   * the panel sits flush against the map card's right edge inside the
+   * `max-w-7xl` page container instead of floating in the dark space
+   * outside it. `null` on mobile — the panel falls back to its
+   * bottom-sheet styling.
+   */
+  rightOffset?: string | null;
   /** Saves the current location to "My Saved Places" — page wires it. */
   onSave?: () => void;
   /** Copies a share-link of the current view + pin to the clipboard. */
@@ -86,7 +94,7 @@ function googleDirectionsHref(lat: number, lng: number, label?: string): string 
   return `https://www.google.com/maps/dir/?api=1&destination=${dest}${q}`;
 }
 
-export default function PlaceCard({ open, model, onSave, onShare, onDirections, onClose }: Props) {
+export default function PlaceCard({ open, model, rightOffset, onSave, onShare, onDirections, onClose }: Props) {
   // Latch the last model so the card animates out gracefully on close.
   const [latched, setLatched] = useState<PlaceCardModel | null>(model);
   useEffect(() => {
@@ -144,15 +152,28 @@ export default function PlaceCard({ open, model, onSave, onShare, onDirections, 
         role="dialog"
         aria-modal="false"
         aria-label={isPlace ? "Place details" : "Flood zone details"}
-        style={open ? { right: "var(--map-panel-right, 1rem)" } : undefined}
+        // On desktop, the parent supplies the exact `right` offset that
+        // lands the card flush with the map's right edge inside the
+        // max-w-7xl container. Inline style wins over the Tailwind
+        // mobile classes; we also force `left: auto` / `bottom: auto`
+        // / `top: 6rem` so the bottom-sheet positioning doesn't fight
+        // the side-rail positioning. On mobile (`rightOffset` is null)
+        // we drop the inline style entirely and let the Tailwind
+        // bottom-sheet classes take over.
+        style={open && rightOffset
+          ? {
+              right: rightOffset,
+              left: "auto",
+              top: "6rem",
+              bottom: "auto",
+            }
+          : undefined}
         className={`fixed z-40 bg-[var(--color-card)] shadow-2xl ring-1 ring-black/10 transition-transform duration-200
-          /* Mobile: bottom sheet */
+          /* Mobile (default): bottom sheet */
           inset-x-0 bottom-0 rounded-t-2xl
-          /* Desktop: right-side card sitting flush against the map's
-             right edge (inside the max-w-7xl page container) rather
-             than the viewport edge. The right offset is supplied by
-             the --map-panel-right CSS variable (see flood-map/page.tsx). */
-          sm:inset-x-auto sm:top-24 sm:bottom-auto sm:w-[360px] sm:rounded-2xl
+          /* Desktop tweaks — width + corners. Position is owned by
+             the inline style above on this breakpoint. */
+          sm:w-[360px] sm:rounded-2xl
           ${
             open
               ? "translate-y-0 sm:translate-x-0"

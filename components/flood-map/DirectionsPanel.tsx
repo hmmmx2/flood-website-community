@@ -40,6 +40,11 @@ type Props = {
   zones: Zone[];
   /** The user's current location, if known. Used as the default From. */
   myLocation?: { lat: number; lng: number } | null;
+  /**
+   * Desktop `right` offset (e.g. `"344px"`) — see PlaceCard for the
+   * rationale. `null` on mobile so the bottom-sheet classes take over.
+   */
+  rightOffset?: string | null;
   /** Fires whenever the scored route list changes so the map can render polylines. */
   onRoutesChange: (
     routes: ScoredRoute<google.maps.DirectionsRoute>[] | null,
@@ -94,6 +99,7 @@ export default function DirectionsPanel({
   request,
   zones,
   myLocation,
+  rightOffset,
   onRoutesChange,
   onClose,
 }: Props) {
@@ -245,17 +251,26 @@ export default function DirectionsPanel({
       <aside
         role="dialog"
         aria-label="Directions"
-        // Desktop right offset is driven by --map-panel-right (set in
-        // app/flood-map/page.tsx via a resize listener) so the panel
-        // lands flush against the map card's right edge inside the
-        // max-w-7xl page container — not in the dark space at the
-        // viewport edge. Using a CSS variable instead of a Tailwind
-        // arbitrary value with calc()/max() is more robust under
-        // JIT class scanning on Vercel.
-        style={open ? { right: "var(--map-panel-right, 1rem)" } : undefined}
+        // On desktop, the parent supplies the exact `right` offset that
+        // lands the card flush with the map's right edge inside the
+        // max-w-7xl container. Inline style wins over the Tailwind
+        // mobile classes; we also force `left: auto` / `bottom: auto`
+        // / `top: 6rem` / a sane max-height so the bottom-sheet
+        // positioning doesn't fight the side-rail positioning. On
+        // mobile (`rightOffset` is null) we drop the inline style
+        // entirely and let the Tailwind bottom-sheet classes take over.
+        style={open && rightOffset
+          ? {
+              right: rightOffset,
+              left: "auto",
+              top: "6rem",
+              bottom: "auto",
+              maxHeight: "calc(100vh - 8rem)",
+            }
+          : undefined}
         className={`fixed z-40 bg-[var(--color-card)] shadow-2xl ring-1 ring-black/10 transition-transform duration-200
           inset-x-0 bottom-0 rounded-t-2xl max-h-[80vh] overflow-y-auto
-          sm:inset-x-auto sm:top-24 sm:bottom-auto sm:w-[360px] sm:rounded-2xl sm:max-h-[calc(100vh-8rem)]
+          sm:w-[360px] sm:rounded-2xl
           lg:w-[400px]
           ${
             open
