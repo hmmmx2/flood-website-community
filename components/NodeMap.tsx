@@ -453,6 +453,17 @@ export default function NodeMap({
       setCurrentZoom(map.getZoom() ?? defaultZoom);
     });
     setCurrentZoom(map.getZoom() ?? defaultZoom);
+    // Track Street View visibility — when the user drags the pegman
+    // onto a road, the panorama covers the whole map layer. The
+    // rescue pill below offers "Exit Street View" so they don't have
+    // to hunt for the ✕ button on the panorama itself.
+    const pano = map.getStreetView();
+    if (pano) {
+      setStreetViewActive(pano.getVisible());
+      pano.addListener("visible_changed", () => {
+        setStreetViewActive(pano.getVisible());
+      });
+    }
     // `idle` fires once after pan + zoom settle. We forward the
     // viewport up so the page can render the rollup pill (P1-12)
     // and so Share-view can capture the user's current frame.
@@ -552,38 +563,81 @@ export default function NodeMap({
   // in onMapLoad; this state is the latest known zoom.)
   const [currentZoom, setCurrentZoom] = useState(defaultZoom);
 
-  // ── Out-of-viewport rollup pill (S6-4) ────────────────────────────────────
-  // Tracks the current map bounds so we can detect "the dataset has
-  // risky zones, but none of them are visible right now". The pill
-  // self-dismisses on tap (60 s grace window via dismissedAt).
+  // ── Rescue pill — "show me the data" (S6-4, generalised) ─────────────────
+  //
+  // Tracks the current map bounds so we can detect three states:
+  //   1. Risky zones exist but none are in view  → red/orange alarm pill.
+  //   2. Some zones exist but none are in view   → neutral "Show all" pill.
+  //   3. Street View is active and zones exist   → "Exit Street View" pill.
+  //
+  // This is the user's escape hatch when the page seems empty even
+  // though the legend shows zone counts. The pill self-dismisses on
+  // tap (60 s grace window via dismissedAt) so a user who pans
+  // intentionally to an empty area isn't nagged.
   const [localViewport, setLocalViewport] = useState<{
     north: number; south: number; east: number; west: number;
   } | null>(null);
   const [outOfViewportDismissedAt, setOutOfViewportDismissedAt] = useState<number>(0);
-  const outOfViewportRollup = useMemo(() => {
+  const [streetViewActive, setStreetViewActive] = useState(false);
+
+  const rescuePill = useMemo<
+    | { tone: "critical" | "warning" | "neutral"; label: string }
+    | { tone: "streetview"; label: string }
+    | null
+  >(() => {
+    if (zones.length === 0) return null;
+    if (streetViewActive) {
+      return { tone: "streetview", label: "Exit Street View and show flood zones" };
+    }
     if (!localViewport) return null;
     if (Date.now() - outOfViewportDismissedAt < 60_000) return null;
-    const risky = zones.filter(z => !z.allOffline && z.worstLevel >= 2);
-    if (risky.length === 0) return null;
-    const insideCount = risky.filter(z =>
+    const insideCount = zones.filter(z =>
       z.centroidLat <= localViewport.north &&
       z.centroidLat >= localViewport.south &&
       z.centroidLng <= localViewport.east &&
       z.centroidLng >= localViewport.west,
     ).length;
     if (insideCount > 0) return null;
-    const critical = risky.filter(z => z.worstLevel === 3).length;
-    const warning = risky.filter(z => z.worstLevel === 2).length;
-    return { risky, critical, warning };
-  }, [localViewport, outOfViewportDismissedAt, zones]);
+    const critical = zones.filter(z => !z.allOffline && z.worstLevel === 3).length;
+    const warning = zones.filter(z => !z.allOffline && z.worstLevel === 2).length;
+    if (critical > 0) {
+      return {
+        tone: "critical",
+        label: `${critical} Critical zone${critical === 1 ? "" : "s"} outside this view`,
+      };
+    }
+    if (warning > 0) {
+      return {
+        tone: "warning",
+        label: `${warning} Warning zone${warning === 1 ? "" : "s"} outside this view`,
+      };
+    }
+    return {
+      tone: "neutral",
+      label: `Show all ${zones.length} flood zone${zones.length === 1 ? "" : "s"}`,
+    };
+  }, [zones, localViewport, outOfViewportDismissedAt, streetViewActive]);
 
-  /** Pan + zoom the map so every Warning+ zone fits in frame. */
-  function fitToRiskyZones() {
+  /**
+   * Pan + zoom the map so every zone in the dataset fits in frame.
+   * Also exits Street View if it's active — Street View is a common
+   * way users get stuck looking at imagery instead of the map layer.
+   * Restricts to Warning+ zones when the rescue pill is alarming so
+   * the user lands on the actual trouble spots, not a wide regional
+   * view that buries them.
+   */
+  function fitToZones(opts: { onlyRisky?: boolean } = {}) {
     if (typeof google === "undefined" || !mapRef.current) return;
-    const risky = zones.filter(z => !z.allOffline && z.worstLevel >= 2);
-    if (risky.length === 0) return;
+    // Always exit Street View first — it covers the map layer entirely
+    // when active, so even a perfect fitBounds wouldn't be visible.
+    const pano = mapRef.current.getStreetView();
+    if (pano && pano.getVisible()) pano.setVisible(false);
+    const list = opts.onlyRisky
+      ? zones.filter(z => !z.allOffline && z.worstLevel >= 2)
+      : zones;
+    if (list.length === 0) return;
     const b = new google.maps.LatLngBounds();
-    for (const z of risky) {
+    for (const z of list) {
       b.extend(new google.maps.LatLng(z.centroidLat, z.centroidLng));
     }
     mapRef.current.fitBounds(b, 80 /* px padding */);
@@ -942,48 +996,77 @@ export default function NodeMap({
         })}
       </GoogleMap>
 
-      {/* Out-of-viewport rollup pill (S6-4) — bottom-left of the map.
-          Surfaces "1 Critical zone outside this view" so a user who's
-          zoomed into a clear area still learns about distant trouble.
-          Tap fits the map to every Warning+ zone; ✕ snoozes the pill
-          for 60 s. */}
-      {outOfViewportRollup && !measuring && (
+      {/* Rescue pill (S6-4, generalised) — bottom-left of the map.
+          One pill, four states:
+            - critical/warning : red/orange alarm, taps fit to risky zones
+            - neutral          : grey "Show all flood zones", taps fit to all
+            - streetview       : indigo "Exit Street View and show zones"
+          The dismiss ✕ snoozes for 60 s for the non-Street-View cases
+          (Street View needs an explicit exit, no snooze). */}
+      {rescuePill && !measuring && (
         <div className={`absolute z-20 ${isFullscreen ? "bottom-8 left-6" : "bottom-3 left-3"}`}>
           <div
             className={`flex items-center gap-2 rounded-full px-3 py-2 shadow-lg ring-1 backdrop-blur-md ${
-              outOfViewportRollup.critical > 0
+              rescuePill.tone === "critical"
                 ? "bg-red-600/95 text-white ring-red-700/40"
-                : "bg-orange-500/95 text-white ring-orange-600/40"
+                : rescuePill.tone === "warning"
+                  ? "bg-orange-500/95 text-white ring-orange-600/40"
+                  : rescuePill.tone === "streetview"
+                    ? "bg-indigo-600/95 text-white ring-indigo-700/40"
+                    : "bg-slate-900/90 text-white ring-slate-700/40 dark:bg-slate-100/95 dark:text-slate-900 dark:ring-slate-300/60"
             }`}
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
                  className="h-4 w-4">
-              <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-              <line x1="12" y1="9" x2="12" y2="13" />
-              <line x1="12" y1="17" x2="12.01" y2="17" />
+              {rescuePill.tone === "streetview" ? (
+                <>
+                  <path d="M3 21l4-2 5 2 5-2 4 2V7l-4-2-5 2-5-2-4 2v14z" />
+                  <path d="M7 5v14M12 7v14M17 5v14" />
+                </>
+              ) : rescuePill.tone === "neutral" ? (
+                <>
+                  <circle cx="11" cy="11" r="7" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </>
+              ) : (
+                <>
+                  <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </>
+              )}
             </svg>
             <button
               type="button"
-              onClick={fitToRiskyZones}
+              onClick={() =>
+                fitToZones({
+                  onlyRisky:
+                    rescuePill.tone === "critical" || rescuePill.tone === "warning",
+                })
+              }
               className="text-xs font-bold underline-offset-2 hover:underline"
             >
-              {outOfViewportRollup.critical > 0
-                ? `${outOfViewportRollup.critical} Critical zone${outOfViewportRollup.critical === 1 ? "" : "s"} outside this view`
-                : `${outOfViewportRollup.warning} Warning zone${outOfViewportRollup.warning === 1 ? "" : "s"} outside this view`}
+              {rescuePill.label}
             </button>
-            <button
-              type="button"
-              onClick={() => setOutOfViewportDismissedAt(Date.now())}
-              aria-label="Dismiss"
-              className="ml-1 rounded-full p-0.5 text-white/80 hover:bg-white/15 hover:text-white"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                   stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
-                   className="h-3.5 w-3.5">
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
-            </button>
+            {rescuePill.tone !== "streetview" && (
+              <button
+                type="button"
+                onClick={() => setOutOfViewportDismissedAt(Date.now())}
+                aria-label="Dismiss"
+                className={`ml-1 rounded-full p-0.5 transition-colors ${
+                  rescuePill.tone === "neutral"
+                    ? "text-white/80 hover:bg-white/15 hover:text-white dark:text-slate-700 dark:hover:bg-slate-900/10 dark:hover:text-slate-900"
+                    : "text-white/80 hover:bg-white/15 hover:text-white"
+                }`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
+                     className="h-3.5 w-3.5">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
       )}
