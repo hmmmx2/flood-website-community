@@ -251,7 +251,10 @@ export default function DirectionsPanel({
         // shared layout hook. The className intentionally carries no
         // positional utilities so Tailwind can't fight the inline style.
         style={layoutStyle}
-        className="z-40 bg-[var(--color-card)] shadow-2xl ring-1 ring-black/10 overflow-y-auto transition-transform duration-200"
+        // `transition-[transform,opacity]` so opacity fade and slide
+        // animate together when the panel opens / closes — see
+        // useSlideoutLayout for why opacity is part of the close state.
+        className="z-40 bg-[var(--color-card)] shadow-2xl ring-1 ring-black/10 overflow-y-auto transition-[transform,opacity] duration-200"
       >
         <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-[var(--color-border)] sm:hidden" />
 

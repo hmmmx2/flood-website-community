@@ -41,6 +41,21 @@ const PAGE_PAD_PX = 24;
 /** Minimum gap from the viewport's right edge on narrow screens. */
 const FALLBACK_PX = 16;
 
+/**
+ * Shared "closed" properties — opacity 0 + pointer-events none so the
+ * panel is unambiguously invisible AND non-interactive while closed,
+ * even mid-animation. Translate alone wasn't enough: on the friend's
+ * 1148-px viewport, the close transition could leave the panel
+ * visually "stuck side way" depending on browser paint timing. With
+ * `opacity: 0` the panel is invisible regardless of where the
+ * translate has landed; with `pointer-events: none` the user can't
+ * accidentally re-grab it mid-animation. Both properties join the
+ * `transform` in the CSS transition so the change is smooth, not
+ * abrupt.
+ */
+const HIDDEN = { opacity: 0, pointerEvents: "none" as const };
+const SHOWN = { opacity: 1, pointerEvents: "auto" as const };
+
 function bottomSheet(open: boolean): CSSProperties {
   return {
     position: "fixed",
@@ -54,6 +69,7 @@ function bottomSheet(open: boolean): CSSProperties {
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
     transform: open ? "translateY(0)" : "translateY(100%)",
+    ...(open ? SHOWN : HIDDEN),
   };
 }
 
@@ -67,7 +83,12 @@ function sideRail(open: boolean, width: number, rightPx: number): CSSProperties 
     width: `${width}px`,
     maxHeight: "calc(100vh - 8rem)",
     borderRadius: "1rem",
-    transform: open ? "translateX(0)" : "translateX(calc(100% + 1rem))",
+    // 110% instead of `calc(100% + 1rem)` — a numeric value is more
+    // robust than calc() inside transform across older WebKit builds,
+    // and 10% beyond the panel's own width guarantees it clears the
+    // viewport edge.
+    transform: open ? "translateX(0)" : "translateX(110%)",
+    ...(open ? SHOWN : HIDDEN),
   };
 }
 
