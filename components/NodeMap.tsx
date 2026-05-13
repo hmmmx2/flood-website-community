@@ -938,16 +938,21 @@ export default function NodeMap({
           />
         )}
 
-        {/* Saved-place radius circles + house pins. Stroke colour
-            follows the worst flood status inside the radius (S6-3) so
-            the map answers "is my home in trouble?" at a glance. A
-            text label sits at the top of the circle at zoom >= 12. */}
+        {/* Saved-place radius circles + house pins.
+            The big radius circle is a neutral "this is my monitored
+            area" indicator — always blue, regardless of status. We
+            tried colouring it by worst-flood-inside-radius (S6-3),
+            but with per-node circles a single Critical sensor in
+            radius turns the whole 5–9 km halo red, which makes the
+            map feel constantly on fire and provides no useful
+            signal. The alarm channels are now: the small coloured
+            ring on the pin itself (this component), the status row
+            above the map, and the rescue pill at the bottom. The
+            radius stays calm. */}
         {savedLocations?.map(loc => {
-          const colour = placeStatusHex(loc);
+          const haloColour = placeStatusHex(loc);
           const inRadiusHasFlood =
             (loc.worstLevel ?? 0) >= 1 && !loc.allOffline;
-          // Tiny offset upward so the label doesn't sit on the centre
-          // pin — places it on the northern edge of the radius circle.
           const labelOffsetDeg = (loc.alertRadiusKm / 111) * 1.02;
           return (
             <React.Fragment key={`saved-${loc.id}`}>
@@ -955,11 +960,11 @@ export default function NodeMap({
                 center={{ lat: loc.latitude, lng: loc.longitude }}
                 radius={loc.alertRadiusKm * 1000}
                 options={{
-                  fillColor: colour,
-                  fillOpacity: inRadiusHasFlood ? 0.12 : 0.08,
-                  strokeColor: colour,
-                  strokeOpacity: inRadiusHasFlood ? 0.85 : 0.6,
-                  strokeWeight: inRadiusHasFlood ? 2 : 1.5,
+                  fillColor: "#2563eb",
+                  fillOpacity: 0.08,
+                  strokeColor: "#2563eb",
+                  strokeOpacity: 0.55,
+                  strokeWeight: 1.5,
                   clickable: false,
                   zIndex: 1,
                 }}
@@ -969,7 +974,7 @@ export default function NodeMap({
                 icon={
                   placeIconSize
                     ? {
-                        url: placePinSvgUrl(colour, inRadiusHasFlood),
+                        url: placePinSvgUrl(haloColour, inRadiusHasFlood),
                         scaledSize: placeIconSize.size,
                         anchor: placeIconSize.anchor,
                       }
