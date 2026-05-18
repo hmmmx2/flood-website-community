@@ -199,10 +199,49 @@ function LoginPageInner() {
           payload.session.refreshToken,
           adminUser,
         );
-        // Stash the URL so the fallback link can render. Schedule it
-        // BEFORE the navigation call so the React state update wins
-        // the race if the navigation hangs. In a normal browser the
-        // page unloads before the timer fires.
+
+        // Detect environments where cross-port localhost navigation
+        // is blocked (notably the Claude Code preview tool, which
+        // pops a "Link to localhost was blocked. Preview only
+        // supports localhost URLs." overlay every time you try).
+        //
+        // Heuristic: in dev, the CRM URL points at a different port
+        // than the page we're on. If we're inside such an embedded
+        // browser, kicking off a window.location.href to that
+        // cross-port URL would trigger the preview block — so
+        // instead we render an instructional panel with the URL
+        // ready to copy. In production (Vercel) the CRM is on a
+        // different hostname, not a different localhost port, and
+        // this branch never matters.
+        const target = (() => {
+          try {
+            return new URL(url);
+          } catch {
+            return null;
+          }
+        })();
+        const samePortAsHere =
+          target !== null &&
+          target.hostname === window.location.hostname &&
+          target.port === window.location.port;
+        const crossPortLocalhost =
+          target !== null &&
+          (target.hostname === "localhost" ||
+            target.hostname === "127.0.0.1") &&
+          !samePortAsHere;
+
+        if (crossPortLocalhost) {
+          // Don't even attempt the navigation — that would surface
+          // the preview tool's block overlay. Just show the user
+          // exactly what to do.
+          setCrmRedirectUrl(url);
+          return;
+        }
+
+        // Stash the URL so the fallback CAN still render if the
+        // navigation silently no-ops for any other reason; in a
+        // normal cross-port browser nav this state is unmounted
+        // before the user sees it.
         setCrmRedirectUrl(url);
         window.location.href = url;
         return;
@@ -341,24 +380,63 @@ function LoginPageInner() {
                   </div>
                 )}
                 {crmRedirectUrl && (
-                  // Visible only in browsers where the automatic
-                  // window.location.href cross-port redirect was
-                  // dropped (notably the Claude Code preview tool).
-                  // In a normal browser the page navigates before
-                  // this state has a chance to render to DOM.
+                  // Rendered when the in-page admin redirect can't
+                  // happen automatically — most commonly inside the
+                  // Claude Code preview tool, which silently blocks
+                  // ALL cross-port localhost navigation (`window.
+                  // location.href`, `<a>.click()`, `window.open`,
+                  // even `fetch`) and shows a "Link to localhost
+                  // was blocked. Preview only supports localhost
+                  // URLs." overlay if you try. So instead of a
+                  // clickable link (which would trigger that
+                  // overlay), we show the URL as copyable text plus
+                  // a one-click copy button. The user opens it in
+                  // a normal Chrome / Edge / Firefox tab.
+                  //
+                  // In real browsers the page either already
+                  // navigated (in which case this is unmounted) or
+                  // production was reached (where the CRM lives on
+                  // a different hostname, no cross-port issue).
                   <div className="mb-4 rounded-xl border bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 px-4 py-3 text-sm text-blue-800 dark:text-blue-200">
-                    <p className="mb-2 font-medium">Sign-in succeeded — continue to the CRM:</p>
-                    <a
-                      href={crmRedirectUrl}
-                      target="_top"
-                      rel="noopener noreferrer"
-                      className="inline-block break-all rounded-lg bg-blue-600 px-3 py-1.5 font-semibold text-white shadow hover:bg-blue-700"
-                    >
-                      Open CRM Dashboard →
-                    </a>
-                    <p className="mt-2 text-xs opacity-80">
-                      If the link does nothing (e.g. inside the Claude Code preview),
-                      copy this URL into a normal browser tab.
+                    <p className="mb-2 font-medium">
+                      Sign-in succeeded. The CRM dashboard is on a different
+                      port, which the Claude Code preview can&apos;t navigate to.
+                    </p>
+                    <p className="mb-2">
+                      Copy the URL below and paste it into a normal Chrome /
+                      Edge / Firefox tab to continue:
+                    </p>
+                    <div className="flex items-stretch gap-2">
+                      <input
+                        readOnly
+                        value={crmRedirectUrl}
+                        onFocus={(e) => e.currentTarget.select()}
+                        className="flex-1 rounded-lg border border-blue-300 dark:border-blue-700 bg-white dark:bg-blue-950/50 px-3 py-1.5 font-mono text-xs"
+                        aria-label="CRM dashboard URL"
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(crmRedirectUrl);
+                          } catch {
+                            // Fallback: select() so the user can hit Ctrl+C.
+                            const el = document.querySelector<HTMLInputElement>(
+                              'input[aria-label="CRM dashboard URL"]',
+                            );
+                            el?.select();
+                          }
+                        }}
+                        className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <p className="mt-2 text-xs opacity-75">
+                      The URL contains your one-time session tokens and is
+                      valid for ~15 minutes. In production the redirect
+                      happens automatically — this only shows up in the
+                      preview-tool dev environment.
                     </p>
                   </div>
                 )}
