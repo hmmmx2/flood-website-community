@@ -6,6 +6,7 @@ import Image from "next/image";
 import { signIn } from "next-auth/react";
 import { AuthFooter, AuthTopNav } from "@/components/auth/AuthChrome";
 import type { AuthUser } from "@/lib/auth";
+import { isOperatorRole } from "@/lib/rbac";
 
 type View = "login" | "register";
 
@@ -23,59 +24,63 @@ async function getCrmUrl(): Promise<string> {
 }
 
 /**
- * Operator-class roles — these accounts belong on the CRM, not on
- * the community site. Mirrors `OPERATOR_JWT_KEYS` in
- * `flood-website-crm/lib/permissions.ts`. If the two lists drift,
- * an operator either gets stuck on the community home page or gets
- * sent to /auth/callback only to be 403'd by the role gate there.
+ * Build the CRM `/auth/callback` URL using the new opaque-code SSO
+ * handoff. Tokens never appear in this URL — only the short-lived
+ * code that the CRM redeems against Upstash. See `lib/sso.ts`.
  *
- * The Java backend stamps the role into the JWT as uppercase with
- * underscores (e.g. `OPERATIONS_MANAGER`). We also tolerate the
- * CRM display label form (`"Operations Manager"`) and a few common
- * variations (no underscore; Spring Security `ROLE_` prefix) so a
- * backend tweak can't break the redirect again.
- */
-const OPERATOR_ROLE_KEYS: ReadonlySet<string> = new Set([
-  "ADMIN",
-  "OPERATIONS_MANAGER",
-  "OPERATIONSMANAGER",
-  "FIELD_TECHNICIAN",
-  "FIELDTECHNICIAN",
-  "NGO_VOLUNTEER",
-  "NGOVOLUNTEER",
-  "VIEWER",
-]);
-
-function isOperatorRole(raw: string | null | undefined): boolean {
-  if (!raw) return false;
-  // Normalise: trim, uppercase, collapse whitespace → underscores,
-  // drop a leading "ROLE_" prefix if Spring Security adds one.
-  const key = String(raw)
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, "_")
-    .replace(/^ROLE_/, "");
-  return OPERATOR_ROLE_KEYS.has(key);
-}
-
-/**
- * Build the CRM `/auth/callback` URL for a freshly-authenticated
- * operator. Pure function — no side effects, so the caller can
- * either navigate immediately or surface the URL in a fallback UI.
+ * Pure-ish: the only side effect is the Upstash write inside
+ * `/api/auth/sso/start`. Throws on network failure so the caller
+ * can fall back to a friendly error banner.
  */
 async function buildCrmCallbackUrl(
   accessToken: string,
   refreshToken: string,
   user: AuthUser,
+  expiresAt: string,
 ): Promise<string> {
-  const crmBase = await getCrmUrl();
-  const u = encodeURIComponent(JSON.stringify(user));
-  return `${crmBase}/auth/callback?at=${encodeURIComponent(accessToken)}&rt=${encodeURIComponent(refreshToken)}&u=${u}`;
+  const [crmBase, code] = await Promise.all([
+    getCrmUrl(),
+    mintSsoHandoffCode({ accessToken, refreshToken, user, expiresAt }),
+  ]);
+  return `${crmBase}/auth/callback?code=${encodeURIComponent(code)}`;
+}
+
+/**
+ * POST to /api/auth/sso/start. Returns the opaque code or throws
+ * with a stable error key the form can render.
+ */
+async function mintSsoHandoffCode(payload: {
+  accessToken: string;
+  refreshToken: string;
+  user: AuthUser;
+  expiresAt: string;
+}): Promise<string> {
+  const res = await fetch("/api/auth/sso/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    if (res.status === 403 && body.error === "not_operator") {
+      throw new Error("not_operator");
+    }
+    if (res.status === 503) throw new Error("sso_unavailable");
+    throw new Error("sso_failed");
+  }
+  const { code } = (await res.json()) as { code: string };
+  return code;
 }
 
 const ERROR_MESSAGES: Record<string, string> = {
   invalid_session: "Your session expired or was invalid. Please sign in again.",
   CredentialsSignin: "Invalid email or password.",
+  role: "Your account is not authorised for CRM access. Please use the community site for end-user features.",
+  sso_expired: "Sign-in handoff expired. Please sign in again.",
+  sso_failed: "Sign-in handoff failed. Please try again.",
+  sso_unavailable: "Sign-in service is temporarily unavailable. Please try again in a moment.",
+  callback: "Sign-in failed during redirect. Please try again.",
+  not_operator: "This account is not authorised for CRM access.",
 };
 
 function LoginPageInner() {
@@ -136,7 +141,11 @@ function LoginPageInner() {
 
       const body = (await res.json().catch(() => ({}))) as
         | {
-            session: { accessToken: string; refreshToken: string };
+            session: {
+              accessToken: string;
+              refreshToken: string;
+              expiresAt?: string;
+            };
             user: {
               id: string;
               email: string;
@@ -167,7 +176,11 @@ function LoginPageInner() {
       }
 
       const payload = body as {
-        session: { accessToken: string; refreshToken: string };
+        session: {
+          accessToken: string;
+          refreshToken: string;
+          expiresAt?: string;
+        };
         user: {
           id: string;
           email: string;
@@ -177,15 +190,17 @@ function LoginPageInner() {
         };
       };
 
-      // Operator-class accounts (Admin / Operations Manager / Field
-      // Technician / NGO Volunteer / Viewer) belong on the CRM. Hop
-      // them across BEFORE the community NextAuth `signIn` call —
-      // otherwise the page would also mint a community session, which
-      // gives operators a second identity on this site.
+      // RBAC routing decision. The canonical `routeForRole` in
+      // `lib/rbac.ts` is shared (byte-identical) with the CRM, so
+      // every redirect target is in lockstep with the CRM's own
+      // gates. Operator-class accounts (Admin / Operations Manager
+      // / Field Technician / NGO Volunteer / Viewer) belong on the
+      // CRM. Customers stay on community. Unknown roles default to
+      // community / and surface an error there.
       //
-      // The CRM's /auth/callback re-validates the role server-side
-      // before storing tokens, so a forged `role` claim here can't
-      // unlock the CRM; the worst case is an extra hop + a 403.
+      // The CRM's /auth/callback re-verifies the JWT signature +
+      // role on redeem, so a forged `role` claim here cannot unlock
+      // the CRM; the worst case is one extra round-trip and a 403.
       if (isOperatorRole(payload.user.role)) {
         const adminUser: AuthUser = {
           id: payload.user.id,
@@ -198,6 +213,7 @@ function LoginPageInner() {
           payload.session.accessToken,
           payload.session.refreshToken,
           adminUser,
+          payload.session.expiresAt ?? new Date(Date.now() + 15 * 60_000).toISOString(),
         );
 
         // Detect environments where cross-port localhost navigation
