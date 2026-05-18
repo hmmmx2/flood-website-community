@@ -12,6 +12,7 @@ import NodeBellMenu, { type NodeChannelPrefs } from "@/components/NodeBellMenu";
 import ShortcutsModal from "@/components/flood-map/ShortcutsModal";
 import PlaceCard, { type PlaceCardModel } from "@/components/flood-map/PlaceCard";
 import DirectionsPanel, { type DirectionsRequest } from "@/components/flood-map/DirectionsPanel";
+import FloodAlertSubscribeButton from "@/components/flood-map/FloodAlertSubscribeButton";
 import { type SavedPlaceWithStatus } from "@/components/flood-map/SavedPlaceStatusRow";
 import type { ScoredRoute } from "@/lib/useFloodAwareRoute";
 import toast from "react-hot-toast";
@@ -21,6 +22,7 @@ import { fetchJson, authFetchJson } from "@/lib/fetchJson";
 import { useSiteSearchModal } from "@/lib/useSiteSearchModal";
 import { PAGE_CONTAINER } from "@/lib/layout";
 import type { FloodLevel, Zone } from "@/lib/types";
+import { useIoTStream } from "@/components/providers/IoTEventProvider";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const LEVEL_LABEL: Record<FloodLevel, string> = { 0: "Normal", 1: "Alert", 2: "Warning", 3: "Critical" };
@@ -125,6 +127,14 @@ export default function FloodMapPage() {
   const { data: session } = useSession();
   const user = session?.user ? sessionToAuthUser(session.user) : null;
   const { searchOpen, openSearch, closeSearch } = useSiteSearchModal();
+  const urlSearchParams = useSearchParams();
+  // `?dataset=sample` (or `all`) flips the BFF over to the SIM-PITAS simulator
+  // for demos. Anything else uses the configured default (real LoRa data).
+  const datasetParam = urlSearchParams?.get("dataset");
+  const datasetQuery =
+    datasetParam === "sample" || datasetParam === "all"
+      ? `?dataset=${datasetParam}`
+      : "";
   const [zones, setZones]             = useState<Zone[]>([]);
   const [loading, setLoading]         = useState(true);
   const [fetchError, setFetchError]   = useState(false);
@@ -294,7 +304,15 @@ export default function FloodMapPage() {
   // Auto-centre the map on the user's current position the first time
   // they land here. Browser auto-prompts for permission. We never poll
   // — just one read at mount; the recenter button on the map re-runs.
-  const requestGeolocation = useCallback(() => {
+  /**
+   * Whether the geolocation result should also pan the camera. The
+   * initial mount-time call (`useEffect` below) skips the pan because
+   * the map's own auto-fit-to-zones gives a more useful first frame —
+   * the user is here to see floods, not their own dot. The explicit
+   * "recenter on me" button passes `panAfter: true` so subsequent
+   * clicks do center the camera on the user.
+   */
+  const requestGeolocation = useCallback((opts: { panAfter?: boolean } = {}) => {
     if (typeof navigator === "undefined" || !navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -302,7 +320,9 @@ export default function FloodMapPage() {
         const lng = pos.coords.longitude;
         const accuracyM = pos.coords.accuracy;
         setMyLocation({ lat, lng, accuracyM });
-        setFocusLatLng({ lat, lng, zoom: 13 });
+        if (opts.panAfter) {
+          setFocusLatLng({ lat, lng, zoom: 13 });
+        }
       },
       () => { /* user denied — silently skip */ },
       { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
@@ -433,7 +453,7 @@ export default function FloodMapPage() {
     if (isFirstFetch.current) setLoading(true);
     setFetchError(false);
     try {
-      const data = await fetchJson<Zone[]>("/api/zones", { signal: controller.signal });
+      const data = await fetchJson<Zone[]>(`/api/zones${datasetQuery}`, { signal: controller.signal });
       if (inFlightAbort.current !== controller) return;
       setZones(Array.isArray(data) ? data : []);
       setLastFetch(new Date());
@@ -448,7 +468,7 @@ export default function FloodMapPage() {
         setLoading(false);
       }
     }
-  }, []);
+  }, [datasetQuery]);
 
   // Initial fetch + lightweight polling. We don't subscribe to the
   // per-sensor SSE stream on this page — that endpoint carries raw
@@ -473,6 +493,34 @@ export default function FloodMapPage() {
       inFlightAbort.current = null;
     };
   }, [fetchZones]);
+
+  // Live updates: when the IoT SSE stream signals a state change
+  // (flood_level / node_online / node_offline / alert), trigger a
+  // debounced refetch so the map reflects the new aggregate within ~1 s
+  // instead of waiting for the next poll. Heartbeats are intentionally
+  // ignored — they fire every few seconds per node and would amplify
+  // the BFF load with no visible UI change.
+  const { subscribe: subscribeIoT, alerts: liveAlerts } = useIoTStream();
+  useEffect(() => {
+    let scheduled: ReturnType<typeof setTimeout> | null = null;
+    const unsubscribe = subscribeIoT((event) => {
+      if (
+        event.type !== "flood_level" &&
+        event.type !== "node_online" &&
+        event.type !== "node_offline" &&
+        event.type !== "alert"
+      ) return;
+      if (scheduled) return;
+      scheduled = setTimeout(() => {
+        scheduled = null;
+        void fetchZones();
+      }, 750);
+    });
+    return () => {
+      unsubscribe();
+      if (scheduled) clearTimeout(scheduled);
+    };
+  }, [subscribeIoT, fetchZones]);
 
   // ── Derived: dropdown options ──────────────────────────────────────────────
   const availableStates = useMemo(() => {
@@ -578,12 +626,46 @@ export default function FloodMapPage() {
           await navigator.share({ title: "Flood Map", url: href });
           return;
         }
-        await navigator.clipboard.writeText(href);
-        toast.success("Link copied to clipboard");
+        // Try the modern Clipboard API first; many headless / sandboxed
+        // contexts (Claude Code's preview Chromium, some Safari-private
+        // modes, iframes without `clipboard-write` allow) refuse it
+        // with `NotAllowedError`. When that happens fall back to the
+        // synchronous `document.execCommand('copy')` via an off-screen
+        // textarea — deprecated but works in every environment that
+        // doesn't outright block clipboard access.
+        let copied = false;
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(href);
+            copied = true;
+          }
+        } catch {
+          // Fall through to legacy path
+        }
+        if (!copied) {
+          const ta = document.createElement("textarea");
+          ta.value = href;
+          ta.setAttribute("readonly", "");
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          try {
+            copied = document.execCommand("copy");
+          } catch {
+            copied = false;
+          }
+          document.body.removeChild(ta);
+        }
+        if (copied) {
+          toast.success("Link copied to clipboard");
+        } else {
+          toast("Copy this link manually: " + href, { duration: 6000 });
+        }
       } catch (err) {
-        // User cancelled the share sheet, or clipboard was denied.
+        // navigator.share rejected — usually user cancelled the share sheet.
         if ((err as { name?: string })?.name !== "AbortError") {
-          toast.error("Couldn't copy the link.");
+          toast.error("Couldn't share the link.");
         }
       }
     })();
@@ -707,6 +789,39 @@ export default function FloodMapPage() {
                 </span>
               </div>
             ) : null}
+            {liveAlerts.length > 0 && (() => {
+              // Find the newest alert whose node we know the centroid of.
+              // We don't pan to alerts whose nodes are off-map (e.g. the
+              // node was filtered out by the privacy aggregator) — that
+              // would jump the camera into the ocean.
+              const latest = liveAlerts.find((a) =>
+                zones.some((z) => z.nodeId === a.node_id),
+              );
+              if (!latest) return null;
+              const target = zones.find((z) => z.nodeId === latest.node_id);
+              if (!target) return null;
+              return (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFocusLatLng({
+                      lat: target.centroidLat,
+                      lng: target.centroidLng,
+                      zoom: 15,
+                    })
+                  }
+                  title={`Jump to latest alert: ${latest.alert_type} at ${latest.node_id}`}
+                  className="hidden sm:inline-flex items-center gap-2 rounded-full border border-[#dc2626]/70 bg-[color-mix(in_srgb,#dc2626_12%,transparent)] px-3 py-1.5 text-xs font-semibold text-[#dc2626] transition hover:bg-[color-mix(in_srgb,#dc2626_20%,transparent)]"
+                >
+                  <span
+                    className="inline-block h-2 w-2 rounded-full bg-[#dc2626] animate-pulse"
+                    aria-hidden
+                  />
+                  Jump to latest alert
+                </button>
+              );
+            })()}
+            <FloodAlertSubscribeButton />
             <button
               type="button"
               onClick={() => void fetchZones()}
@@ -970,7 +1085,7 @@ export default function FloodMapPage() {
                   }}
                   savedLocations={savedLocationsForMap}
                   myLocation={myLocation}
-                  onRecenterRequest={requestGeolocation}
+                  onRecenterRequest={() => requestGeolocation({ panAfter: true })}
                   onViewportChanged={setViewport}
                   onShareView={handleShareView}
                   onOpenDirections={() => openDirections(null)}

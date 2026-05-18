@@ -11,6 +11,12 @@ const nextConfig: NextConfig = {
   // Silence Turbopack warning — empty config means "use Turbopack with defaults"
   turbopack: {},
 
+  // Local preview tooling (Claude Code preview MCP, some IDE proxies) hits
+  // the dev server on 127.0.0.1 rather than `localhost`. Next 16's default
+  // cross-origin guard blocks HMR/RSC traffic from those hosts and silently
+  // breaks client hydration. Allow the loopback variants explicitly in dev.
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
+
   async redirects() {
     return [{ source: "/sensors", destination: "/flood-map", permanent: true }];
   },

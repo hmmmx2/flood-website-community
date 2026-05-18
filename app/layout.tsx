@@ -5,7 +5,7 @@ import "./globals.css";
 import { SessionProvider } from "next-auth/react";
 import { Toaster } from "react-hot-toast";
 import AdminCookieGuard from "@/components/AdminCookieGuard";
-import { SensorStreamProvider } from "@/components/providers/SensorStreamProvider";
+import { IoTEventProvider } from "@/components/providers/IoTEventProvider";
 import { ThemeProvider } from "@/lib/theme/ThemeProvider";
 import { getThemeInitScript } from "@/lib/theme/themeScript";
 
@@ -35,11 +35,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         </a>
         <ThemeProvider>
           <SessionProvider>
-            <SensorStreamProvider>
+            <IoTEventProvider>
               <AdminCookieGuard />
               <div id="main-content">{children}</div>
               <Toaster position="top-center" toastOptions={{ duration: 3500 }} />
-            </SensorStreamProvider>
+            </IoTEventProvider>
           </SessionProvider>
         </ThemeProvider>
       </body>

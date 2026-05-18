@@ -431,6 +431,61 @@ export default function NodeMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // mount-only
 
+  // First-load auto-fit: when zones load asynchronously *after* the map
+  // mounts (the normal case — fetchJson('/api/zones') is awaited on the
+  // page), the mount-only `mapCenter` memo above is stuck at the Sabah
+  // fallback. Without this effect the user sees Kota Kinabalu at zoom
+  // 11 instead of the Pitas cluster ~100 km NE. We fit the camera to
+  // the zones' bounding box once — `didAutoFit` makes sure we don't
+  // fight the user's subsequent pan/zoom or a `focusLatLng` deep link.
+  //
+  // Two timings to handle: zones may arrive *before* the GoogleMap's
+  // onMapLoad fires (mapRef null), OR after (mapRef set). `mapReady`
+  // flips on load and is included in the deps so the effect re-runs
+  // and converges in either order.
+  const didAutoFit = useRef(false);
+  const [mapReady, setMapReady] = useState(false);
+  useEffect(() => {
+    if (didAutoFit.current) return;
+    if (!mapReady || !mapRef.current || zones.length === 0) return;
+    // Defer ONLY to a URL deep-link (?lat=&lng=) — that's a deliberate
+    // sharer intent. Geolocation also writes to `focusLatLng` but it
+    // arrives async after zones load; treating it as "user wants this
+    // exact spot" would silently hide the flood data the page exists
+    // to show. The sharer's deep-link is the only override we honour.
+    //
+    // Important: `Number(null)` is 0 which passes `Number.isFinite`,
+    // so we MUST check the raw string is non-null before coercing,
+    // or every page (no `?lat=` in URL) would look like a deep-link.
+    if (typeof window !== "undefined") {
+      const qs = new URLSearchParams(window.location.search);
+      const latStr = qs.get("lat");
+      const lngStr = qs.get("lng");
+      const hasDeepLink =
+        latStr !== null &&
+        lngStr !== null &&
+        Number.isFinite(Number(latStr)) &&
+        Number.isFinite(Number(lngStr));
+      if (hasDeepLink) {
+        didAutoFit.current = true;
+        return;
+      }
+    }
+    const bounds = new google.maps.LatLngBounds();
+    for (const z of zones) {
+      bounds.extend({ lat: z.centroidLat, lng: z.centroidLng });
+    }
+    // If every zone collapsed onto a single point, panTo + a sensible
+    // zoom — fitBounds on a degenerate box would zoom to street level.
+    if (bounds.getNorthEast().equals(bounds.getSouthWest())) {
+      mapRef.current.panTo(bounds.getCenter());
+      mapRef.current.setZoom(15);
+    } else {
+      mapRef.current.fitBounds(bounds, 64);
+    }
+    didAutoFit.current = true;
+  }, [zones, mapReady]);
+
   useEffect(() => {
     if (!focusLatLng || !mapRef.current) return;
     mapRef.current.panTo({ lat: focusLatLng.lat, lng: focusLatLng.lng });
@@ -443,6 +498,9 @@ export default function NodeMap({
   const onMapLoad = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
     setMapError(false);
+    // Flip the readiness flag so the first-load auto-fit effect above
+    // re-runs once the camera is actually controllable.
+    setMapReady(true);
     // Wire the compass — Google Maps' heading_changed event is the
     // most reliable way to know if the map is non-north-up after a
     // gesture or an SDK call.
