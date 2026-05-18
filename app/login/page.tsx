@@ -22,6 +22,42 @@ async function getCrmUrl(): Promise<string> {
   }
 }
 
+/**
+ * Operator-class roles — these accounts belong on the CRM, not on
+ * the community site. Mirrors `OPERATOR_JWT_KEYS` in
+ * `flood-website-crm/lib/permissions.ts`. If the two lists drift,
+ * an operator either gets stuck on the community home page or gets
+ * sent to /auth/callback only to be 403'd by the role gate there.
+ *
+ * The Java backend stamps the role into the JWT as uppercase with
+ * underscores (e.g. `OPERATIONS_MANAGER`). We also tolerate the
+ * CRM display label form (`"Operations Manager"`) and a few common
+ * variations (no underscore; Spring Security `ROLE_` prefix) so a
+ * backend tweak can't break the redirect again.
+ */
+const OPERATOR_ROLE_KEYS: ReadonlySet<string> = new Set([
+  "ADMIN",
+  "OPERATIONS_MANAGER",
+  "OPERATIONSMANAGER",
+  "FIELD_TECHNICIAN",
+  "FIELDTECHNICIAN",
+  "NGO_VOLUNTEER",
+  "NGOVOLUNTEER",
+  "VIEWER",
+]);
+
+function isOperatorRole(raw: string | null | undefined): boolean {
+  if (!raw) return false;
+  // Normalise: trim, uppercase, collapse whitespace → underscores,
+  // drop a leading "ROLE_" prefix if Spring Security adds one.
+  const key = String(raw)
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "_")
+    .replace(/^ROLE_/, "");
+  return OPERATOR_ROLE_KEYS.has(key);
+}
+
 async function redirectToAdmin(
   accessToken: string,
   refreshToken: string,
@@ -123,7 +159,16 @@ function LoginPageInner() {
         };
       };
 
-      if (payload.user.role?.toLowerCase() === "admin") {
+      // Operator-class accounts (Admin / Operations Manager / Field
+      // Technician / NGO Volunteer / Viewer) belong on the CRM. Hop
+      // them across BEFORE the community NextAuth `signIn` call —
+      // otherwise the page would also mint a community session, which
+      // gives operators a second identity on this site.
+      //
+      // The CRM's /auth/callback re-validates the role server-side
+      // before storing tokens, so a forged `role` claim here can't
+      // unlock the CRM; the worst case is an extra hop + a 403.
+      if (isOperatorRole(payload.user.role)) {
         const adminUser: AuthUser = {
           id: payload.user.id,
           email: payload.user.email,
