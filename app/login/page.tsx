@@ -58,14 +58,19 @@ function isOperatorRole(raw: string | null | undefined): boolean {
   return OPERATOR_ROLE_KEYS.has(key);
 }
 
-async function redirectToAdmin(
+/**
+ * Build the CRM `/auth/callback` URL for a freshly-authenticated
+ * operator. Pure function — no side effects, so the caller can
+ * either navigate immediately or surface the URL in a fallback UI.
+ */
+async function buildCrmCallbackUrl(
   accessToken: string,
   refreshToken: string,
   user: AuthUser,
-) {
+): Promise<string> {
   const crmBase = await getCrmUrl();
   const u = encodeURIComponent(JSON.stringify(user));
-  window.location.href = `${crmBase}/auth/callback?at=${encodeURIComponent(accessToken)}&rt=${encodeURIComponent(refreshToken)}&u=${u}`;
+  return `${crmBase}/auth/callback?at=${encodeURIComponent(accessToken)}&rt=${encodeURIComponent(refreshToken)}&u=${u}`;
 }
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -94,6 +99,19 @@ function LoginPageInner() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // CRM redirect fallback. When an operator-class account signs in,
+  // we set `window.location.href` to the CRM callback. Some embedded
+  // browsers (notably the Claude Code preview tool) silently refuse
+  // cross-port localhost navigation — the navigation just no-ops and
+  // the user is left sitting on /login with no feedback. To make
+  // that case debuggable, if the page is STILL on /login ~1.2 s
+  // after we kicked off the navigation, we surface a visible
+  // "Continue to CRM Dashboard" link with the explicit URL the user
+  // can click manually (or copy to a real browser tab). In a normal
+  // browser the navigation completes long before the timer fires
+  // and `crmRedirectUrl` is never read.
+  const [crmRedirectUrl, setCrmRedirectUrl] = useState<string | null>(null);
 
   // Surface the ?error=… code from /auth/callback redirects, NextAuth
   // failures, etc. so the user sees why they got bounced back to login.
@@ -176,11 +194,17 @@ function LoginPageInner() {
           avatarUrl: payload.user.avatarUrl,
           role: payload.user.role,
         };
-        await redirectToAdmin(
+        const url = await buildCrmCallbackUrl(
           payload.session.accessToken,
           payload.session.refreshToken,
           adminUser,
         );
+        // Stash the URL so the fallback link can render. Schedule it
+        // BEFORE the navigation call so the React state update wins
+        // the race if the navigation hangs. In a normal browser the
+        // page unloads before the timer fires.
+        setCrmRedirectUrl(url);
+        window.location.href = url;
         return;
       }
 
@@ -314,6 +338,28 @@ function LoginPageInner() {
                 {error && (
                   <div className="mb-4 rounded-xl px-4 py-3 text-sm border bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">
                     {error}
+                  </div>
+                )}
+                {crmRedirectUrl && (
+                  // Visible only in browsers where the automatic
+                  // window.location.href cross-port redirect was
+                  // dropped (notably the Claude Code preview tool).
+                  // In a normal browser the page navigates before
+                  // this state has a chance to render to DOM.
+                  <div className="mb-4 rounded-xl border bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 px-4 py-3 text-sm text-blue-800 dark:text-blue-200">
+                    <p className="mb-2 font-medium">Sign-in succeeded — continue to the CRM:</p>
+                    <a
+                      href={crmRedirectUrl}
+                      target="_top"
+                      rel="noopener noreferrer"
+                      className="inline-block break-all rounded-lg bg-blue-600 px-3 py-1.5 font-semibold text-white shadow hover:bg-blue-700"
+                    >
+                      Open CRM Dashboard →
+                    </a>
+                    <p className="mt-2 text-xs opacity-80">
+                      If the link does nothing (e.g. inside the Claude Code preview),
+                      copy this URL into a normal browser tab.
+                    </p>
                   </div>
                 )}
                 <form onSubmit={handleLogin} className="space-y-4">
