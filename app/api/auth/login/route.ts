@@ -3,50 +3,109 @@ import { javaFetch } from "@/lib/javaApi";
 
 export const dynamic = "force-dynamic";
 
+// Allow Vercel to keep the function alive long enough for a slow Java
+// response (Railway / Neon cold-starts have been observed up to ~30 s).
+// `javaFetch` aborts at 12 s — comfortably inside this ceiling — so we
+// always return a controlled JSON error rather than Vercel killing the
+// function and returning its own opaque 503.
+//
+// 15 s sits inside the Hobby tier's 60 s ceiling and well inside Pro.
+export const maxDuration = 15;
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const data = await javaFetch<unknown>("/auth/login", { method: "POST", body });
+    // 12 s — slightly above our normal 10 s default to absorb Neon
+    // wake-up + first-query overhead, but still inside `maxDuration`
+    // so the Vercel platform never preempts us.
+    const data = await javaFetch<unknown>("/auth/login", {
+      method: "POST",
+      body,
+      timeoutMs: 12_000,
+    });
     return NextResponse.json(data);
   } catch (error) {
-    const name   = (error as Error).name;
+    const name = (error as Error).name;
     const status = (error as { status?: number }).status;
+    const rawMessage = error instanceof Error ? error.message : "";
 
-    // Backend cold-starting on Railway (Neon DB warm-up can take 30-60 s)
+    // ── 1. Backend slow / aborted (Neon cold-start, network blip) ──
     if (name === "AbortError" || name === "TimeoutError") {
+      console.error("[auth/login] Java fetch aborted (timeout):", rawMessage);
       return NextResponse.json(
-        { error: "The server is warming up. Please wait a moment and try again." },
-        { status: 503 }
+        {
+          error:
+            "Sign-in service is taking longer than usual to respond. " +
+            "Please wait a moment and try again.",
+          code: "backend_timeout",
+        },
+        { status: 503 },
       );
     }
 
-    // Railway gateway "Application not found" — service not yet deployed or URL mismatch
+    // ── 2. Railway edge "Application not found" / DNS error ─────────
     if (status === 404) {
+      console.error("[auth/login] Java returned 404 — service URL mismatch?");
       return NextResponse.json(
-        { error: "Service temporarily unavailable. Please try again in a moment." },
-        { status: 503 }
+        {
+          error: "Sign-in service is unavailable. Please try again in a moment.",
+          code: "backend_not_found",
+        },
+        { status: 503 },
       );
     }
 
+    // ── 3. Invalid credentials (Java rejected password) ─────────────
     if (status === 401) {
       return NextResponse.json(
-        { error: "Invalid email or password." },
-        { status: 401 }
+        { error: "Invalid email or password.", code: "invalid_credentials" },
+        { status: 401 },
       );
     }
 
-    // Pass through Spring Boot validation / business-rule messages (400)
+    // ── 4. Java validation error (e.g. EMAIL_NOT_VERIFIED) ──────────
     if (status === 400) {
-      const msg = error instanceof Error ? error.message : null;
       return NextResponse.json(
-        { error: msg || "Invalid request. Please check your details." },
-        { status: 400 }
+        {
+          error: rawMessage || "Invalid request. Please check your details.",
+          code: "validation_error",
+        },
+        { status: 400 },
       );
     }
 
+    // ── 5. Java 5xx (most commonly: DB unreachable / pool exhausted)
+    //
+    // We've seen this in prod when Neon's compute scales to zero and
+    // takes too long to wake, or when the HikariCP pool gets
+    // exhausted. Treat as 503 because the issue is transient backend
+    // health, not a client error.
+    if (typeof status === "number" && status >= 500 && status < 600) {
+      console.error(
+        "[auth/login] Java returned",
+        status,
+        "—",
+        rawMessage,
+        "(likely DB unreachable from flood-service-community on Railway;",
+        "check Neon compute status + HikariCP pool, then restart the",
+        "Railway service if needed)",
+      );
+      return NextResponse.json(
+        {
+          error:
+            "Sign-in service is experiencing an outage. " +
+            "The team has been notified — please try again shortly.",
+          code: "backend_unavailable",
+        },
+        { status: 503 },
+      );
+    }
+
+    // ── 6. Catch-all (network failure, unknown shape) ───────────────
+    console.error("[auth/login] unexpected error:", rawMessage, error);
     return NextResponse.json(
-      { error: "Login failed. Please try again." },
-      { status: status ?? 500 }
+      { error: "Login failed. Please try again.", code: "unknown" },
+      { status: status ?? 500 },
     );
   }
 }
