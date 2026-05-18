@@ -86,9 +86,32 @@ export async function POST(req: NextRequest) {
     const code = await mintSsoCode(body as SsoPayload);
     return NextResponse.json({ code });
   } catch (err) {
-    console.error("[sso/start] mint failed", err);
+    // Surface a precise reason in Vercel logs so a 503 in prod is
+    // immediately diagnosable. The most common case is the Upstash
+    // env vars being absent on `flood-website-community.vercel.app`
+    // (they used to be optional for caching; the SSO flow now needs
+    // them) — `getRedis()` throws "Upstash Redis env vars missing".
+    const msg = err instanceof Error ? err.message : String(err);
+    const upstashMissing = /Upstash.*env vars missing/i.test(msg);
+    console.error(
+      "[sso/start] mint failed",
+      upstashMissing
+        ? "→ Upstash env vars are NOT set on this deployment. Set " +
+            "UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN " +
+            "on the community Vercel project (Production + Preview) " +
+            "and redeploy. The shared Upstash DB is the same one " +
+            "the CRM project uses."
+        : msg,
+      err,
+    );
     return NextResponse.json(
-      { error: "service_unavailable" },
+      {
+        error: upstashMissing
+          ? "sso_storage_unavailable"
+          : "service_unavailable",
+        // Hint is shown to the user via the login page's ERROR_MESSAGES
+        // map, so they're not staring at a generic 503.
+      },
       { status: 503 },
     );
   }

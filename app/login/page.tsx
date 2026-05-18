@@ -65,7 +65,17 @@ async function mintSsoHandoffCode(payload: {
     if (res.status === 403 && body.error === "not_operator") {
       throw new Error("not_operator");
     }
-    if (res.status === 503) throw new Error("sso_unavailable");
+    if (res.status === 503) {
+      // Server logged the precise reason. The "storage_unavailable"
+      // variant means Upstash env vars aren't set on this deployment
+      // (the SSO handoff stash lives in Redis). Operators see a
+      // clearer message; the runbook is to set the env vars on the
+      // community Vercel project. See VERCEL_DEPLOYMENT.md.
+      if (body.error === "sso_storage_unavailable") {
+        throw new Error("sso_storage_unavailable");
+      }
+      throw new Error("sso_unavailable");
+    }
     throw new Error("sso_failed");
   }
   const { code } = (await res.json()) as { code: string };
@@ -79,6 +89,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   sso_expired: "Sign-in handoff expired. Please sign in again.",
   sso_failed: "Sign-in handoff failed. Please try again.",
   sso_unavailable: "Sign-in service is temporarily unavailable. Please try again in a moment.",
+  sso_storage_unavailable:
+    "Sign-in is temporarily misconfigured (handoff storage). The team has been notified — please try again in a few minutes.",
   callback: "Sign-in failed during redirect. Please try again.",
   not_operator: "This account is not authorised for CRM access.",
 };
