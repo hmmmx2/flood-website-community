@@ -2,11 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { javaFetch } from "@/lib/javaApi";
 
 export const dynamic = "force-dynamic";
+// QA NEW-4 — same maxDuration as /api/auth/login so Vercel doesn't
+// 504 with an opaque error when Java cold-starts during register.
+export const maxDuration = 15;
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const data = await javaFetch<unknown>("/auth/register", { method: "POST", body });
+    const data = await javaFetch<unknown>("/auth/register", {
+      method: "POST",
+      body,
+      timeoutMs: 12_000,
+    });
     return NextResponse.json(data);
   } catch (error) {
     const name   = (error as Error).name;

@@ -2,11 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { javaFetch } from "@/lib/javaApi";
 
 export const dynamic = "force-dynamic";
+// QA NEW-4 — uniform timeout strategy.
+export const maxDuration = 15;
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    await javaFetch<unknown>("/auth/forgot-password", { method: "POST", body });
+    await javaFetch<unknown>("/auth/forgot-password", {
+      method: "POST",
+      body,
+      timeoutMs: 12_000,
+    });
     return NextResponse.json({ ok: true });
   } catch (error) {
     const name   = (error as Error).name;
@@ -34,6 +40,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: msg || "Could not send reset code. Please check the email address." },
         { status: 400 }
+      );
+    }
+
+    // Java rate limit (also intentional — anti-enumeration + anti-abuse).
+    if (status === 429) {
+      return NextResponse.json(
+        { error: "Too many reset requests. Please wait before trying again." },
+        { status: 429 },
       );
     }
 

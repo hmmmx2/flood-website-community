@@ -42,7 +42,15 @@ function VerifyEmailInner() {
   const router = useRouter();
   const params = useSearchParams();
   const emailParam = params.get("email") ?? "";
-  const devCodeParam = params.get("devCode") ?? "";
+  // QA NEW-1 — devCode no longer travels in the URL. It's stashed in
+  // sessionStorage by the register form (dev-mode only) and read here
+  // on mount. Falls back to the legacy `?devCode=` query string for
+  // any in-flight users mid-flow during the cutover.
+  const devCodeFromQuery = params.get("devCode") ?? "";
+  const devCodeParam =
+    typeof window !== "undefined"
+      ? (sessionStorage.getItem("verify_email_dev_code") ?? "") || devCodeFromQuery
+      : devCodeFromQuery;
 
   const [email, setEmail] = useState(emailParam);
   const [digits, setDigits] = useState<string[]>(() =>
@@ -55,6 +63,14 @@ function VerifyEmailInner() {
   );
   const [resendIn, setResendIn] = useState(0);
   const [resending, setResending] = useState(false);
+
+  // Clear the stashed dev code as soon as we've used it. One-shot
+  // hand-off — we don't want it surviving a page refresh later.
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("verify_email_dev_code");
+    }
+  }, []);
 
   const inputsRef = useRef<Array<HTMLInputElement | null>>([]);
   const code = useMemo(() => digits.join(""), [digits]);

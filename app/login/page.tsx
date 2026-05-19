@@ -374,8 +374,22 @@ function LoginPageInner() {
         throw new Error(data.error || "Registration failed.");
       }
       const targetEmail = data.email ?? regEmail;
+      // QA NEW-1 — Keep the dev-mode 6-digit code OUT of the URL.
+      // Previously: `?email=...&devCode=123456` left a copy of the code
+      // in browser history, server access logs, Referer headers. Now
+      // we drop it into sessionStorage (cleared on tab close) and the
+      // verify-email page reads it on mount. The email stays in the
+      // URL because that's identifying-but-not-secret + makes back
+      // navigation work intuitively.
+      if (data.devCode && typeof window !== "undefined") {
+        try {
+          sessionStorage.setItem("verify_email_dev_code", data.devCode);
+        } catch {
+          // sessionStorage may be unavailable (Safari private mode);
+          // user falls back to typing the code from their email.
+        }
+      }
       const params = new URLSearchParams({ email: targetEmail });
-      if (data.devCode) params.set("devCode", data.devCode);
       router.push(`/verify-email?${params.toString()}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed.");
