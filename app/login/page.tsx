@@ -86,6 +86,13 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_session: "Your session expired or was invalid. Please sign in again.",
   CredentialsSignin: "Invalid email or password.",
   role: "Your account is not authorised for CRM access. Please use the community site for end-user features.",
+  expired: "Your session expired. Please sign in again.",
+  invalid_signature:
+    "Your session token is invalid. Please sign in again — if this keeps happening, contact your administrator.",
+  malformed:
+    "Your session token is malformed. Please sign in again — if this keeps happening, contact your administrator.",
+  misconfigured:
+    "Sign-in is temporarily misconfigured on the operator console. The team has been notified — please try again in a few minutes.",
   sso_expired: "Sign-in handoff expired. Please sign in again.",
   sso_failed: "Sign-in handoff failed. Please try again.",
   sso_unavailable: "Sign-in service is temporarily unavailable. Please try again in a moment.",
