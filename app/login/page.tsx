@@ -172,7 +172,6 @@ function LoginPageInner() {
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [showLoginPw, setShowLoginPw] = useState(false);
-  const [rememberMe, setRememberMe] = useState(true);
 
   // Register
   const [firstName, setFirstName] = useState("");
@@ -181,6 +180,9 @@ function LoginPageInner() {
   const [regPassword, setRegPassword] = useState("");
   const [showRegPw, setShowRegPw] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState("");
+  // QA P1-1: separate visibility toggle for the confirm-password field
+  // so users can verify the match without revealing the primary field.
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -591,23 +593,26 @@ function LoginPageInner() {
                       <button
                         type="button"
                         onClick={() => setShowLoginPw(!showLoginPw)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-sm transition-colors"
+                        aria-label={showLoginPw ? "Hide password" : "Show password"}
+                        aria-pressed={showLoginPw}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-sm transition-colors min-h-[24px] px-1"
                         style={{ color: "var(--color-muted)" }}
                       >
                         {showLoginPw ? "Hide" : "Show"}
                       </button>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={rememberMe}
-                        onChange={e => setRememberMe(e.target.checked)}
-                        className="h-4 w-4 rounded border-slate-300 accent-[var(--color-brand)]"
-                      />
-                      <span style={{ color: "var(--color-muted)" }}>Remember me</span>
-                    </label>
+                  {/*
+                    QA P1-3 — "Remember me" was a checkbox bound to React
+                    state that never reached the backend. Java token
+                    lifetimes are fixed (15 min access / 7 day refresh)
+                    and NextAuth's maxAge is hardcoded in auth.ts. Wiring
+                    a true per-session expiry needs NextAuth callback
+                    work AND a Java flag — both out of scope. Removed the
+                    dead control to stop misleading users; reintroduce
+                    when it's actually plumbed end-to-end.
+                  */}
+                  <div className="flex items-center justify-end text-sm">
                     <button
                       type="button"
                       onClick={() => router.push("/forgot-password")}
@@ -734,7 +739,9 @@ function LoginPageInner() {
                       <button
                         type="button"
                         onClick={() => setShowRegPw(!showRegPw)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-sm transition-colors"
+                        aria-label={showRegPw ? "Hide password" : "Show password"}
+                        aria-pressed={showRegPw}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-sm transition-colors min-h-[24px] px-1"
                         style={{ color: "var(--color-muted)" }}
                       >
                         {showRegPw ? "Hide" : "Show"}
@@ -746,20 +753,47 @@ function LoginPageInner() {
                     <label className="block text-sm font-medium mb-2" style={{ color: "var(--color-text)" }}>
                       Confirm Password
                     </label>
-                    <input
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Confirm your password"
-                      required
-                      autoComplete="new-password"
-                      className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-colors focus:ring-2"
-                      style={{
-                        background: "var(--color-input-bg)",
-                        borderColor: "var(--color-border)",
-                        color: "var(--color-text)",
-                      }}
-                    />
+                    {/* QA P1-1 — confirm-password gets its OWN visibility
+                        toggle (separate state) so users can verify the
+                        match independently of the primary field. */}
+                    <div className="relative">
+                      <input
+                        type={showConfirmPw ? "text" : "password"}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="Confirm your password"
+                        required
+                        autoComplete="new-password"
+                        className="w-full rounded-xl border px-4 py-2.5 pr-16 text-sm outline-none transition-colors focus:ring-2"
+                        style={{
+                          background: "var(--color-input-bg)",
+                          borderColor: "var(--color-border)",
+                          color: "var(--color-text)",
+                        }}
+                        aria-invalid={
+                          confirmPassword.length > 0 && confirmPassword !== regPassword
+                        }
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPw(!showConfirmPw)}
+                        aria-label={showConfirmPw ? "Hide confirm password" : "Show confirm password"}
+                        aria-pressed={showConfirmPw}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-sm transition-colors min-h-[24px] px-1"
+                        style={{ color: "var(--color-muted)" }}
+                      >
+                        {showConfirmPw ? "Hide" : "Show"}
+                      </button>
+                    </div>
+                    {confirmPassword.length > 0 && confirmPassword !== regPassword && (
+                      <p
+                        className="mt-1 text-xs text-red-600 dark:text-red-400"
+                        role="alert"
+                        aria-live="polite"
+                      >
+                        Passwords don&apos;t match.
+                      </p>
+                    )}
                   </div>
                   <button
                     type="submit"

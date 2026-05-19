@@ -19,6 +19,8 @@ function ResetPasswordForm() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
+  // QA P1-2 — separate visibility toggle for the confirm-password field.
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -152,7 +154,9 @@ function ResetPasswordForm() {
                     className="w-full rounded-xl border px-4 py-2.5 pr-16 text-sm outline-none transition-colors focus:ring-2"
                     style={{ background: "var(--color-input-bg)", borderColor: "var(--color-border)", color: "var(--color-text)" }} />
                   <button type="button" onClick={() => setShowPw(p => !p)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: "var(--color-muted)" }}>
+                    aria-label={showPw ? "Hide new password" : "Show new password"}
+                    aria-pressed={showPw}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-sm min-h-[24px] px-1" style={{ color: "var(--color-muted)" }}>
                     {showPw ? "Hide" : "Show"}
                   </button>
                 </div>
@@ -160,10 +164,24 @@ function ResetPasswordForm() {
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: "var(--color-text)" }}>Confirm Password</label>
-                <input type={showPw ? "text" : "password"} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
-                  required placeholder="Repeat your new password"
-                  className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-colors focus:ring-2"
-                  style={{ background: "var(--color-input-bg)", borderColor: "var(--color-border)", color: "var(--color-text)" }} />
+                <div className="relative">
+                  <input type={showConfirmPw ? "text" : "password"} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+                    required placeholder="Repeat your new password"
+                    aria-invalid={confirmPassword.length > 0 && confirmPassword !== newPassword}
+                    className="w-full rounded-xl border px-4 py-2.5 pr-16 text-sm outline-none transition-colors focus:ring-2"
+                    style={{ background: "var(--color-input-bg)", borderColor: "var(--color-border)", color: "var(--color-text)" }} />
+                  <button type="button" onClick={() => setShowConfirmPw(p => !p)}
+                    aria-label={showConfirmPw ? "Hide confirm password" : "Show confirm password"}
+                    aria-pressed={showConfirmPw}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-sm min-h-[24px] px-1" style={{ color: "var(--color-muted)" }}>
+                    {showConfirmPw ? "Hide" : "Show"}
+                  </button>
+                </div>
+                {confirmPassword.length > 0 && confirmPassword !== newPassword && (
+                  <p className="mt-1 text-xs text-red-600 dark:text-red-400" role="alert" aria-live="polite">
+                    Passwords don&apos;t match.
+                  </p>
+                )}
               </div>
               <button type="submit" disabled={loading}
                 className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--color-brand-dark)] disabled:opacity-50 bg-[var(--color-brand)]">
