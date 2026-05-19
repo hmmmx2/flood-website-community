@@ -113,12 +113,33 @@ function validateLoginResponse(raw: unknown): LoginSuccessPayload | null {
   if (!user || typeof user !== "object") return null;
   if (typeof session.accessToken !== "string" || session.accessToken.length === 0) return null;
   if (typeof session.refreshToken !== "string" || session.refreshToken.length === 0) return null;
-  if (session.expiresAt !== undefined && typeof session.expiresAt !== "string") return null;
+  // expiresAt may be absent (older Java builds), present as string (current),
+  // or null (some edge cases). All three are acceptable.
+  if (
+    session.expiresAt !== undefined &&
+    session.expiresAt !== null &&
+    typeof session.expiresAt !== "string"
+  ) {
+    return null;
+  }
   if (typeof user.id !== "string" || user.id.length === 0) return null;
   if (typeof user.email !== "string" || user.email.length === 0) return null;
+  // displayName is the computed `firstName + " " + lastName` from Java —
+  // always a string in `UserSummaryDto`, but may be empty for users
+  // with blank names; treat empty as valid.
   if (typeof user.displayName !== "string") return null;
   if (typeof user.role !== "string" || user.role.length === 0) return null;
-  if (user.avatarUrl !== undefined && typeof user.avatarUrl !== "string") return null;
+  // avatarUrl: Java's UserSummaryDto returns null when the user has no
+  // avatar set. JSON serialises that as `null`, not omitted. Accept
+  // null, undefined, or string. (Previously rejected null → every
+  // Customer with no avatar was treated as a "malformed response".)
+  if (
+    user.avatarUrl !== undefined &&
+    user.avatarUrl !== null &&
+    typeof user.avatarUrl !== "string"
+  ) {
+    return null;
+  }
   return raw as LoginSuccessPayload;
 }
 

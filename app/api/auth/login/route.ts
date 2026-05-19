@@ -28,10 +28,32 @@ export async function POST(req: NextRequest) {
     const name = (error as Error).name;
     const status = (error as { status?: number }).status;
     const rawMessage = error instanceof Error ? error.message : "";
+    // NEW-8 — Node's `fetch` wraps low-level connection errors (e.g.
+    // ECONNREFUSED when the Java service isn't listening at all) into
+    // a `TypeError: fetch failed` whose `.cause` carries the libuv code.
+    // Catch those too so a totally-unreachable backend produces the
+    // same friendly "warming up" 503 as a slow one, not a generic 500
+    // that users misread as "wrong password".
+    const cause = (error as { cause?: { code?: string } }).cause;
+    const isNetworkFailure =
+      name === "TypeError" &&
+      typeof cause?.code === "string" &&
+      [
+        "ECONNREFUSED",
+        "ECONNRESET",
+        "ENOTFOUND",
+        "EAI_AGAIN",
+        "UND_ERR_SOCKET",
+        "UND_ERR_CONNECT_TIMEOUT",
+      ].includes(cause.code);
 
-    // ── 1. Backend slow / aborted (Neon cold-start, network blip) ──
-    if (name === "AbortError" || name === "TimeoutError") {
-      console.error("[auth/login] Java fetch aborted (timeout):", rawMessage);
+    // ── 1. Backend slow / aborted / unreachable ─────────────────────
+    if (name === "AbortError" || name === "TimeoutError" || isNetworkFailure) {
+      console.error(
+        "[auth/login] Java fetch failed (timeout or network):",
+        rawMessage,
+        cause?.code ?? "",
+      );
       return NextResponse.json(
         {
           error:
