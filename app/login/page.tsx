@@ -82,6 +82,46 @@ async function mintSsoHandoffCode(payload: {
   return code;
 }
 
+/**
+ * QA P1-9 — Validate the `/api/auth/login` response shape at runtime.
+ * Returns the parsed payload on success or `null` if anything is
+ * missing / wrong type. Hand-rolled so we don't pull in a 14-KB
+ * validation library for one schema; if we end up validating more
+ * response shapes, switch to `zod` or `valibot`.
+ */
+type LoginSuccessPayload = {
+  session: {
+    accessToken: string;
+    refreshToken: string;
+    expiresAt?: string;
+  };
+  user: {
+    id: string;
+    email: string;
+    displayName: string;
+    avatarUrl?: string;
+    role: string;
+  };
+};
+
+function validateLoginResponse(raw: unknown): LoginSuccessPayload | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const session = o.session as Record<string, unknown> | undefined;
+  const user = o.user as Record<string, unknown> | undefined;
+  if (!session || typeof session !== "object") return null;
+  if (!user || typeof user !== "object") return null;
+  if (typeof session.accessToken !== "string" || session.accessToken.length === 0) return null;
+  if (typeof session.refreshToken !== "string" || session.refreshToken.length === 0) return null;
+  if (session.expiresAt !== undefined && typeof session.expiresAt !== "string") return null;
+  if (typeof user.id !== "string" || user.id.length === 0) return null;
+  if (typeof user.email !== "string" || user.email.length === 0) return null;
+  if (typeof user.displayName !== "string") return null;
+  if (typeof user.role !== "string" || user.role.length === 0) return null;
+  if (user.avatarUrl !== undefined && typeof user.avatarUrl !== "string") return null;
+  return raw as LoginSuccessPayload;
+}
+
 const ERROR_MESSAGES: Record<string, string> = {
   invalid_session: "Your session expired or was invalid. Please sign in again.",
   CredentialsSignin: "Invalid email or password.",
@@ -194,20 +234,17 @@ function LoginPageInner() {
         throw new Error(msg);
       }
 
-      const payload = body as {
-        session: {
-          accessToken: string;
-          refreshToken: string;
-          expiresAt?: string;
-        };
-        user: {
-          id: string;
-          email: string;
-          displayName: string;
-          avatarUrl?: string;
-          role: string;
-        };
-      };
+      // QA P1-9 — Validate the response shape before we trust it for
+      // routing. A drift on the Java side (renamed `role` field, JSON
+      // null where a string is expected, etc.) used to silently coerce
+      // and could land an operator on the community home page or a
+      // Customer on the CRM /auth/callback that then 403s. Belt-and-
+      // braces against contract drift; failure here means we ask the
+      // user to retry rather than acting on garbage.
+      const payload = validateLoginResponse(body);
+      if (!payload) {
+        throw new Error("Sign-in succeeded but the response was malformed. Please try again.");
+      }
 
       // RBAC routing decision. The canonical `routeForRole` in
       // `lib/rbac.ts` is shared (byte-identical) with the CRM, so

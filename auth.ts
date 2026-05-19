@@ -4,6 +4,7 @@ import Credentials from "next-auth/providers/credentials";
 import authConfig from "./auth.config";
 
 import { normaliseJavaApiBase } from "@/lib/normaliseJavaApiBase";
+import { isOperatorRole } from "@/lib/rbac";
 
 const JAVA_API = normaliseJavaApiBase(
   process.env.JAVA_API_URL,
@@ -78,7 +79,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               role: string;
             };
           };
-          if (String(user.role ?? "").toLowerCase() === "admin") return null;
+          // QA P1-2 — refuse to mint a community NextAuth session for
+          // any operator-class account (Admin / Operations Manager /
+          // Field Technician / NGO Volunteer / Viewer). The previous
+          // check only blocked "admin"; the other operator roles
+          // walked past it and ended up with both a CRM session AND
+          // a community session, which is the exact race the SSO
+          // handoff was built to prevent. Uses the canonical RBAC
+          // predicate so this stays in lockstep with the CRM gates.
+          if (isOperatorRole(user.role)) return null;
           return {
             id: user.id,
             email: user.email,
@@ -120,7 +129,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             avatarUrl?: string;
             role: string;
           };
-          if (String(user.role ?? "").toLowerCase() === "admin") return null;
+          // QA P1-2 — same operator-class gate as the credentials
+          // provider above; the admin-token provider is a back door
+          // we mustn't leave wider than the front door.
+          if (isOperatorRole(user.role)) return null;
           return {
             id: user.id,
             email: user.email,
