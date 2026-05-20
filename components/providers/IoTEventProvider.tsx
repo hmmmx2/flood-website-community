@@ -59,6 +59,16 @@ type IoTStreamContextValue = {
   status: "connecting" | "open" | "error" | "offline";
   /** Newest-first list of recently observed alerts (max 50). */
   alerts: IoTAlert[];
+  /**
+   * Subset of `alerts` (by `alertKey()`) that passed the rate-limiter
+   * and should appear as toast pop-ups in the dock. Alerts in `alerts`
+   * but NOT in this set are dropdown-only (silently logged for the
+   * bell history without flashing the user).
+   */
+  poppedKeys: Set<string>;
+  /** Keys the user has dismissed from the dock. The alerts remain in
+   *  `alerts` so the bell dropdown can still display them. */
+  dismissedDockKeys: Set<string>;
   /** Live water level keyed by node_id (most recent flood_level event). */
   floodLevels: Map<string, WaterLevel>;
   /** Online/offline per node, from `node_online` and `node_offline`. */
@@ -138,7 +148,7 @@ function timeSince(iso: string | null | undefined): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-function alertTitle(alert: IoTAlert): string {
+export function alertTitle(alert: IoTAlert): string {
   switch (alert.alert_type) {
     case "flood":
       return "Flood alert";
@@ -155,7 +165,7 @@ function alertTitle(alert: IoTAlert): string {
   }
 }
 
-function alertBody(alert: IoTAlert): string {
+export function alertBody(alert: IoTAlert): string {
   if (alert.alert_type === "flood" || alert.alert_type === "water_fall") {
     const level = alert.level ?? alert.water_level ?? 0;
     return `Water level ${level}/3 at sensor ${alert.node_id}`;
@@ -172,7 +182,7 @@ function alertBody(alert: IoTAlert): string {
 }
 
 /** Severity bucket the dock uses to colour and prioritise an alert. */
-function alertSeverity(alert: IoTAlert): AlertSeverity {
+export function alertSeverity(alert: IoTAlert): AlertSeverity {
   if (alert.alert_type === "flood") {
     return severityForLevel(alert.level ?? alert.water_level);
   }
@@ -190,7 +200,7 @@ function alertSeverity(alert: IoTAlert): AlertSeverity {
  * `water_fall`), so we MUST include `alert_type` — `node_id-timestamp`
  * alone collides and trips React's duplicate-key warning.
  */
-function alertKey(alert: IoTAlert): string {
+export function alertKey(alert: IoTAlert): string {
   return `${alert.node_id}-${alert.alert_type ?? "alert"}-${alert.timestamp}`;
 }
 
@@ -462,10 +472,27 @@ function IoTFloodAlertDock({
 
 // ── Provider ──────────────────────────────────────────────────────
 
-/** Cap the number of alerts retained for the dock + history. */
+/** Cap the number of alerts retained for the dock + dropdown history. */
 const MAX_RETAINED_ALERTS = 50;
 /** Dedupe alerts arriving within this many ms of each other for the same node. */
 const ALERT_DEDUPE_WINDOW_MS = 1000;
+
+// ── Pop-up rate limiter (community-tuned) ──────────────────────────
+//
+// Residents are noise-averse — they want the alert in their feed but
+// they don't want a flashing toast every 10 seconds. Tighter caps
+// than CRM (which deliberately pops up to 5 toasts in 10 s):
+//
+//   - Per-key cooldown is longer (60 s vs CRM's 30 s) — residents
+//     only need to know once per minute that a given sensor is
+//     above water level 2.
+//   - Global rate is tighter (3 toasts per 10 s vs CRM's 5).
+//
+// Critical-severity events bypass the global rate cap (the resident
+// MUST see a critical alert) but still respect the per-key cooldown.
+const POPUP_COOLDOWN_PER_KEY_MS = 60_000;
+const GLOBAL_POPUP_RATE_MAX = 3;
+const GLOBAL_POPUP_WINDOW_MS = 10_000;
 
 export function IoTEventProvider({ children }: { children: ReactNode }) {
   // Pick up `?dataset=sample|all` from the URL so the SSE stream pulls
@@ -491,8 +518,17 @@ export function IoTEventProvider({ children }: { children: ReactNode }) {
   const [desktopAlertsEnabled, setDesktopAlertsEnabled] = useState(false);
   /** Tracks last-seen alert keys for dedupe — `{node}|{type}`. */
   const lastAlertKey = useRef<Map<string, number>>(new Map());
-  /** Dismissed alert keys so they don't re-appear after re-render. */
-  const dismissedKeys = useRef<Set<string>>(new Set());
+  /** Alerts the user has actively dismissed from the dock. Stays in
+   *  `alerts` for the bell dropdown though. */
+  const [dismissedDockKeys, setDismissedDockKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
+  /** Set of alert keys that passed the rate-limiter and may pop. */
+  const [poppedKeys, setPoppedKeys] = useState<Set<string>>(() => new Set());
+  /** Rolling-window timestamps for the global pop rate cap. */
+  const recentPopAt = useRef<number[]>([]);
+  /** Per-key last-popped time for the cooldown gate. */
+  const lastPopPerKey = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     if (typeof window === "undefined" || !("Notification" in window)) return;
@@ -521,17 +557,26 @@ export function IoTEventProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  // Dismissing only hides the alert from the floating dock — it
+  // stays in `alerts` so the bell dropdown can keep showing the
+  // historical entry. The resident expects "I read it, get it off
+  // the screen", not "delete it from my notifications log".
   const dismissAlert = useCallback((key: string) => {
-    dismissedKeys.current.add(key);
-    setAlerts((prev) => prev.filter((a) => alertKey(a) !== key));
+    setDismissedDockKeys((prev) => {
+      if (prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
   }, []);
 
   const dismissAll = useCallback(() => {
-    setAlerts((prev) => {
-      prev.forEach((a) => dismissedKeys.current.add(alertKey(a)));
-      return [];
+    setDismissedDockKeys((prev) => {
+      const next = new Set(prev);
+      for (const a of alerts) next.add(alertKey(a));
+      return next;
     });
-  }, []);
+  }, [alerts]);
 
   // ── SSE connection effect ────────────────────────────────────────
   useEffect(() => {
@@ -583,9 +628,11 @@ export function IoTEventProvider({ children }: { children: ReactNode }) {
         if (!ev?.node_id) return;
         dispatch(ev);
         const dedupeKey = `${ev.node_id}|${ev.alert_type}`;
+        const now = Date.now();
+        // Stage 1 — strict 1 s dedupe (same key = SSE echo of one event).
         const lastSeen = lastAlertKey.current.get(dedupeKey) ?? 0;
-        if (Date.now() - lastSeen < ALERT_DEDUPE_WINDOW_MS) return;
-        lastAlertKey.current.set(dedupeKey, Date.now());
+        if (now - lastSeen < ALERT_DEDUPE_WINDOW_MS) return;
+        lastAlertKey.current.set(dedupeKey, now);
 
         const alert: IoTAlert = {
           node_id: ev.node_id,
@@ -605,18 +652,42 @@ export function IoTEventProvider({ children }: { children: ReactNode }) {
           rssi: ev.rssi,
         };
         const thisAlertKey = alertKey(alert);
-        if (dismissedKeys.current.has(thisAlertKey)) return;
 
-        setAlerts((prev) => {
-          const next = [alert, ...prev].slice(0, MAX_RETAINED_ALERTS);
-          return next;
-        });
+        // Always append to history so the bell dropdown is lossless.
+        setAlerts((prev) => [alert, ...prev].slice(0, MAX_RETAINED_ALERTS));
 
+        // Stage 2 — pop-up rate limiter.
+        //
+        // Per-key cooldown stops the same `{node|type}` from popping
+        // again within POPUP_COOLDOWN_PER_KEY_MS. Global rolling
+        // window caps total popups in any GLOBAL_POPUP_WINDOW_MS
+        // window. CRITICAL bypasses the global cap (residents MUST
+        // see flood-level-3) but still respects per-key cooldown so
+        // we don't pop the same critical twice in a row.
         const sev = alertSeverity(alert);
-        // Only chime / notify for the meaningful tiers.
-        if (sev !== "watch") {
-          playEewChime(sev);
-          showDesktopNotification(alert);
+        const lastPop = lastPopPerKey.current.get(dedupeKey) ?? 0;
+        const cooldownPassed = now - lastPop >= POPUP_COOLDOWN_PER_KEY_MS;
+
+        recentPopAt.current = recentPopAt.current.filter(
+          (t) => now - t < GLOBAL_POPUP_WINDOW_MS,
+        );
+        const globalAllowed =
+          sev === "critical" ||
+          recentPopAt.current.length < GLOBAL_POPUP_RATE_MAX;
+
+        if (cooldownPassed && globalAllowed) {
+          lastPopPerKey.current.set(dedupeKey, now);
+          recentPopAt.current.push(now);
+          setPoppedKeys((prev) => {
+            if (prev.has(thisAlertKey)) return prev;
+            const next = new Set(prev);
+            next.add(thisAlertKey);
+            return next;
+          });
+          if (sev !== "watch") {
+            playEewChime(sev);
+            showDesktopNotification(alert);
+          }
         }
       },
       node_online: (data) => {
@@ -740,6 +811,8 @@ export function IoTEventProvider({ children }: { children: ReactNode }) {
     () => ({
       status,
       alerts,
+      poppedKeys,
+      dismissedDockKeys,
       floodLevels,
       nodeStatus: nodeStatusMap,
       weather: weatherMap,
@@ -751,6 +824,8 @@ export function IoTEventProvider({ children }: { children: ReactNode }) {
     [
       status,
       alerts,
+      poppedKeys,
+      dismissedDockKeys,
       floodLevels,
       nodeStatusMap,
       weatherMap,
@@ -761,11 +836,23 @@ export function IoTEventProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  // Dock view: only rate-limit-passed alerts the user hasn't yet
+  // dismissed. Full `alerts` array stays available via context for
+  // the bell dropdown to render the historical record.
+  const dockAlerts = useMemo(
+    () =>
+      alerts.filter(
+        (a) =>
+          poppedKeys.has(alertKey(a)) && !dismissedDockKeys.has(alertKey(a)),
+      ),
+    [alerts, poppedKeys, dismissedDockKeys],
+  );
+
   return (
     <IoTStreamContext.Provider value={value}>
       {children}
       <IoTFloodAlertDock
-        alerts={alerts}
+        alerts={dockAlerts}
         onDismiss={dismissAlert}
         onDismissAll={dismissAll}
       />
