@@ -163,6 +163,35 @@ const ERROR_MESSAGES: Record<string, string> = {
   not_operator: "This account is not authorised for CRM access.",
 };
 
+/**
+ * Error codes where the user's browser cookies / NextAuth session are
+ * the likely culprit and clearing them resolves the issue. Only these
+ * should surface the "Reset session and try again" button.
+ *
+ * Excluded on purpose:
+ *   - `CredentialsSignin`         — wrong password; clearing cookies
+ *                                   doesn't make a wrong password right.
+ *   - `not_operator` / `role`     — the account simply lacks the role
+ *                                   needed; reset would loop them back
+ *                                   to the same error.
+ *
+ * If a new error code lands that's genuinely cookie-related, add it
+ * here. Keeps the recovery affordance focused so it stops misleading
+ * customers who just typo'd their password.
+ */
+const SESSION_RECOVERY_ERROR_CODES = new Set<string>([
+  "invalid_session",
+  "expired",
+  "invalid_signature",
+  "malformed",
+  "misconfigured",
+  "sso_expired",
+  "sso_failed",
+  "sso_unavailable",
+  "sso_storage_unavailable",
+  "callback",
+]);
+
 function LoginPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -202,14 +231,28 @@ function LoginPageInner() {
 
   // Surface the ?error=… code from /auth/callback redirects, NextAuth
   // failures, etc. so the user sees why they got bounced back to login.
+  //
+  // Also track whether the active error is a SESSION-RECOVERY one
+  // (stale cookies, SSO redeem failure, JWT_SECRET drift) vs a USER
+  // INPUT one (wrong password, missing fields, network blip). The
+  // "Reset session" button only helps the first class — clearing
+  // cookies does nothing for a wrong password. Showing it on every
+  // error misled customers into clicking it for "invalid credentials"
+  // 401s, which obviously didn't fix anything.
+  const [showResetButton, setShowResetButton] = useState(false);
   useEffect(() => {
     const code = searchParams.get("error");
-    if (code) setError(ERROR_MESSAGES[code] ?? "Sign in failed. Please try again.");
+    if (!code) return;
+    setError(ERROR_MESSAGES[code] ?? "Sign in failed. Please try again.");
+    // Session-recovery error codes — the only ones the Reset button
+    // can actually fix. Kept in sync with the keys in ERROR_MESSAGES.
+    setShowResetButton(SESSION_RECOVERY_ERROR_CODES.has(code));
   }, [searchParams]);
 
   async function handleLogin(e: FormEvent) {
     e.preventDefault();
     setError("");
+    setShowResetButton(false); // any error from this submit is a user-input one
     setLoading(true);
     try {
       const res = await fetch("/api/auth/login", {
@@ -491,57 +534,56 @@ function LoginPageInner() {
                   <div className="mb-4 rounded-xl px-4 py-3 text-sm border bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">
                     <p>{error}</p>
                     {/*
-                     * Recovery hatch — if the user lands back here with an
-                     * error code, it's almost always because the CRM redeem
-                     * failed AND left stale cookies behind. Subsequent login
-                     * attempts can be silently rejected by middleware because
-                     * the browser keeps sending those bad cookies. The Reset
-                     * button clears them via a top-level GET to CRM
-                     * /api/auth/logout (the only endpoint allowed to touch
-                     * the flood_crm_access / flood_crm_refresh cookies), then
-                     * bounces back to a clean /login. POST'ing to the
-                     * community-side NextAuth signout endpoint first wipes
-                     * the customer-session cookies (if any) so we land
-                     * truly fresh.
+                     * Recovery hatch — only rendered when the error
+                     * came from the SESSION layer (stale cookies, SSO
+                     * redeem failure, JWT_SECRET drift). For "wrong
+                     * password" / "missing email" failures (the common
+                     * case for an end user), clearing cookies does
+                     * nothing useful and used to mislead customers
+                     * who clicked it expecting their typo to be
+                     * forgiven. SESSION_RECOVERY_ERROR_CODES at the
+                     * top of this file is the gating list.
                      */}
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          // Clear any customer/NextAuth session on community.
-                          await fetch("/api/auth/signout", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: "{}",
-                          }).catch(() => {});
-                        } finally {
-                          // Hand off to CRM's GET /api/auth/logout to clear
-                          // the operator cookies. It then 303s back here
-                          // with a fresh, clean page.
-                          const crm = await getCrmUrl();
-                          const next = `${window.location.origin}/login`;
-                          window.location.href =
-                            `${crm}/api/auth/logout?next=${encodeURIComponent(next)}`;
-                        }
-                      }}
-                      className="mt-2 inline-flex items-center gap-1 rounded-md border border-red-300 dark:border-red-700 bg-white/60 dark:bg-red-900/40 px-2.5 py-1 text-xs font-semibold text-red-800 dark:text-red-200 hover:bg-white dark:hover:bg-red-900/60 transition-colors"
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 16 16"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="h-3 w-3"
-                        aria-hidden
+                    {showResetButton && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            // Clear any customer/NextAuth session on community.
+                            await fetch("/api/auth/signout", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: "{}",
+                            }).catch(() => {});
+                          } finally {
+                            // Hand off to CRM's GET /api/auth/logout to clear
+                            // the operator cookies. It then 303s back here
+                            // with a fresh, clean page.
+                            const crm = await getCrmUrl();
+                            const next = `${window.location.origin}/login`;
+                            window.location.href =
+                              `${crm}/api/auth/logout?next=${encodeURIComponent(next)}`;
+                          }
+                        }}
+                        className="mt-2 inline-flex items-center gap-1 rounded-md border border-red-300 dark:border-red-700 bg-white/60 dark:bg-red-900/40 px-2.5 py-1 text-xs font-semibold text-red-800 dark:text-red-200 hover:bg-white dark:hover:bg-red-900/60 transition-colors"
                       >
-                        <path d="M2 8a6 6 0 0 1 10.39-4.13L14 2v4h-4" />
-                        <path d="M14 8a6 6 0 0 1-10.39 4.13L2 14v-4h4" />
-                      </svg>
-                      Reset session and try again
-                    </button>
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="h-3 w-3"
+                          aria-hidden
+                        >
+                          <path d="M2 8a6 6 0 0 1 10.39-4.13L14 2v4h-4" />
+                          <path d="M14 8a6 6 0 0 1-10.39 4.13L2 14v-4h4" />
+                        </svg>
+                        Reset session and try again
+                      </button>
+                    )}
                   </div>
                 )}
                 {crmRedirectUrl && (
