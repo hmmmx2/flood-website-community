@@ -138,16 +138,17 @@ export default function SettingsPage() {
         setPushSubscribed(false);
         toast.success("Push notifications disabled.");
       } else {
-        const result = await subscribeToPush();
-        if (result === "subscribed") {
+        const outcome = await subscribeToPush();
+        if (outcome.result === "subscribed") {
           setPushSubscribed(true);
           setPushPermission("granted");
-          toast.success("Push notifications enabled. You will receive flood alerts.");
-        } else if (result === "denied") {
-          setPushPermission("denied");
-          toast.error("Notification permission denied. Allow notifications in your browser settings.");
+          toast.success(outcome.message);
         } else {
-          toast.error("Push notifications are not supported in this browser.");
+          if (outcome.result === "denied") setPushPermission("denied");
+          // Longer toast for the multi-line OS-block message; default for others.
+          toast.error(outcome.message, {
+            duration: outcome.result === "blocked-by-os" ? 8000 : 4500,
+          });
         }
       }
     } catch (e) {

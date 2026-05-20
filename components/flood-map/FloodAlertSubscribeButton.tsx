@@ -125,16 +125,18 @@ export default function FloodAlertSubscribeButton() {
         toast.success("Flood alerts turned off for this device.");
         setState("unsubscribed");
       } else {
-        const result = await subscribeToPush();
-        if (result === "subscribed") {
-          toast.success("You'll get flood alerts on this device.");
+        const outcome = await subscribeToPush();
+        if (outcome.result === "subscribed") {
+          toast.success(outcome.message);
           setState("subscribed");
-        } else if (result === "denied") {
-          toast.error("Notification permission was declined.");
-          setState("denied");
         } else {
-          toast.error("This browser doesn't support push notifications.");
-          setState("unsupported");
+          toast.error(outcome.message, {
+            duration: outcome.result === "blocked-by-os" ? 8000 : 4500,
+          });
+          if (outcome.result === "denied") setState("denied");
+          else if (outcome.result === "unsupported") setState("unsupported");
+          // For misconfigured / blocked-by-os / transient-error keep the
+          // current state so the user can click again after fixing the cause.
         }
       }
     } catch (err) {
