@@ -489,7 +489,59 @@ function LoginPageInner() {
                 </p>
                 {error && (
                   <div className="mb-4 rounded-xl px-4 py-3 text-sm border bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">
-                    {error}
+                    <p>{error}</p>
+                    {/*
+                     * Recovery hatch — if the user lands back here with an
+                     * error code, it's almost always because the CRM redeem
+                     * failed AND left stale cookies behind. Subsequent login
+                     * attempts can be silently rejected by middleware because
+                     * the browser keeps sending those bad cookies. The Reset
+                     * button clears them via a top-level GET to CRM
+                     * /api/auth/logout (the only endpoint allowed to touch
+                     * the flood_crm_access / flood_crm_refresh cookies), then
+                     * bounces back to a clean /login. POST'ing to the
+                     * community-side NextAuth signout endpoint first wipes
+                     * the customer-session cookies (if any) so we land
+                     * truly fresh.
+                     */}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          // Clear any customer/NextAuth session on community.
+                          await fetch("/api/auth/signout", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: "{}",
+                          }).catch(() => {});
+                        } finally {
+                          // Hand off to CRM's GET /api/auth/logout to clear
+                          // the operator cookies. It then 303s back here
+                          // with a fresh, clean page.
+                          const crm = await getCrmUrl();
+                          const next = `${window.location.origin}/login`;
+                          window.location.href =
+                            `${crm}/api/auth/logout?next=${encodeURIComponent(next)}`;
+                        }
+                      }}
+                      className="mt-2 inline-flex items-center gap-1 rounded-md border border-red-300 dark:border-red-700 bg-white/60 dark:bg-red-900/40 px-2.5 py-1 text-xs font-semibold text-red-800 dark:text-red-200 hover:bg-white dark:hover:bg-red-900/60 transition-colors"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="h-3 w-3"
+                        aria-hidden
+                      >
+                        <path d="M2 8a6 6 0 0 1 10.39-4.13L14 2v4h-4" />
+                        <path d="M14 8a6 6 0 0 1-10.39 4.13L2 14v-4h4" />
+                      </svg>
+                      Reset session and try again
+                    </button>
                   </div>
                 )}
                 {crmRedirectUrl && (
