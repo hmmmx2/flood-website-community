@@ -283,7 +283,7 @@ const AUTO_DISMISS_MS: Record<AlertSeverity, number> = {
 
 /** Maximum toasts the dock renders in collapsed mode. Older ones queue
  *  behind a "+N more" pill that, when clicked, expands the list. */
-const DOCK_VISIBLE_CAP = 5;
+const DOCK_VISIBLE_CAP = 3;
 
 function IoTFloodAlertDock({
   alerts,
