@@ -87,26 +87,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ code });
   } catch (err) {
     // Surface a precise reason in Vercel logs so a 503 in prod is
-    // immediately diagnosable. The most common case is the Upstash
-    // env vars being absent on `flood-website-community.vercel.app`
-    // (they used to be optional for caching; the SSO flow now needs
-    // them) — `getRedis()` throws "Upstash Redis env vars missing".
+    // immediately diagnosable. The most common case is the Redis
+    // env var being absent on `flood-website-community.vercel.app`
+    // — `getClient()` in lib/redis.ts throws "REDIS_URL env var
+    // missing". (Pre-migration this used to test for "Upstash …
+    // env vars missing"; the regex matches both so old + new
+    // deployment shapes route to the same error code.)
     const msg = err instanceof Error ? err.message : String(err);
-    const upstashMissing = /Upstash.*env vars missing/i.test(msg);
+    const storageUnconfigured = /REDIS_URL.*missing|Upstash.*env vars missing/i.test(msg);
     console.error(
       "[sso/start] mint failed",
-      upstashMissing
-        ? "→ Upstash env vars are NOT set on this deployment. Set " +
-            "UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN " +
-            "on the community Vercel project (Production + Preview) " +
-            "and redeploy. The shared Upstash DB is the same one " +
-            "the CRM project uses."
+      storageUnconfigured
+        ? "→ REDIS_URL is NOT set on this deployment. Add the Railway " +
+            "Redis plugin's ${{Redis.REDIS_URL}} template ref (or its " +
+            "DATABASE_PUBLIC_URL) as REDIS_URL on the community Vercel " +
+            "project (Production + Preview) and redeploy. The same " +
+            "Redis instance backs the CRM redeem endpoint."
         : msg,
       err,
     );
     return NextResponse.json(
       {
-        error: upstashMissing
+        error: storageUnconfigured
           ? "sso_storage_unavailable"
           : "service_unavailable",
         // Hint is shown to the user via the login page's ERROR_MESSAGES
