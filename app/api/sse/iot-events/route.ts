@@ -71,6 +71,63 @@ const HEARTBEAT_SENSITIVE_FIELDS = ["lat", "lng", "rssi", "snr"];
 const SENSITIVE_EVENT_NAMES = new Set(["node_announce"]);
 
 /**
+ * Fire-and-forget Web Push dispatch when an alert message passes through
+ * the proxy. Only level≥2 floods (Warning + Critical) and battery_critical
+ * are pushed — `watch`/`level=1` is normal noise that we don't want to
+ * wake a phone for.
+ *
+ * The dispatch endpoint handles its own Redis dedupe (5-min cooldown per
+ * `{nodeId, alertType}`), so it's safe for both the community AND crm
+ * SSE proxies to fire on the same upstream event — only one push
+ * survives the dedupe lock.
+ *
+ * Fire-and-forget: we never await this. A slow / failed dispatch can't
+ * be allowed to stall the SSE stream that the browser is consuming.
+ */
+function maybeFirePush(eventName: string, payload: Record<string, unknown>): void {
+  if (eventName !== "alert") return;
+  const alertType = typeof payload.alert_type === "string" ? payload.alert_type : null;
+  const level = typeof payload.level === "number" ? payload.level : 0;
+  const shouldPush =
+    (alertType === "flood" && level >= 2) ||
+    alertType === "battery_critical" ||
+    (alertType === "water_fall" && level >= 2);
+  if (!shouldPush) return;
+
+  const nodeId = typeof payload.node_id === "string" ? payload.node_id : null;
+  if (!nodeId) return;
+
+  const dispatchBody = {
+    nodeId,
+    villageId: typeof payload.village_id === "string" ? payload.village_id : undefined,
+    alertType,
+    level,
+    timestamp:
+      typeof payload.timestamp === "string" ? payload.timestamp : new Date().toISOString(),
+    source: "community" as const,
+  };
+
+  // The dispatch route lives on the SAME Vercel project as this
+  // handler, so the call is local — no extra latency from a real
+  // egress hop. fetch() respects the Vercel internal routing.
+  const dispatchUrl =
+    (process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : process.env.NEXT_PUBLIC_COMMUNITY_URL ?? "") + "/api/push/dispatch";
+
+  fetch(dispatchUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(dispatchBody),
+  }).catch((err) => {
+    console.warn(
+      "[sse/iot-events] push dispatch fire-and-forget failed:",
+      err instanceof Error ? err.message : err,
+    );
+  });
+}
+
+/**
  * Sanitise a single SSE message before forwarding. SSE messages look like:
  *   event: heartbeat
  *   data: {"type":"heartbeat", ...}
@@ -112,6 +169,20 @@ function sanitiseMessage(raw: string): string | null {
       lines[dataLineIdx] = `data: ${JSON.stringify(payload)}`;
     } catch {
       // Malformed JSON — let it through unchanged rather than risk silence.
+    }
+  }
+
+  // Side-effect: fire-and-forget Web Push dispatch for alert events
+  // that exceed the push threshold. The browser still gets the SSE
+  // message in-tab (toast / chime / bell). The push covers the
+  // browser-closed case so an OS-level notification reaches the user
+  // within ~3 s. See maybeFirePush for the threshold rules.
+  if (eventName === "alert" && dataLineIdx !== -1) {
+    try {
+      const payload = JSON.parse(lines[dataLineIdx].slice(5).trim()) as Record<string, unknown>;
+      maybeFirePush(eventName, payload);
+    } catch {
+      // Malformed alert payload — skip push but still forward to browser.
     }
   }
 
