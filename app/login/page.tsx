@@ -326,18 +326,22 @@ function LoginPageInner() {
           !samePortAsHere;
 
         if (crossPortLocalhost) {
-          // Don't even attempt the navigation — that would surface
-          // the preview tool's block overlay. Just show the user
-          // exactly what to do.
+          // Dev-only path. Don't even attempt the navigation — that
+          // would surface the preview tool's "Link to localhost was
+          // blocked" overlay. Just show the user the URL to copy.
           setCrmRedirectUrl(url);
           return;
         }
 
-        // Stash the URL so the fallback CAN still render if the
-        // navigation silently no-ops for any other reason; in a
-        // normal cross-port browser nav this state is unmounted
-        // before the user sees it.
-        setCrmRedirectUrl(url);
+        // Production path (and any non-preview browser): the CRM
+        // lives on a different hostname, not a different localhost
+        // port, so a normal top-level navigation works. Don't
+        // setCrmRedirectUrl here — we used to do it as a "defence
+        // in depth" fallback, but on slow networks / failed SSO
+        // redeems the state stuck around and the dev-only blue
+        // "copy this URL" panel surfaced in real-browser production
+        // sessions. The panel is now exclusively for the
+        // crossPortLocalhost branch above.
         window.location.href = url;
         return;
       }
