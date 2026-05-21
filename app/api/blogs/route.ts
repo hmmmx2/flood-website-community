@@ -1,14 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
 import { javaFetch } from "@/lib/javaApi";
 import { withCache, CACHE_TTL } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+/**
+ * GET /api/blogs — public blog list.
+ *
+ * Performance (2026-05-22): deliberately does NOT call `auth()`. The
+ * blog list is a fully public endpoint per the Java service's
+ * SecurityConfig (`permitAll` on `/blogs`), and the response is the
+ * same for every caller. Calling `auth()` here used to add 100-300 ms
+ * per request just to resolve a session whose accessToken was then
+ * forwarded but never affected the upstream response. Removing it
+ * lets the cache layer serve requests in well under a second.
+ */
 export async function GET(req: NextRequest) {
-  const session = await auth();
-  const token = session?.accessToken;
   try {
     const { searchParams } = new URL(req.url);
 
@@ -24,7 +32,7 @@ export async function GET(req: NextRequest) {
     const cat = (category && category !== "All") ? category : "all";
     const cacheKey = `blogs:${page}:${size}:${cat}`;
 
-    const data = await withCache(cacheKey, CACHE_TTL.blogs, () => javaFetch(path, { token }));
+    const data = await withCache(cacheKey, CACHE_TTL.blogs, () => javaFetch(path));
     return NextResponse.json(data);
   } catch (err: unknown) {
     const e = err as { message?: string; status?: number };

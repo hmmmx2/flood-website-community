@@ -1,16 +1,22 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
 import { javaFetch } from "@/lib/javaApi";
 import { withCache, CACHE_TTL } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * GET /api/groups — public list of community groups.
+ *
+ * Performance (2026-05-22): deliberately does NOT call `auth()`. The
+ * `/community/groups` upstream is in Java's `permitAll` list and the
+ * cache key doesn't vary by user. Calling auth() on every request
+ * just added ~150 ms of session-resolution work for a response that
+ * was about to be served straight from Upstash anyway.
+ */
 export async function GET() {
-  const session = await auth();
-  const token = session?.accessToken;
   try {
     const data = await withCache("groups:all", CACHE_TTL.groups, () =>
-      javaFetch<unknown>("/community/groups", { token }),
+      javaFetch<unknown>("/community/groups"),
     );
     return NextResponse.json(data);
   } catch (error) {
