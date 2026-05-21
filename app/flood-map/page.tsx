@@ -1079,10 +1079,11 @@ export default function FloodMapPage() {
                     focusOnPoint(lat, lng, 14);
                     openPlaceCard({ kind: "place", name, lat, lng });
                   }}
-                  onZoneClick={(z) => {
-                    focusOnPoint(z.centroidLat, z.centroidLng, 13);
-                    openPlaceCard({ kind: "zone", zone: z });
-                  }}
+                  // Per-zone click→PlaceCard disabled in the privacy
+                  // hardening pass (2026-05-21): the "Flood point" card
+                  // surfaced "Copy coords / Directions away" actions that
+                  // disclosed the sensor's exact install position. Map
+                  // markers and the click handler are both removed.
                   savedLocations={savedLocationsForMap}
                   myLocation={myLocation}
                   onRecenterRequest={() => requestGeolocation({ panAfter: true })}
@@ -1141,117 +1142,15 @@ export default function FloodMapPage() {
               </div>
             </article>
 
-            {/* ── Nearby flood points — per-node bell-menu list ──────────
-                Sits BELOW the map so the user's eye flows:
-                  filters → map (overview) → per-node list (drill in)
-                The list never renders the node identifier — only the
-                area, distance, status pill, and bell. Each bell opens
-                the channel popover (Email / SMS / WhatsApp; in-app
-                push always on once favourited). */}
-            {user && placesWithStatus.some(p => p.items.length > 0) && (
-              <section className={card + " p-4"}>
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--color-text)]">
-                      Nearby flood points
-                    </h3>
-                    <p className="text-[11px] text-[var(--color-muted)] mt-0.5">
-                      Tap the bell on any point to choose the channels
-                      that alert you when it triggers.
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-4">
-                  {placesWithStatus.map(({ place, items }) => (
-                    <div
-                      key={place.id}
-                      className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-input-bg)] p-3"
-                    >
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <p className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-text)] truncate min-w-0">
-                          <span
-                            aria-hidden
-                            className="inline-block h-2 w-2 rounded-full bg-[var(--color-brand)]"
-                          />
-                          <span className="truncate">{place.label}</span>
-                        </p>
-                        <span className="rounded-full bg-[var(--color-card)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-muted)] border border-[var(--color-border)]">
-                          {items.length} · {place.alertRadiusKm} km
-                        </span>
-                      </div>
-                      {items.length === 0 ? (
-                        <p className="rounded-lg bg-[var(--color-card)] px-3 py-2 text-[11px] text-[var(--color-muted)]">
-                          No flood points within the radius{activeFilterCount > 0 ? " match the active filters" : ""}.
-                        </p>
-                      ) : (
-                        <ul
-                          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-2 max-h-[280px] overflow-y-auto pr-1"
-                          style={{ scrollbarWidth: "thin" }}
-                        >
-                          {items.map(({ z, d }) => {
-                            // Bell needs the server-only nodeId. Without
-                            // it, this node can't be subscribed (older
-                            // BFF response) — render the row without a
-                            // bell rather than hiding it entirely.
-                            const subId = z.nodeId;
-                            const isFav = subId ? favIds.has(subId) : false;
-                            const prefs = subId
-                              ? (favChannelPrefs[subId] ?? DEFAULT_NODE_PREFS)
-                              : DEFAULT_NODE_PREFS;
-                            const statusHex = z.allOffline
-                              ? OFFLINE_HEX
-                              : STATUS_HEX[z.worstLevel];
-                            const statusLabel = z.allOffline
-                              ? "Offline"
-                              : LEVEL_LABEL[z.worstLevel];
-                            return (
-                              <li
-                                key={z.id}
-                                className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-2.5 transition-colors hover:border-[var(--color-brand)]"
-                              >
-                                <div className="flex items-start justify-between gap-1.5 mb-1.5">
-                                  <span
-                                    className="mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full"
-                                    style={{ backgroundColor: statusHex }}
-                                    aria-hidden
-                                  />
-                                  {subId && (
-                                    <NodeBellMenu
-                                      nodeId={subId}
-                                      isFavourited={isFav}
-                                      prefs={prefs}
-                                      onPrefsChange={(next) =>
-                                        updateChannelPrefs(subId, next)
-                                      }
-                                      onSubscribe={() => subscribeNode(subId)}
-                                    />
-                                  )}
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    focusOnPoint(z.centroidLat, z.centroidLng, 14);
-                                    openPlaceCard({ kind: "zone", zone: z });
-                                  }}
-                                  className="block w-full text-left"
-                                >
-                                  <p className="truncate text-xs font-semibold text-[var(--color-text)]">
-                                    Flood point
-                                  </p>
-                                  <p className="truncate text-[10px] text-[var(--color-muted)] mt-0.5">
-                                    {statusLabel} · {d.toFixed(1)} km · {z.area}
-                                  </p>
-                                </button>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
+            {/* "Nearby flood points" per-node bell-menu list removed in
+                the 2026-05-21 privacy hardening pass. The list disclosed
+                that specific sensors existed within a user's saved-place
+                radius (count + status + distance + area), and each row
+                opened the leaky zone-variant PlaceCard. Per-sensor
+                subscriptions can be reinstated later via a flow that
+                doesn't render the inventory client-side — e.g. server-
+                side "alert me when ANY sensor in my radius fires" with
+                no per-node enumeration. */}
 
             {/* SavedLocationsPanel — full CRUD list for managing
                 saved places (edit radius, delete, etc.). */}
@@ -1309,9 +1208,11 @@ export default function FloodMapPage() {
         }
         onShare={() => {
           if (!placeCardModel) return;
-          const lat = placeCardModel.kind === "place" ? placeCardModel.lat : placeCardModel.zone.centroidLat;
-          const lng = placeCardModel.kind === "place" ? placeCardModel.lng : placeCardModel.zone.centroidLng;
-          handleShareView({ centerLat: lat, centerLng: lng, zoom: 14 });
+          handleShareView({
+            centerLat: placeCardModel.lat,
+            centerLng: placeCardModel.lng,
+            zoom: 14,
+          });
         }}
       />
 

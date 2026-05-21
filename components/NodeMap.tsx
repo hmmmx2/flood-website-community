@@ -862,38 +862,18 @@ export default function NodeMap({
           />
         )}
 
-        {/* Per-zone circles — one per aggregated zone, coloured by worst
-            level. Clickable when the page provides `onZoneClick`.
-            High-contrast mode darkens the fill + thickens the stroke
-            so the categories are still distinguishable for users with
-            colour-vision differences. Zones whose `lastUpdated` is
-            older than 5 min render at a lower opacity (S6-8). */}
-        {zones.map(z => {
-          const colour = getZoneColour(z);
-          const stale =
-            z.lastUpdated
-              ? Date.now() - new Date(z.lastUpdated).getTime() > 5 * 60_000
-              : false;
-          const fillOp = highContrast ? 0.55 : 0.35;
-          const strokeOp = highContrast ? 1 : 0.85;
-          return (
-            <Circle
-              key={`zone-${z.id}`}
-              center={{ lat: z.centroidLat, lng: z.centroidLng }}
-              radius={z.radiusM}
-              onClick={onZoneClick ? () => onZoneClick(z) : undefined}
-              options={{
-                fillColor: colour,
-                fillOpacity: stale ? fillOp * 0.5 : fillOp,
-                strokeColor: highContrast ? "#0f172a" : colour,
-                strokeOpacity: stale ? strokeOp * 0.6 : strokeOp,
-                strokeWeight: highContrast ? 3 : 2,
-                clickable: Boolean(onZoneClick),
-                zIndex: 2,
-              }}
-            />
-          );
-        })}
+        {/* Per-zone "Flood point" circles intentionally NOT rendered.
+            Per privacy review (2026-05-21): even with the BFF aggregator
+            rounding coords to ~11 m and hashing the node_id, visualising
+            each sensor as a colour-coded circle on a public map
+            effectively discloses installation locations to anyone — the
+            "Copy coords" / "Directions away" actions on the previous
+            zone-popup card compounded the leak. We keep the `zones`
+            prop wired so the auto-fit-to-zones camera, the "rescue
+            pill" count, and the in-radius worst-level computation still
+            work (those are summary stats, not point disclosures), but
+            the per-sensor markers and their associated click→PlaceCard
+            flow are gone. */}
 
         {/* Direction-service routes (P1-6). The selected one is bold
             and on top; the alternatives sit underneath dimmed so the

@@ -24,22 +24,23 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 
-import type { Zone, FloodLevel } from "@/lib/types";
 import { useSlideoutLayout } from "./useSlideoutLayout";
 
-/** Public input shapes. The page builds these from its three open paths. */
-export type PlaceCardModel =
-  | {
-      kind: "place";
-      name: string;
-      address?: string;
-      lat: number;
-      lng: number;
-    }
-  | {
-      kind: "zone";
-      zone: Zone;
-    };
+/** Public input shapes. The page builds these from its three open paths.
+ *
+ *  NOTE (2026-05-21): the `kind: "zone"` variant was removed in the
+ *  privacy hardening pass. Showing a "Flood point / Copy coords /
+ *  Directions away" card for a sensor effectively published the
+ *  sensor's exact install position to anyone with a map click. The
+ *  type is now place-only; if a future feature needs to surface a
+ *  zone, design it without exposing per-sensor coordinates. */
+export type PlaceCardModel = {
+  kind: "place";
+  name: string;
+  address?: string;
+  lat: number;
+  lng: number;
+};
 
 type Props = {
   open: boolean;
@@ -57,23 +58,8 @@ type Props = {
   onClose: () => void;
 };
 
-const LEVEL_LABEL: Record<FloodLevel, string> = {
-  0: "Normal",
-  1: "Alert",
-  2: "Warning",
-  3: "Critical",
-};
-const LEVEL_PILL: Record<FloodLevel, string> = {
-  0: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
-  1: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
-  2: "bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300",
-  3: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300",
-};
-
-// The sensorBand text used to surface cluster-size ("Several sensors")
-// while we were grouping nodes into zones. Now that each circle is a
-// single anonymous node we hide it — printing "Sparse coverage" next
-// to every node would be both wrong and uninformative.
+// Level/status pill constants removed along with the zone variant —
+// PlaceCard now renders only place pins, never flood points.
 
 /**
  * Builds a Google Maps deep link for driving directions to a lat/lng.
@@ -108,18 +94,11 @@ export default function PlaceCard({ open, model, onSave, onShare, onDirections, 
   const m = latched;
   if (!m) return null;
 
-  const isPlace = m.kind === "place";
-  const lat = isPlace ? m.lat : m.zone.centroidLat;
-  const lng = isPlace ? m.lng : m.zone.centroidLng;
-  // For the "this is a flood point on the map" variant, the title is
-  // deliberately generic. We don't want to print the node's name (it
-  // often encodes node_id) and the area string alone reads like a
-  // location name on the map, which it isn't (one area can have many
-  // node circles). "Flood point" is what Google would say.
-  const title = isPlace ? m.name : "Flood point";
-  const subtitle = isPlace
-    ? (m.address ?? "")
-    : `${m.zone.area}${m.zone.state && m.zone.state !== m.zone.area ? ` · ${m.zone.state}` : ""}`;
+  // Card is place-only after the privacy hardening pass — no zone variant.
+  const lat = m.lat;
+  const lng = m.lng;
+  const title = m.name;
+  const subtitle = m.address ?? "";
 
   async function copyCoords() {
     const text = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
@@ -145,7 +124,7 @@ export default function PlaceCard({ open, model, onSave, onShare, onDirections, 
       <aside
         role="dialog"
         aria-modal="false"
-        aria-label={isPlace ? "Place details" : "Flood zone details"}
+        aria-label="Place details"
         // ALL positioning + sizing + rounding + transform come from the
         // shared layout hook. The className intentionally carries no
         // positional utilities so Tailwind can't fight the inline style.
@@ -161,23 +140,10 @@ export default function PlaceCard({ open, model, onSave, onShare, onDirections, 
         <header className="flex items-start justify-between gap-3 px-4 pt-3 sm:pt-4">
           <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">
-              {isPlace ? "Place" : "Flood zone"}
+              Place
             </p>
             <h3 className="truncate text-base font-bold text-[var(--color-text)]">{title}</h3>
             <p className="mt-0.5 line-clamp-2 text-xs text-[var(--color-muted)]">{subtitle}</p>
-            {!isPlace && (
-              <div className="mt-2 flex items-center gap-1.5">
-                <span
-                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                    m.zone.allOffline
-                      ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                      : LEVEL_PILL[m.zone.worstLevel]
-                  }`}
-                >
-                  {m.zone.allOffline ? "Offline" : LEVEL_LABEL[m.zone.worstLevel]}
-                </span>
-              </div>
-            )}
           </div>
           <button
             type="button"
@@ -205,7 +171,7 @@ export default function PlaceCard({ open, model, onSave, onShare, onDirections, 
                    className="h-4 w-4">
                 <polygon points="3 11 22 2 13 21 11 13 3 11" />
               </svg>
-              {isPlace ? "Directions" : "Directions away"}
+              Directions
             </button>
           ) : (
             <a
@@ -219,7 +185,7 @@ export default function PlaceCard({ open, model, onSave, onShare, onDirections, 
                    className="h-4 w-4">
                 <polygon points="3 11 22 2 13 21 11 13 3 11" />
               </svg>
-              {isPlace ? "Directions" : "Directions away"}
+              Directions
             </a>
           )}
 
@@ -272,11 +238,6 @@ export default function PlaceCard({ open, model, onSave, onShare, onDirections, 
           )}
         </div>
 
-        {!isPlace && m.zone.lastUpdated && (
-          <p className="border-t border-[var(--color-border)] px-4 py-2.5 text-[11px] text-[var(--color-muted)]">
-            Last updated {new Date(m.zone.lastUpdated).toLocaleTimeString()}
-          </p>
-        )}
       </aside>
     </>
   );
