@@ -166,19 +166,25 @@ export function alertTitle(alert: IoTAlert): string {
 }
 
 export function alertBody(alert: IoTAlert): string {
+  // node_id is intentionally NOT shown in user-facing alert bodies
+  // (2026-05-21 privacy hardening). The dock surfaces the village
+  // separately and that's enough for the resident to act on. The raw
+  // sensor identifier was treated as sensitive after the map-feature
+  // removal pass — keep the body line consistent with that boundary.
+  const area = alert.village_id ? ` in ${alert.village_id}` : "";
   if (alert.alert_type === "flood" || alert.alert_type === "water_fall") {
     const level = alert.level ?? alert.water_level ?? 0;
-    return `Water level ${level}/3 at sensor ${alert.node_id}`;
+    return `Water level ${level}/3${area}`;
   }
   if (alert.alert_type === "battery_critical" || alert.alert_type === "battery_low") {
     const v = alert.battery_voltage?.toFixed(2) ?? "?";
-    return `Battery ${v}V at sensor ${alert.node_id}`;
+    return `Sensor battery ${v}V${area}`;
   }
   if (alert.alert_type === "gps_moved") {
     const d = alert.dist_m ? `${Math.round(alert.dist_m)} m` : "moved";
-    return `Sensor ${alert.node_id} ${d} from install`;
+    return `A sensor moved ${d} from its install position${area}`;
   }
-  return `Sensor ${alert.node_id} reported an event`;
+  return `Flood-watch event${area}`;
 }
 
 /** Severity bucket the dock uses to colour and prioritise an alert. */
@@ -256,7 +262,9 @@ function showDesktopNotification(alert: IoTAlert) {
     );
     n.onclick = () => {
       window.focus();
-      window.location.href = `/flood-map?focus=${encodeURIComponent(alert.node_id)}`;
+      // node_id deliberately not included in the deep-link — no per-
+      // sensor view exists any more (privacy hardening 2026-05-21).
+      window.location.href = "/flood-map";
       n.close();
     };
   } catch {
@@ -416,16 +424,15 @@ function IoTFloodAlertDock({
                   {alertTitle(a)} · {severityLabel(sev)}
                 </p>
                 <p className="mt-1 text-sm font-semibold leading-snug">
-                  {a.village_id ? `${a.village_id} · ` : ""}
-                  {a.node_id}
+                  {a.village_id ? a.village_id : "Flood alert"}
                 </p>
                 <p className="mt-0.5 text-xs opacity-95">{alertBody(a)}</p>
                 <div className="mt-2 flex items-center justify-between gap-2 text-[11px] opacity-90">
                   <Link
-                    href={`/flood-map?focus=${encodeURIComponent(a.node_id)}`}
+                    href="/flood-map"
                     className="font-bold underline underline-offset-2 hover:opacity-100"
                   >
-                    View live sensor →
+                    Open flood map →
                   </Link>
                   <span className="tabular-nums">{timeSince(a.timestamp)}</span>
                 </div>

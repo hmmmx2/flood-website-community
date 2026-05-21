@@ -71,26 +71,34 @@ function severityLabel(level: number): "Watch" | "Warning" | "Critical" {
 }
 
 function buildNotificationPayload(alert: AlertPayload) {
+  // OS push title + body deliberately omit node_id (privacy hardening
+  // 2026-05-21). The deep-link drops the ?focus=<nodeId> param too —
+  // there's no per-sensor view to surface any more. The Vercel side
+  // still receives node_id internally for dedupe via Redis (see the
+  // dispatch route's dedupeKey) but never echoes it onto the lock
+  // screen.
   const sev = severityLabel(alert.level ?? 2);
+  const area = alert.villageId ? ` in ${alert.villageId}` : "";
   const title =
     alert.alertType === "battery_critical"
       ? "Sensor battery critical"
       : sev === "Critical"
-        ? `🆘 CRITICAL FLOOD — ${alert.nodeId}`
-        : `🚨 Flood ${sev} — ${alert.nodeId}`;
+        ? `🆘 CRITICAL FLOOD${area}`
+        : `🚨 Flood ${sev}${area}`;
   const body =
     alert.alertType === "battery_critical"
-      ? `Sensor ${alert.nodeId} battery critical. Replace soon to keep flood coverage.`
-      : `Water level ${alert.level ?? "?"}/3 at sensor ${alert.nodeId}${
-          alert.villageId ? ` (${alert.villageId})` : ""
-        }. Stay alert.`;
+      ? `A FloodWatch sensor${area} is reporting critical battery. Replace soon to keep flood coverage.`
+      : `Water level ${alert.level ?? "?"}/3 reported${area}. Stay alert.`;
   return {
     title,
     body,
     level: alert.level ?? 2,
+    // nodeId kept in the payload so the service worker can fall back
+    // to the legacy click handler if a user is on an old client; the
+    // current sw.js never renders it. Safe to remove in a later sweep.
     nodeId: alert.nodeId,
     villageId: alert.villageId,
-    url: `/flood-map?focus=${encodeURIComponent(alert.nodeId)}`,
+    url: "/flood-map",
     timestamp: alert.timestamp ?? new Date().toISOString(),
   };
 }

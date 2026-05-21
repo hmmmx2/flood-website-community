@@ -36,13 +36,19 @@ self.addEventListener('push', (event) => {
     body: data.body,
     icon: NOTIFICATION_ICON,
     badge: NOTIFICATION_BADGE,
+    // tag still uses nodeId so concurrent alerts from different sensors
+    // don't collapse into one OS notification (per-tag re-notify).
+    // The tag is browser-internal — never visible to the user — so
+    // node_id here is fine.
     tag: data.nodeId ? `flood-node-${data.nodeId}` : 'flood-alert',
     renotify: true,
     requireInteraction: isCritical,
     vibrate: isCritical ? [200, 100, 200, 100, 400] : [200, 100, 200],
     data: {
-      url: '/',
-      nodeId: data.nodeId,
+      // Honour the server-supplied URL (defaults to /flood-map). The
+      // previous '/'-hardcode meant the click always landed on home,
+      // and the legacy ?focus=<nodeId> deep-link is gone anyway.
+      url: data.url || '/flood-map',
       level: data.level,
     },
     actions: [
@@ -51,9 +57,14 @@ self.addEventListener('push', (event) => {
     ],
   };
 
+  // Title deliberately omits node_id (privacy hardening 2026-05-21):
+  // the OS lock-screen used to read "Critical Flood Alert — Node
+  // SIM-MAN-B1" which exposed the sensor identifier on every device
+  // the user owns. The village context, when available, is included
+  // by the server in `data.body` already.
   event.waitUntil(
     self.registration.showNotification(
-      `${levelLabel} Flood Alert${data.nodeId ? ` — Node ${data.nodeId}` : ''}`,
+      data.title || `${levelLabel} Flood Alert`,
       options
     )
   );

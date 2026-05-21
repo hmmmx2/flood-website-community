@@ -83,8 +83,9 @@ export default function NotificationBell({ enabled = true }: Props) {
           kind: "iot_alert",
           title: alertTitle(a),
           body: alertBody(a),
-          // Community deep-link to /flood-map with the node focus query.
-          link: `/flood-map?focus=${encodeURIComponent(a.node_id)}`,
+          // Community deep-link to /flood-map — node_id deliberately
+          // dropped from the URL (privacy hardening 2026-05-21).
+          link: "/flood-map",
           severity: alertSeverity(a),
           createdAt: a.timestamp,
           readAt: seenIotKeys.has(k) ? a.timestamp : null,
