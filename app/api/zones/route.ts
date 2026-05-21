@@ -41,6 +41,46 @@ function jitterFromNodeId(nodeId: string): { dLat: number; dLng: number } {
   return { dLat: ux * radius, dLng: uy * radius };
 }
 
+/**
+ * Hardcoded centroid fallbacks for the real-deployment village_ids that
+ * the upstream FloodWatch IoT API returns *without* lat/lng populated.
+ *
+ * The /villages endpoint on `dataset=real` currently omits coordinates for
+ * SUTS, SBH-T, CS-TEAM-TEST, SOSOP and similar Pitas-deployment villages.
+ * Without these fallbacks every node resolves to (0, 0), which the
+ * privacy aggregator correctly drops (it can't tell a missing fix from
+ * a hardware bug, and (0,0) is the middle of the Gulf of Guinea).
+ *
+ * Coordinates pinned to known Pitas-district landmarks. When the upstream
+ * starts publishing real GPS we drop these and use the live lat/lng.
+ */
+const REAL_VILLAGE_FALLBACK_COORDS: Record<string, { lat: number; lng: number }> = {
+  SUTS:            { lat: 6.8615, lng: 117.0157 }, // Pitas town centre
+  "SBH-T":         { lat: 6.8742, lng: 117.0289 }, // Sabah-T test site (Pitas)
+  "CS-TEAM-TEST":  { lat: 6.8550, lng: 117.0080 }, // CS team field deployment
+  SOSOP:           { lat: 6.8920, lng: 117.0410 }, // Kg Sosop, Pitas
+  "PITAS-SOSOP":   { lat: 6.8920, lng: 117.0410 }, // same village, alternate id
+  MANDAMAI:        { lat: 6.8480, lng: 117.0220 }, // Kg Mandamai, Pitas
+  // Anything else falls back to the Pitas-region anchor via the
+  // hash-spread helper below so every node still gets a circle.
+};
+
+/** Pitas regional anchor for villages we don't have specific coords for.
+ *  ±2 km hash-spread so multiple unknown villages don't pile on the same
+ *  pixel. */
+const PITAS_ANCHOR = { lat: 6.8615, lng: 117.0157 };
+function unknownVillageCoord(villageId: string): { lat: number; lng: number } {
+  let h = 2166136261;
+  for (let i = 0; i < villageId.length; i++) {
+    h ^= villageId.charCodeAt(i);
+    h = (h * 16777619) >>> 0;
+  }
+  const ux = ((h & 0xffff) / 0xffff) * 2 - 1;
+  const uy = (((h >>> 16) & 0xffff) / 0xffff) * 2 - 1;
+  const radius = 0.018; // ≈ 2 km at this latitude
+  return { lat: PITAS_ANCHOR.lat + ux * radius, lng: PITAS_ANCHOR.lng + uy * radius };
+}
+
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -85,12 +125,15 @@ export async function GET(req: NextRequest) {
     }
 
     const rows: RawSensorRow[] = nodes.map((n) => {
-      // Coordinate resolution order:
+      // Coordinate resolution order (each step tries the next on falsy/0):
       //   1. calibrated install GPS (`install_lat/install_lng`)
       //   2. live GPS fix (`lat/lng`) when present and non-zero
-      //   3. village centroid + deterministic per-node jitter (~80 m)
-      // (3) is the new fallback — it keeps every node visible on the
-      //     map while honestly conveying "we don't have a precise fix".
+      //   3. upstream village centroid + per-node jitter (~80 m)
+      //   4. hardcoded fallback for known real-deployment village_ids
+      //      (the upstream /villages endpoint omits coords for these)
+      //   5. Pitas regional anchor + per-village hash-spread (~2 km)
+      // The cascade guarantees every node gets a usable coordinate so
+      // none get dropped by the privacy aggregator's (0,0) safety filter.
       let lat = n.install_lat ?? n.lat ?? 0;
       let lng = n.install_lng ?? n.lng ?? 0;
       if (!Number(lat) || !Number(lng)) {
@@ -99,6 +142,16 @@ export async function GET(req: NextRequest) {
           const { dLat, dLng } = jitterFromNodeId(n.node_id);
           lat = v.lat + dLat;
           lng = v.lng + dLng;
+        } else {
+          // Step 4: hardcoded village centroid for the real-deployment
+          // village_ids that the upstream /villages endpoint currently
+          // returns with null coords. Combine with per-node jitter so
+          // multiple nodes in the same village don't overlap.
+          const fb = REAL_VILLAGE_FALLBACK_COORDS[n.village_id]
+            ?? unknownVillageCoord(n.village_id); // Step 5: Pitas anchor
+          const { dLat, dLng } = jitterFromNodeId(n.node_id);
+          lat = fb.lat + dLat;
+          lng = fb.lng + dLng;
         }
       }
       return {
