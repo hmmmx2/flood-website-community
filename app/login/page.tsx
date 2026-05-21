@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, FormEvent, Suspense } from "react";
+import { useState, useEffect, useRef, FormEvent, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { signIn } from "next-auth/react";
@@ -232,27 +232,67 @@ function LoginPageInner() {
   // Surface the ?error=… code from /auth/callback redirects, NextAuth
   // failures, etc. so the user sees why they got bounced back to login.
   //
-  // Also track whether the active error is a SESSION-RECOVERY one
-  // (stale cookies, SSO redeem failure, JWT_SECRET drift) vs a USER
-  // INPUT one (wrong password, missing fields, network blip). The
-  // "Reset session" button only helps the first class — clearing
-  // cookies does nothing for a wrong password. Showing it on every
-  // error misled customers into clicking it for "invalid credentials"
-  // 401s, which obviously didn't fix anything.
-  const [showResetButton, setShowResetButton] = useState(false);
+  // AUTO-RECOVERY (2026-05-21): for session-layer error codes (stale
+  // cookies, SSO redeem failure, JWT_SECRET drift) we silently sweep
+  // the offending state in the background as soon as the page mounts.
+  // The banner stays visible so the user knows why they were bounced
+  // here, but they don't have to click a "Reset session" button —
+  // there's no legitimate reason to keep stale auth state when the
+  // user is already at /login. Wrong-password / not_operator / role
+  // errors don't trigger the sweep (those aren't cookie-fixable).
+  //
+  // The sweep is fire-and-forget and idempotent — running it when
+  // nothing's actually stale is a no-op. Guarded by a ref so it only
+  // runs once per page-load, regardless of how React re-renders.
+  const autoResetFiredRef = useRef(false);
   useEffect(() => {
     const code = searchParams.get("error");
     if (!code) return;
     setError(ERROR_MESSAGES[code] ?? "Sign in failed. Please try again.");
-    // Session-recovery error codes — the only ones the Reset button
-    // can actually fix. Kept in sync with the keys in ERROR_MESSAGES.
-    setShowResetButton(SESSION_RECOVERY_ERROR_CODES.has(code));
+
+    if (SESSION_RECOVERY_ERROR_CODES.has(code) && !autoResetFiredRef.current) {
+      autoResetFiredRef.current = true;
+      // Defensive cookie + storage sweep, silent and idempotent.
+      // Order: NextAuth/community sign-out (clears its cookies),
+      // then CRM /api/auth/logout (clears flood_crm_access etc).
+      // Wrapped in fire-and-forget try/catch so a network blip
+      // during cleanup doesn't break the form.
+      (async () => {
+        try {
+          await fetch("/api/auth/signout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: "{}",
+          }).catch(() => { /* */ });
+          try {
+            const crm = await getCrmUrl();
+            // GET (not navigate) so the page stays put — the CRM
+            // route will Set-Cookie on its origin to clear ops
+            // session cookies. We deliberately don't redirect; the
+            // user is already on /login with a freshly-cleared
+            // community session and an explanatory banner.
+            await fetch(`${crm}/api/auth/logout`, {
+              method: "GET",
+              credentials: "include",
+              mode: "no-cors",
+            }).catch(() => { /* */ });
+          } catch { /* getCrmUrl failed — that's fine, community sweep already ran */ }
+        } catch { /* */ }
+        // Best-effort localStorage wipe for any legacy entries the
+        // cookie clear doesn't cover. Idempotent — keys that don't
+        // exist are silently ignored.
+        try {
+          for (const k of ["flood_access_token", "flood_refresh_token", "flood_auth_user"]) {
+            window.localStorage.removeItem(k);
+          }
+        } catch { /* */ }
+      })();
+    }
   }, [searchParams]);
 
   async function handleLogin(e: FormEvent) {
     e.preventDefault();
     setError("");
-    setShowResetButton(false); // any error from this submit is a user-input one
     setLoading(true);
     try {
       const res = await fetch("/api/auth/login", {
@@ -532,58 +572,17 @@ function LoginPageInner() {
                 </p>
                 {error && (
                   <div className="mb-4 rounded-xl px-4 py-3 text-sm border bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">
-                    <p>{error}</p>
                     {/*
-                     * Recovery hatch — only rendered when the error
-                     * came from the SESSION layer (stale cookies, SSO
-                     * redeem failure, JWT_SECRET drift). For "wrong
-                     * password" / "missing email" failures (the common
-                     * case for an end user), clearing cookies does
-                     * nothing useful and used to mislead customers
-                     * who clicked it expecting their typo to be
-                     * forgiven. SESSION_RECOVERY_ERROR_CODES at the
-                     * top of this file is the gating list.
+                     * Banner text only — no recovery button.
+                     * Session-layer errors (SESSION_RECOVERY_ERROR_CODES)
+                     * fire an automatic background cookie/storage sweep
+                     * from the useEffect on mount; the user just needs
+                     * to re-enter credentials. See the auto-recovery
+                     * comment near the error-handling useEffect for why
+                     * auto-reset is strictly better than the old manual
+                     * "Reset session and try again" button.
                      */}
-                    {showResetButton && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            // Clear any customer/NextAuth session on community.
-                            await fetch("/api/auth/signout", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: "{}",
-                            }).catch(() => {});
-                          } finally {
-                            // Hand off to CRM's GET /api/auth/logout to clear
-                            // the operator cookies. It then 303s back here
-                            // with a fresh, clean page.
-                            const crm = await getCrmUrl();
-                            const next = `${window.location.origin}/login`;
-                            window.location.href =
-                              `${crm}/api/auth/logout?next=${encodeURIComponent(next)}`;
-                          }
-                        }}
-                        className="mt-2 inline-flex items-center gap-1 rounded-md border border-red-300 dark:border-red-700 bg-white/60 dark:bg-red-900/40 px-2.5 py-1 text-xs font-semibold text-red-800 dark:text-red-200 hover:bg-white dark:hover:bg-red-900/60 transition-colors"
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 16 16"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="h-3 w-3"
-                          aria-hidden
-                        >
-                          <path d="M2 8a6 6 0 0 1 10.39-4.13L14 2v4h-4" />
-                          <path d="M14 8a6 6 0 0 1-10.39 4.13L2 14v-4h4" />
-                        </svg>
-                        Reset session and try again
-                      </button>
-                    )}
+                    <p>{error}</p>
                   </div>
                 )}
                 {crmRedirectUrl && (
