@@ -160,34 +160,10 @@ export default function PlaceCard({ open, model, onSave, onShare, onDirections, 
         </header>
 
         <div className="grid grid-cols-2 gap-2 px-4 py-3 sm:grid-cols-2">
-          {onDirections ? (
-            <button
-              type="button"
-              onClick={() => onDirections({ lat, lng, label: title })}
-              className="col-span-2 inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--color-brand)] px-3 py-2.5 text-sm font-bold text-white transition hover:bg-[var(--color-brand-dark)]"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                   stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                   className="h-4 w-4">
-                <polygon points="3 11 22 2 13 21 11 13 3 11" />
-              </svg>
-              Directions
-            </button>
-          ) : (
-            <a
-              href={googleDirectionsHref(lat, lng, title)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="col-span-2 inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--color-brand)] px-3 py-2.5 text-sm font-bold text-white transition hover:bg-[var(--color-brand-dark)]"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                   stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                   className="h-4 w-4">
-                <polygon points="3 11 22 2 13 21 11 13 3 11" />
-              </svg>
-              Directions
-            </a>
-          )}
+          {/* Directions button removed (privacy hardening 2026-05-21):
+              the paper-plane CTA both leaked the sensor's exact coords
+              into Google's deep-link URL and pulled users out of the
+              app on every tap. PlaceCard now offers Save + Share only. */}
 
           {onSave && (
             <button
