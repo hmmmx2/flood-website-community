@@ -17,30 +17,24 @@ export const FLOODWATCH_API_BASE = (
 ).replace(/\/$/, "");
 
 /**
- * Default dataset selector.
+ * Default dataset selector — `real`.
  *
- * IMPORTANT: defaults to `all` (not `real`) because the upstream
- * FloodWatch IoT API's `real` dataset currently contains only three
- * dead test devices (SUTS-003, SUTS-002LongerName, SOSOP-001) from a
- * previous FYP team — all with flat batteries and `last_seen` weeks
- * old. The actively-transmitting deployment the IoT API was designed
- * to demonstrate against is the 22-node simulator under `sample`
- * (SIM-SOS-* + SIM-MAN-*), per the API docs:
+ * Per the FloodWatch API docs (FYP-FloodWatch-Docs/API.md, line 86):
+ *   `dataset=real` — Live sensor data only — documents without `is_sample` flag
  *
- *     "The simulator populates two sample villages — SIM-PITAS-SOSOP
- *      and SIM-PITAS-MANDAMAI — with 22 personality-driven nodes that
- *      continuously send water level and battery events."
- *      — FYP-FloodWatch-Docs/API.md, line 91-92
+ * This is what the IoT API treats as canonical production data. The
+ * community website renders this and only this: any document the
+ * parser tags `is_sample=false` (i.e. originating from real hardware
+ * uplink, not the SIM-PITAS-* simulator).
  *
- * `all` is the safest default for an FYP demo: it surfaces live
- * simulator activity now AND will automatically show any new real
- * hardware that registers later, with no env-var flip needed.
- *
- * Override via FLOODWATCH_DATASET on Vercel/Railway if you want to
- * pin to `real` or `sample` explicitly.
+ * If your physical sensor triggers but no fresh data appears here,
+ * the issue is upstream (sensor not transmitting, LoRa gateway down,
+ * parser misclassifying as `is_sample=true`, or the FastAPI not
+ * ingesting). The website only renders what /api/v1/nodes?dataset=real
+ * returns — we can't conjure data the upstream doesn't have.
  */
 export const DEFAULT_DATASET: Dataset =
-  (process.env.FLOODWATCH_DATASET as Dataset) ?? "all";
+  (process.env.FLOODWATCH_DATASET as Dataset) ?? "real";
 
 type Params = Record<string, string | number | boolean | undefined>;
 
