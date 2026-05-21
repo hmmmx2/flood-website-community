@@ -1414,23 +1414,6 @@ export default function NodeMap({
           </svg>
         </button>
 
-        {/* Directions (P1-6) — opens the routing panel. */}
-        {onOpenDirections && (
-          <button
-            type="button"
-            onClick={onOpenDirections}
-            title="Directions"
-            aria-label="Open directions panel"
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-lg ring-1 ring-black/10 transition hover:bg-slate-50"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                 stroke="#0f172a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                 className="h-5 w-5">
-              <polygon points="3 11 22 2 13 21 11 13 3 11" />
-            </svg>
-          </button>
-        )}
-
         {/* Measure distance (P1-9) — toggle. Clicking the button when
             already measuring ends the measurement. */}
         <button
