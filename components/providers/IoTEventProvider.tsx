@@ -130,9 +130,16 @@ function severityTone(sev: AlertSeverity) {
 }
 
 function severityLabel(sev: AlertSeverity): string {
+  // Water-level → user-facing badge:
+  //   level 3 (all floats submerged)        → "Critical"  (red)
+  //   level 2 (mid float submerged)         → "Warning"   (orange)
+  //   level 1 (low float submerged) / other → "Alert"     (amber)
+  // The internal severity bucket stays "watch" so we don't have to
+  // rename the AlertSeverity enum + every comparison call site; only
+  // the rendered label changes.
   if (sev === "critical") return "Critical";
   if (sev === "warning") return "Warning";
-  return "Watch";
+  return "Alert";
 }
 
 function timeSince(iso: string | null | undefined): string {

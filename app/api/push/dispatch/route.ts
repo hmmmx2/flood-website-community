@@ -64,10 +64,14 @@ function isValidPayload(body: unknown): body is AlertPayload {
   return typeof b.nodeId === "string" && typeof b.alertType === "string";
 }
 
-function severityLabel(level: number): "Watch" | "Warning" | "Critical" {
+function severityLabel(level: number): "Alert" | "Warning" | "Critical" {
+  // OS push body uses the same level mapping as the in-app dock:
+  //   3 = Critical, 2 = Warning, 1 (or anything below 2) = Alert.
+  // Keep these labels in sync with severityLabel() in
+  // components/providers/IoTEventProvider.tsx.
   if (level >= 3) return "Critical";
   if (level >= 2) return "Warning";
-  return "Watch";
+  return "Alert";
 }
 
 function buildNotificationPayload(alert: AlertPayload) {
