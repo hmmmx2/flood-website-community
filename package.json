@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node --max-http-header-size=65536 node_modules/next/dist/bin/next dev --port 3002",
+    "dev": "node --max-http-header-size=65536 node_modules/next/dist/bin/next dev --port 3003",
     "prebuild": "node -e \"if(process.env.VERCEL){try{require('fs').rmSync('.next',{recursive:true,force:true});}catch{}}\"",
     "build": "next build --webpack",
-    "start": "next start --port 3002",
+    "start": "next start --port 3003",
     "lint": "eslint",
     "cy:open": "cypress open",
     "cy:run": "cypress run",
@@ -18,8 +18,8 @@
     "cy:run:settings": "cypress run --spec 'cypress/e2e/settings/**/*.cy.ts'",
     "cy:run:community": "cypress run --spec 'cypress/e2e/community/**/*.cy.ts'",
     "cy:run:navigation": "cypress run --spec 'cypress/e2e/navigation/**/*.cy.ts'",
-    "test:e2e": "start-server-and-test dev http://localhost:3002 cy:run",
-    "test:e2e:open": "start-server-and-test dev http://localhost:3002 cy:open"
+    "test:e2e": "start-server-and-test dev http://localhost:3003 cy:run",
+    "test:e2e:open": "start-server-and-test dev http://localhost:3003 cy:open"
   },
   "dependencies": {
     "@radix-ui/react-dropdown-menu": "^2.1.16",
