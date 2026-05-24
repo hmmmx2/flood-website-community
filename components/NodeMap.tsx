@@ -862,18 +862,46 @@ export default function NodeMap({
           />
         )}
 
-        {/* Per-zone "Flood point" circles intentionally NOT rendered.
-            Per privacy review (2026-05-21): even with the BFF aggregator
-            rounding coords to ~11 m and hashing the node_id, visualising
-            each sensor as a colour-coded circle on a public map
-            effectively discloses installation locations to anyone — the
-            "Copy coords" / "Directions away" actions on the previous
-            zone-popup card compounded the leak. We keep the `zones`
-            prop wired so the auto-fit-to-zones camera, the "rescue
-            pill" count, and the in-radius worst-level computation still
-            work (those are summary stats, not point disclosures), but
-            the per-sensor markers and their associated click→PlaceCard
-            flow are gone. */}
+        {/* Aggregated flood-zone circles (re-enabled 2026-05-24).
+            These render the privacy-safe output of the BFF aggregator
+            (lib/zoneAggregate.ts): the centre is a coordinate ROUNDED to
+            ~11 m (round4) — not a sensor's raw GPS — and the radius is a
+            fixed 250 m privacy pad, so a circle conveys "this general
+            area has a sensor at flood level X" without disclosing an
+            install point. Colour follows the worst level (grey when the
+            zone is fully offline). The circles stay NON-clickable unless
+            the page opts in via `onZoneClick`; the old click→PlaceCard
+            flow that leaked "Copy coords / Directions away" is therefore
+            still gated off by default. The first-load skeleton above
+            covers the empty state, so we only draw real zones here. */}
+        {!isFirstLoad &&
+          zones.map((z) => {
+            const colour = getZoneColour(z);
+            const clickable = Boolean(onZoneClick);
+            return (
+              <Circle
+                key={`zone-${z.id}`}
+                center={{ lat: z.centroidLat, lng: z.centroidLng }}
+                radius={z.radiusM}
+                onClick={clickable ? () => onZoneClick?.(z) : undefined}
+                options={{
+                  fillColor: colour,
+                  fillOpacity: z.allOffline
+                    ? highContrast
+                      ? 0.3
+                      : 0.14
+                    : highContrast
+                      ? 0.45
+                      : 0.25,
+                  strokeColor: colour,
+                  strokeOpacity: highContrast ? 1 : 0.75,
+                  strokeWeight: highContrast ? 3 : 1.5,
+                  clickable,
+                  zIndex: z.allOffline ? 2 : 3,
+                }}
+              />
+            );
+          })}
 
         {/* Direction-service routes (P1-6). The selected one is bold
             and on top; the alternatives sit underneath dimmed so the
