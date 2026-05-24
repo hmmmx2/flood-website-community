@@ -84,8 +84,8 @@ Cypress.Commands.add('stubAmbient', () => {
   }).as('ambientNotifications');
   // Default to UNAUTHENTICATED. NextAuth represents "no session" as JSON
   // `null` (an empty object `{}` is treated as a truthy session by pages
-  // that gate on `!session`, e.g. /feedback). `loginViaMock` overrides
-  // this per-test with the authenticated fixture.
+  // that gate on `!session` to show an anonymous sign-in CTA).
+  // `loginViaMock` overrides this per-test with the authenticated fixture.
   cy.intercept('GET', '/api/auth/session', {
     statusCode: 200,
     headers: { 'content-type': 'application/json' },
