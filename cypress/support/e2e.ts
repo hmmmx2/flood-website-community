@@ -1,7 +1,8 @@
 import './commands';
 
-// ── Global exception handler ──────────────────────────────────────────────────
-// Suppress well-known Next.js / React noise that is not test-relevant.
+// ── Global uncaught-exception filter ──────────────────────────────────────────
+// Suppress well-known Next.js / React / network noise that isn't test-relevant.
+// App bugs still surface — only the listed substrings are ignored.
 Cypress.on('uncaught:exception', (err) => {
   const ignored = [
     'hydrat',
@@ -12,16 +13,17 @@ Cypress.on('uncaught:exception', (err) => {
     'Failed to fetch',
     'NetworkError',
     'AbortError',
+    'EventSource',
   ];
   if (ignored.some((s) => err.message.includes(s))) return false;
   return true;
 });
 
-// ── Global beforeEach ─────────────────────────────────────────────────────────
+// ── Global setup ──────────────────────────────────────────────────────────────
 beforeEach(() => {
-  cy.clearLocalStorage();
   cy.clearCookies();
-
-  // Stub health check so it does not create noise in tests.
-  cy.intercept('GET', '/api/health', { body: { status: 'ok' } }).as('health');
+  cy.clearLocalStorage();
+  // Quiet the ambient providers (health check + IoT SSE) and default the
+  // session to unauthenticated. `cy.loginViaMock()` overrides the session.
+  cy.stubAmbient();
 });

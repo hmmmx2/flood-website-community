@@ -7,7 +7,7 @@
   "user": {
     "id": "user-uuid-5678",
     "email": "user@example.com",
-    "fullName": "Community User",
+    "displayName": "Community User",
     "avatarUrl": null,
     "role": "customer"
   }

@@ -23,6 +23,7 @@
     "../node_modules/cypress/types"
   ],
   "exclude": [
-    "../node_modules"
+    "../node_modules",
+    "e2e/_legacy"
   ]
 }

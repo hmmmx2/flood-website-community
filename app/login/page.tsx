@@ -26,9 +26,9 @@ async function getCrmUrl(): Promise<string> {
 /**
  * Build the CRM `/auth/callback` URL using the new opaque-code SSO
  * handoff. Tokens never appear in this URL — only the short-lived
- * code that the CRM redeems against Upstash. See `lib/sso.ts`.
+ * code that the CRM redeems against Redis. See `lib/sso.ts`.
  *
- * Pure-ish: the only side effect is the Upstash write inside
+ * Pure-ish: the only side effect is the Redis write inside
  * `/api/auth/sso/start`. Throws on network failure so the caller
  * can fall back to a friendly error banner.
  */
@@ -67,10 +67,10 @@ async function mintSsoHandoffCode(payload: {
     }
     if (res.status === 503) {
       // Server logged the precise reason. The "storage_unavailable"
-      // variant means Upstash env vars aren't set on this deployment
-      // (the SSO handoff stash lives in Redis). Operators see a
-      // clearer message; the runbook is to set the env vars on the
-      // community Vercel project. See VERCEL_DEPLOYMENT.md.
+      // variant means REDIS_URL isn't set (or Railway Redis is
+      // unreachable) on this deployment — the SSO handoff stash lives
+      // in Redis. Operators see a clearer message; the runbook is to
+      // set REDIS_URL on the community Vercel project. See VERCEL_DEPLOYMENT.md.
       if (body.error === "sso_storage_unavailable") {
         throw new Error("sso_storage_unavailable");
       }
@@ -571,7 +571,7 @@ function LoginPageInner() {
                   Sign in to your account to continue
                 </p>
                 {error && (
-                  <div className="mb-4 rounded-xl px-4 py-3 text-sm border bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">
+                  <div data-cy="login-error" className="mb-4 rounded-xl px-4 py-3 text-sm border bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">
                     {/*
                      * Banner text only — no recovery button.
                      * Session-layer errors (SESSION_RECOVERY_ERROR_CODES)
@@ -692,6 +692,7 @@ function LoginPageInner() {
                         onClick={() => setShowLoginPw(!showLoginPw)}
                         aria-label={showLoginPw ? "Hide password" : "Show password"}
                         aria-pressed={showLoginPw}
+                        data-cy="login-pw-toggle"
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-sm transition-colors min-h-[24px] px-1"
                         style={{ color: "var(--color-muted)" }}
                       >
@@ -721,6 +722,7 @@ function LoginPageInner() {
                   <button
                     type="submit"
                     disabled={loading}
+                    data-cy="login-submit"
                     className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--color-brand-dark)] disabled:opacity-50 disabled:cursor-not-allowed bg-[var(--color-brand)]"
                   >
                     {loading ? "Signing in…" : "Sign In"}

@@ -173,12 +173,13 @@ export default function PostCard({
 
   return (
     <>
-      <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl overflow-hidden hover:border-[var(--color-muted)]/50 transition-colors">
+      <div data-cy="post-card" data-cy-post-id={post.id} className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl overflow-hidden hover:border-[var(--color-muted)]/50 transition-colors">
         {/* Vote + content layout */}
         <div className="flex gap-0">
           {/* Left vote column */}
           <div className="flex flex-col items-center gap-0.5 bg-[var(--color-pill-bg)] px-2.5 py-3 rounded-l-2xl min-w-[44px]">
             <button
+              data-cy="post-like"
               type="button"
               onClick={handleLikeClick}
               disabled={likeBusy}
@@ -256,6 +257,7 @@ export default function PostCard({
               {(isOwner || (currentUserId && !isOwner)) && (
                 <button
                   ref={kebabRef}
+                  data-cy="post-menu"
                   type="button"
                   onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
                   aria-label="Post actions"
@@ -311,6 +313,7 @@ export default function PostCard({
               {/* Comments — discuss on post page */}
               <Link
                 href={`/post/${post.id}#comments`}
+                data-cy="post-comments"
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-[var(--color-muted)] hover:bg-[var(--color-pill-bg)] hover:text-[var(--color-text)] transition-colors"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
@@ -320,7 +323,7 @@ export default function PostCard({
               </Link>
 
               {/* Share */}
-              <button type="button" onClick={() => setShareOpen(true)}
+              <button type="button" onClick={() => setShareOpen(true)} data-cy="post-share"
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-[var(--color-muted)] hover:bg-[var(--color-pill-bg)] hover:text-[var(--color-text)] transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" />
@@ -353,6 +356,7 @@ export default function PostCard({
               <button
                 type="button"
                 role="menuitem"
+                data-cy="post-edit"
                 onClick={() => {
                   setMenuOpen(false);
                   setEditOpen(true);
@@ -374,6 +378,7 @@ export default function PostCard({
                 <button
                   type="button"
                   role="menuitem"
+                  data-cy="post-delete"
                   onClick={() => { setMenuOpen(false); onDelete(post.id); }}
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-red-500 hover:bg-red-500/10 dark:hover:bg-red-950/40"
                 >
@@ -389,6 +394,7 @@ export default function PostCard({
             <button
               type="button"
               role="menuitem"
+              data-cy="post-report"
               onClick={() => { setMenuOpen(false); setReportOpen(true); }}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-red-500 hover:bg-red-500/10 dark:hover:bg-red-950/40"
             >
@@ -426,7 +432,7 @@ export default function PostCard({
               {editError && <div className="rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 px-4 py-3 text-sm text-red-600 dark:text-red-400">{editError}</div>}
               <div>
                 <label className="block text-xs font-semibold text-[var(--color-muted)] mb-1.5 uppercase tracking-wide">Title</label>
-                <input type="text" value={editTitle} onChange={e => setEditTitle(e.target.value)} required maxLength={120}
+                <input data-cy="post-edit-title" type="text" value={editTitle} onChange={e => setEditTitle(e.target.value)} required maxLength={120}
                   className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-2.5 text-sm outline-none focus:border-[var(--color-brand)] focus:ring-2 focus:ring-[var(--color-brand)]/10" />
                 <p className={`text-right text-[11px] mt-1 tabular-nums ${editTitle.length >= 120 ? "text-red-500" : editTitle.length >= 108 ? "text-amber-500" : "text-[var(--color-muted)]"}`}>
                   {editTitle.length} / 120
@@ -434,7 +440,7 @@ export default function PostCard({
               </div>
               <div>
                 <label className="block text-xs font-semibold text-[var(--color-muted)] mb-1.5 uppercase tracking-wide">Content</label>
-                <textarea value={editContent} onChange={e => setEditContent(e.target.value)} rows={4} maxLength={4000}
+                <textarea data-cy="post-edit-content" value={editContent} onChange={e => setEditContent(e.target.value)} rows={4} maxLength={4000}
                   className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-2.5 text-sm outline-none focus:border-[var(--color-brand)] focus:ring-2 focus:ring-[var(--color-brand)]/10 resize-none" />
                 <p className={`text-right text-[11px] mt-1 tabular-nums ${editContent.length >= 4000 ? "text-red-500" : editContent.length >= 3600 ? "text-amber-500" : "text-[var(--color-muted)]"}`}>
                   {editContent.length} / 4000
@@ -473,7 +479,7 @@ export default function PostCard({
                   className="flex-1 rounded-xl border border-[var(--color-border)] py-2.5 text-sm font-semibold text-[var(--color-muted)] hover:bg-[var(--color-pill-bg)] transition-colors">
                   Cancel
                 </button>
-                <button type="submit" disabled={saving || !editTitle.trim()}
+                <button type="submit" disabled={saving || !editTitle.trim()} data-cy="post-edit-save"
                   className="flex-1 rounded-xl bg-[var(--color-brand)] py-2.5 text-sm font-bold text-white transition hover:bg-[var(--color-brand-dark)] disabled:opacity-50">
                   {saving ? "Saving…" : "Save Changes"}
                 </button>

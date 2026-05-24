@@ -203,6 +203,7 @@ export default function Navbar({
               <Link
                 key={link.key}
                 href={link.href}
+                data-cy={`nav-${link.key}`}
                 className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
                   activeLink === link.key
                     ? "font-semibold text-[var(--color-brand)] bg-[var(--color-brand-light)]"
@@ -260,6 +261,7 @@ export default function Navbar({
                 href={`/u/${user.id}`}
                 aria-label="View your profile"
                 title="View your profile"
+                data-cy="nav-avatar"
                 className="flex items-center justify-center rounded-full hover:opacity-90 transition"
               >
                 {user.avatarUrl ? (
@@ -296,6 +298,7 @@ export default function Navbar({
                 aria-label="Open account menu"
                 aria-haspopup="menu"
                 aria-expanded={userMenuOpen}
+                data-cy="nav-user-menu"
                 className="flex items-center gap-1 px-2 py-1 rounded-full hover:bg-[var(--color-hover)] transition"
               >
                 <span className="text-sm font-semibold text-[var(--color-text)] max-w-[120px] truncate">
@@ -310,6 +313,7 @@ export default function Navbar({
                 <Link
                   href={`/u/${user.id}`}
                   onClick={() => setUserMenuOpen(false)}
+                  data-cy="nav-profile"
                   className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-hover)] transition font-medium"
                 >
                   <UserIcon />
@@ -323,6 +327,7 @@ export default function Navbar({
                 <Link
                   href="/settings"
                   onClick={() => setUserMenuOpen(false)}
+                  data-cy="nav-settings"
                   className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-hover)] transition font-medium"
                 >
                   <SettingsIcon />
@@ -332,6 +337,7 @@ export default function Navbar({
                 <button
                   type="button"
                   onClick={logout}
+                  data-cy="nav-signout"
                   className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-500 hover:bg-red-500/10 dark:hover:bg-red-950/40 transition font-semibold"
                 >
                   <SignOutIcon />

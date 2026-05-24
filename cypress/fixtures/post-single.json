@@ -1,0 +1,18 @@
+{
+  "id": "post-uuid-001",
+  "authorId": "user-uuid-5678",
+  "authorName": "John Doe",
+  "authorAvatar": null,
+  "groupId": null,
+  "groupSlug": null,
+  "groupName": null,
+  "title": "Flood situation near Sungai Sabah",
+  "content": "Water levels are rising rapidly near the main bridge. Stay safe everyone and avoid low-lying areas.",
+  "imageUrl": null,
+  "likesCount": 12,
+  "commentsCount": 3,
+  "likedByMe": false,
+  "createdAt": "2025-01-01T08:00:00Z",
+  "updatedAt": "2025-01-01T08:00:00Z",
+  "comments": []
+}

@@ -1,0 +1,12 @@
+{
+  "id": "group-uuid-001",
+  "slug": "flood-alerts-kuching",
+  "name": "Flood Alerts Kuching",
+  "description": "Real-time flood updates and community alerts for the Kuching area.",
+  "iconLetter": "F",
+  "iconColor": "#2563eb",
+  "membersCount": 142,
+  "postsCount": 28,
+  "joinedByMe": false,
+  "createdAt": "2025-01-01T00:00:00Z"
+}

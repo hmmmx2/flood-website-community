@@ -334,6 +334,7 @@ export default function NotificationBell({ enabled = true }: Props) {
         }}
         aria-label={`Notifications${totalUnread > 0 ? ` — ${totalUnread} unread` : ""}`}
         aria-expanded={open}
+        data-cy="nav-notifications"
         className="relative flex h-10 w-10 items-center justify-center rounded-full text-[var(--color-text)] hover:bg-[var(--color-hover)] transition"
       >
         <BellIcon className="h-5 w-5" />
@@ -351,6 +352,7 @@ export default function NotificationBell({ enabled = true }: Props) {
         <div
           role="dialog"
           aria-label="Notifications"
+          data-cy="notif-dropdown"
           className="absolute right-0 top-12 z-50 w-[360px] max-w-[calc(100vw-1rem)] overflow-hidden rounded-2xl border bg-[var(--color-card)] shadow-xl"
           style={{ borderColor: "var(--color-border)" }}
         >
@@ -371,6 +373,7 @@ export default function NotificationBell({ enabled = true }: Props) {
               <button
                 type="button"
                 onClick={() => void markAllRead()}
+                data-cy="notif-mark-all"
                 className="text-[11px] font-semibold"
                 style={{ color: "var(--color-brand)" }}
               >
@@ -384,7 +387,7 @@ export default function NotificationBell({ enabled = true }: Props) {
               <p className="px-4 py-6 text-center text-xs" style={{ color: "var(--color-muted)" }}>Loading…</p>
             )}
             {!loading && mergedItems.length === 0 && (
-              <div className="px-4 py-8 text-center">
+              <div data-cy="notif-empty" className="px-4 py-8 text-center">
                 <BellIcon className="mx-auto mb-2 h-7 w-7" style={{ color: "var(--color-border)" }} />
                 <p className="text-xs" style={{ color: "var(--color-muted)" }}>You&apos;re all caught up.</p>
               </div>
@@ -475,6 +478,7 @@ function Row({
   return (
     <button
       type="button"
+      data-cy="notif-row"
       onClick={async () => {
         onClose();
         await onMarkRead();

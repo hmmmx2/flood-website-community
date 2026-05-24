@@ -1,0 +1,11 @@
+{
+  "id": "blog-uuid-001",
+  "imageKey": "flood-risk-kuching",
+  "imageUrl": null,
+  "category": "Education",
+  "title": "Understanding Flood Risk in Kuching",
+  "body": "Kuching faces annual flooding due to its geography and proximity to major rivers.\nThis article explores the key risk factors, historical patterns, and what residents can do to prepare.",
+  "isFeatured": true,
+  "createdAt": "2025-01-01T00:00:00Z",
+  "updatedAt": "2025-01-02T00:00:00Z"
+}

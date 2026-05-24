@@ -365,6 +365,7 @@ function VerifyEmailInner() {
 
             <button
               type="submit"
+              data-cy="verify-submit"
               disabled={!isComplete || status === "submitting" || status === "success"}
               className="w-full rounded-xl px-4 py-3 text-sm font-semibold text-white transition hover:bg-[var(--color-brand-dark)] disabled:opacity-50 disabled:cursor-not-allowed bg-[var(--color-brand)] flex items-center justify-center gap-2"
             >
@@ -382,6 +383,7 @@ function VerifyEmailInner() {
             <button
               type="button"
               onClick={handleResend}
+              data-cy="verify-resend"
               disabled={resending || resendIn > 0 || !email}
               className="font-semibold transition hover:opacity-80 text-[var(--color-brand)] disabled:opacity-50 disabled:cursor-not-allowed"
             >

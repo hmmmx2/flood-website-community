@@ -1115,6 +1115,7 @@ export default function FloodMapPage() {
                       type="button"
                       onClick={() => toggleStatus(opt.key)}
                       aria-pressed={on}
+                      data-cy={`map-legend-${opt.key}`}
                       title={on ? `Click to clear "${opt.label}" filter` : `Filter to ${opt.label} only`}
                       className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
                         on

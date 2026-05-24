@@ -1,0 +1,8 @@
+{
+  "alert": true,
+  "warning": true,
+  "critical": true,
+  "comments": true,
+  "mentions": false,
+  "push": false
+}

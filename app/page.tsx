@@ -190,11 +190,11 @@ export default function HomePage() {
               <div className="h-9 w-9 rounded-full bg-[var(--color-brand)] flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
                 {getInitials(user.displayName)}
               </div>
-              <button type="button" onClick={() => setCreateOpen(true)}
+              <button type="button" onClick={() => setCreateOpen(true)} data-cy="feed-compose-open"
                 className="flex-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-2 text-sm text-[var(--color-muted)] text-left hover:border-[var(--color-brand)] hover:bg-[var(--color-hover)] transition">
                 Share a flood update…
               </button>
-              <button type="button" onClick={() => setCreateOpen(true)}
+              <button type="button" onClick={() => setCreateOpen(true)} data-cy="feed-compose-image"
                 className="flex-shrink-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] p-2 hover:border-[var(--color-brand)] transition text-[var(--color-muted)]"
                 title="Upload image">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
@@ -215,7 +215,7 @@ export default function HomePage() {
           {/* Search bar — wrapped in the same rounded-2xl card chrome the
               compose box and sort tabs use, so all three rows share one
               outer shape and width. */}
-          <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-2 mb-4">
+          <div data-cy="feed-search" className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-2 mb-4">
             <SearchField
               value={feedSearch}
               onValueChange={setFeedSearch}
@@ -228,7 +228,7 @@ export default function HomePage() {
           {/* Sort tabs */}
           <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl flex items-center gap-1 p-1.5 mb-4">
             {(["new", "top"] as const).map(s => (
-              <button key={s} type="button" onClick={() => setSort(s)}
+              <button key={s} type="button" onClick={() => setSort(s)} data-cy={`feed-sort-${s}`}
                 className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-colors capitalize ${
                   sort === s
                     ? "bg-[var(--color-pill-bg)] text-[var(--color-text)]"
@@ -256,19 +256,19 @@ export default function HomePage() {
               ))}
             </div>
           ) : fetchError ? (
-            <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-12 text-center">
+            <div data-cy="feed-error" className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-12 text-center">
               <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 mb-3 mx-auto">
                 <AlertIcon className="h-8 w-8" />
               </div>
               <h3 className="font-bold text-[var(--color-text)] mb-1">Could not load posts</h3>
               <p className="text-sm text-[var(--color-muted)] mb-4">The server may still be starting up. Please try again.</p>
-              <button type="button" onClick={() => fetchPosts(0, sort, true, debouncedFeedSearch)}
+              <button type="button" onClick={() => fetchPosts(0, sort, true, debouncedFeedSearch)} data-cy="feed-retry"
                 className="rounded-full bg-[var(--color-brand)] px-5 py-2 text-sm font-bold text-white hover:bg-[var(--color-brand-dark)] transition">
                 Retry
               </button>
             </div>
           ) : posts.length === 0 ? (
-            <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-12 text-center">
+            <div data-cy="feed-empty" className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-12 text-center">
               <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[var(--color-brand)]/15 text-[var(--color-brand)] mb-3 mx-auto">
                 <WaveIcon className="h-8 w-8" />
               </div>
@@ -276,7 +276,7 @@ export default function HomePage() {
               <p className="text-sm text-[var(--color-muted)]">Be the first to share a flood update!</p>
             </div>
           ) : (
-            <div className="flex flex-col gap-3">
+            <div data-cy="feed-list" className="flex flex-col gap-3">
               {posts.map(post => (
                 <PostCard
                   key={post.id}
@@ -288,13 +288,13 @@ export default function HomePage() {
                 />
               ))}
               {hasMore && (
-                <button type="button" onClick={() => fetchPosts(page + 1, sort, false, debouncedFeedSearch)} disabled={loadingMore}
+                <button type="button" onClick={() => fetchPosts(page + 1, sort, false, debouncedFeedSearch)} disabled={loadingMore} data-cy="feed-load-more"
                   className="w-full min-h-[44px] py-3 rounded-2xl bg-[var(--color-card)] border border-[var(--color-border)] text-sm font-semibold text-[var(--color-brand)] hover:bg-[var(--color-hover)] transition disabled:opacity-50">
                   {loadingMore ? "Loading…" : "Load more"}
                 </button>
               )}
               {!hasMore && !loadingMore && posts.length > 0 && (
-                <p className="py-4 text-center text-xs text-[var(--color-muted)]">
+                <p data-cy="feed-end" className="py-4 text-center text-xs text-[var(--color-muted)]">
                   You&apos;re all caught up — that&apos;s the end of the feed.
                 </p>
               )}

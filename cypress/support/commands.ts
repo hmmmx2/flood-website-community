@@ -1,258 +1,247 @@
 /// <reference types="cypress" />
 
-// ── Type declarations ─────────────────────────────────────────────────────────
+import type { LoginViaMockOptions, MockSession } from './types';
 
-declare global {
-  namespace Cypress {
-    interface Chainable {
-      /** Log in via the UI form, intercepting all auth + feed APIs. */
-      login(email?: string, password?: string): Chainable<void>;
-      /** Log in by directly seeding localStorage (fast, skips UI). */
-      seedAuth(overrides?: Partial<SeedAuthOptions>): Chainable<void>;
-      /** Clear all auth keys from localStorage. */
-      logout(): Chainable<void>;
-      /** Intercept all auth-related API endpoints. */
-      interceptAuth(): Chainable<void>;
-      /** Intercept sensor endpoints. */
-      interceptSensors(): Chainable<void>;
-      /** Intercept favourites endpoints. */
-      interceptFavourites(): Chainable<void>;
-      /** Intercept feed/posts endpoints. */
-      interceptFeed(): Chainable<void>;
-      /** Intercept blog endpoints. */
-      interceptBlogs(): Chainable<void>;
-      /** Intercept group endpoints. */
-      interceptGroups(): Chainable<void>;
-      /** Intercept profile endpoints. */
-      interceptProfile(): Chainable<void>;
-      /**
-       * Generic API interceptor.
-       * @param method HTTP method
-       * @param path   URL pattern (supports globs)
-       * @param fixture Fixture name or response body object
-       * @param alias  cy.wait alias (without @)
-       */
-      interceptApi(
-        method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS',
-        path: string,
-        fixture: string | object,
-        alias: string,
-      ): Chainable<void>;
-      /** Wait for document.readyState === 'complete'. */
-      waitForPageLoad(): Chainable<void>;
-      /** Legacy alias kept for backwards compat. */
-      loginAsUser(): Chainable<void>;
-      loginAs(email: string, password: string): Chainable<void>;
-    }
+// ─────────────────────────────────────────────────────────────────────────────
+// Authentication — fully mocked, no backend.
+//
+// The Community app authenticates via NextAuth (Auth.js v5):
+//   • client gating  → `useSession()` fetches `GET /api/auth/session`
+//   • SSR/edge gating → `proxy.ts` middleware decodes the session cookie
+//
+// `loginViaMock` satisfies BOTH layers:
+//   1. intercepts `GET /api/auth/session` so `useSession()` is authed;
+//   2. mints a real signed JWT cookie via the `signSession` node task so the
+//      middleware lets SSR-gated routes (e.g. `/settings`) through.
+// The cookie step is cached across specs via `cy.session`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+Cypress.Commands.add('loginViaMock', (options: LoginViaMockOptions = {}) => {
+  const fixture = options.fixture ?? 'auth/session-user.json';
+  const signCookie = options.signCookie ?? true;
+  const cookieName = Cypress.env('SESSION_COOKIE') as string;
+
+  if (signCookie) {
+    cy.session(
+      ['mock-user', fixture],
+      () => {
+        cy.fixture(fixture).then((session: MockSession) => {
+          const nowSec = Math.floor(Date.now() / 1000);
+          cy.task<string | null>('signSession', {
+            salt: cookieName,
+            token: {
+              name: session.user.name,
+              email: session.user.email,
+              picture: session.user.image,
+              sub: session.user.id,
+              role: session.user.role,
+              accessToken: session.accessToken,
+              refreshToken: session.refreshToken,
+              accessTokenExpires: Date.now() + 15 * 60 * 1000,
+              iat: nowSec,
+            },
+          }).then((token) => {
+            if (typeof token === 'string' && token.length > 0) {
+              cy.setCookie(cookieName, token, {
+                httpOnly: true,
+                sameSite: 'lax',
+                path: '/',
+              });
+            }
+          });
+        });
+      },
+      { cacheAcrossSpecs: true },
+    );
   }
-}
 
-// ── Supporting types ──────────────────────────────────────────────────────────
-
-interface SeedAuthOptions {
-  accessToken: string;
-  refreshToken: string;
-  user: {
-    id: string;
-    email: string;
-    displayName: string;
-    avatarUrl?: string;
-    role: string;
-  };
-}
-
-const DEFAULT_AUTH: SeedAuthOptions = {
-  accessToken: 'mock-access-token',
-  refreshToken: 'mock-refresh-token',
-  user: {
-    id: 'user-uuid-5678',
-    email: 'user@example.com',
-    displayName: 'Community User',
-    avatarUrl: undefined,
-    role: 'customer',
-  },
-};
-
-// ── Auth commands ─────────────────────────────────────────────────────────────
-
-/**
- * Seed localStorage with auth tokens (no UI interaction).
- * Use this in beforeEach for tests that need an authenticated state without
- * testing the login flow itself.
- */
-Cypress.Commands.add('seedAuth', (overrides = {}) => {
-  const opts: SeedAuthOptions = {
-    ...DEFAULT_AUTH,
-    ...overrides,
-    user: { ...DEFAULT_AUTH.user, ...(overrides.user ?? {}) },
-  };
-  cy.window().then((win) => {
-    win.localStorage.setItem('community_access_token', opts.accessToken);
-    win.localStorage.setItem('community_refresh_token', opts.refreshToken);
-    win.localStorage.setItem('community_auth_user', JSON.stringify(opts.user));
-  });
+  // Per-test: make the client-side session resolve authed. Registered
+  // after `cy.session`, so it wins over the ambient empty-session stub.
+  cy.intercept('GET', '/api/auth/session', { fixture }).as('session');
 });
 
-/** Clear auth from localStorage. */
-Cypress.Commands.add('logout', () => {
-  cy.window().then((win) => {
-    win.localStorage.removeItem('community_access_token');
-    win.localStorage.removeItem('community_refresh_token');
-    win.localStorage.removeItem('community_auth_user');
-  });
+// ─────────────────────────────────────────────────────────────────────────────
+// Ambient stubs — keep providers quiet + deterministic on every page.
+// ─────────────────────────────────────────────────────────────────────────────
+
+Cypress.Commands.add('stubAmbient', () => {
+  cy.intercept('GET', '/api/health', { body: { status: 'ok' } }).as('health');
+  // SSE streams consumed by IoTEventProvider + NotificationBell — open + idle.
+  cy.intercept('GET', '/api/sse/iot-events', {
+    statusCode: 200,
+    headers: { 'content-type': 'text/event-stream' },
+    body: ':ok\n\n',
+  }).as('sseIot');
+  cy.intercept('GET', '/api/sse/notifications', {
+    statusCode: 200,
+    headers: { 'content-type': 'text/event-stream' },
+    body: ':ok\n\n',
+  }).as('sseNotif');
+  // NotificationBell polls these on every authed page — quiet defaults.
+  cy.intercept('GET', '/api/notifications/unread-count', { body: { count: 0 } }).as('unreadCount');
+  cy.intercept('GET', '/api/notifications*', {
+    body: { content: [], totalElements: 0, totalPages: 0, number: 0, size: 20, last: true },
+  }).as('ambientNotifications');
+  // Default to UNAUTHENTICATED. NextAuth represents "no session" as JSON
+  // `null` (an empty object `{}` is treated as a truthy session by pages
+  // that gate on `!session`, e.g. /feedback). `loginViaMock` overrides
+  // this per-test with the authenticated fixture.
+  cy.intercept('GET', '/api/auth/session', {
+    statusCode: 200,
+    headers: { 'content-type': 'application/json' },
+    body: null,
+  }).as('anonSession');
 });
 
-/** Log in via UI form. */
-Cypress.Commands.add('login', (
-  email = Cypress.env('USER_EMAIL') as string,
-  password = Cypress.env('USER_PASSWORD') as string,
-) => {
-  cy.interceptAuth();
-  cy.interceptFeed();
-  cy.interceptSensors();
-  cy.interceptFavourites();
-
-  cy.visit('/login');
-  cy.get('#email, input[type="email"]').first().clear().type(email);
-  cy.get('#password, input[type="password"]').first().clear().type(password);
-  cy.get('button[type="submit"]').first().click();
-  cy.wait('@loginPost');
-  cy.url().should('not.include', '/login');
-});
-
-// ── API intercept commands ────────────────────────────────────────────────────
-
-Cypress.Commands.add('interceptAuth', () => {
-  cy.intercept('POST', '/api/auth/login', { fixture: 'auth.json' }).as('loginPost');
-  cy.intercept('POST', '/api/auth/register', { fixture: 'auth.json' }).as('registerPost');
-  cy.intercept('POST', '/api/auth/refresh', {
-    body: { accessToken: 'mock-access-token-refreshed' },
-  }).as('refreshToken');
-  cy.intercept('POST', '/api/auth/forgot-password', {
-    body: { message: 'Reset code sent to your email.' },
-  }).as('forgotPassword');
-  cy.intercept('POST', '/api/auth/verify-reset-code', {
-    body: { message: 'Code verified.' },
-  }).as('verifyResetCode');
-  cy.intercept('POST', '/api/auth/reset-password', {
-    body: { message: 'Password reset successfully.' },
-  }).as('resetPassword');
-  cy.intercept('POST', '/api/auth/change-password', {
-    body: { message: 'Password changed successfully.' },
-  }).as('changePassword');
-});
-
-Cypress.Commands.add('interceptProfile', () => {
-  cy.intercept('GET', '/api/auth/profile', {
-    body: {
-      id: 'user-uuid-5678',
-      email: 'user@example.com',
-      displayName: 'Community User',
-      avatarUrl: null,
-      role: 'customer',
-    },
-  }).as('getProfile');
-  cy.intercept('PATCH', '/api/auth/profile', (req) => {
-    req.reply({ statusCode: 200, body: { ...req.body, id: 'user-uuid-5678' } });
-  }).as('patchProfile');
-});
-
-Cypress.Commands.add('interceptSensors', () => {
-  cy.intercept('GET', '/api/sensors', { fixture: 'sensors.json' }).as('getSensors');
-});
-
-Cypress.Commands.add('interceptFavourites', () => {
-  cy.intercept('GET', '/api/favourites', { fixture: 'mock-favourites.json' }).as('getFavourites');
-  cy.intercept('POST', '/api/favourites', (req) => {
-    req.reply({
-      statusCode: 200,
-      body: { nodeId: req.body?.nodeId ?? 'node-uuid-002', favouritedAt: new Date().toISOString() },
-    });
-  }).as('addFavourite');
-  cy.intercept('DELETE', '/api/favourites/*', { statusCode: 204, body: {} }).as('removeFavourite');
-});
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-domain API intercepts.
+// ─────────────────────────────────────────────────────────────────────────────
 
 Cypress.Commands.add('interceptFeed', () => {
   cy.intercept('GET', '/api/posts*', { fixture: 'posts.json' }).as('getPosts');
   cy.intercept('POST', '/api/posts', (req) => {
-    req.reply({ statusCode: 200, body: { id: 'new-post-uuid', ...req.body } });
+    req.reply({
+      statusCode: 200,
+      body: {
+        id: 'new-post-uuid',
+        authorId: Cypress.env('MOCK_USER_ID'),
+        authorName: 'Community User',
+        authorAvatar: null,
+        groupId: null,
+        groupSlug: null,
+        groupName: null,
+        title: (req.body as { title?: string })?.title ?? 'New post',
+        content: (req.body as { content?: string })?.content ?? '',
+        imageUrl: (req.body as { imageUrl?: string })?.imageUrl ?? null,
+        likesCount: 0,
+        commentsCount: 0,
+        likedByMe: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    });
   }).as('createPost');
   cy.intercept('PATCH', '/api/posts/*', (req) => {
-    req.reply({ statusCode: 200, body: { id: 'post-uuid-001', ...req.body } });
+    req.reply({ statusCode: 200, body: { id: 'post-uuid-001', ...(req.body as object) } });
   }).as('updatePost');
   cy.intercept('DELETE', '/api/posts/*', { statusCode: 204, body: {} }).as('deletePost');
-  cy.intercept('POST', '/api/posts/*/like', {
-    body: { liked: true, likesCount: 13 },
-  }).as('toggleLike');
+  cy.intercept('POST', '/api/posts/*/like', { body: { liked: true, likesCount: 13 } }).as('likePost');
   cy.intercept('GET', '/api/posts/*/comments*', {
     body: { comments: [], totalTopLevel: 0, page: 0, size: 20, totalComments: 0 },
   }).as('getComments');
   cy.intercept('POST', '/api/posts/*/comments', (req) => {
-    req.reply({ statusCode: 200, body: { id: 'comment-uuid-001', content: req.body?.content ?? '' } });
+    req.reply({
+      statusCode: 200,
+      body: {
+        id: 'comment-uuid-new',
+        parentId: null,
+        authorId: Cypress.env('MOCK_USER_ID'),
+        authorName: 'Community User',
+        content: (req.body as { content?: string })?.content ?? '',
+        score: 1,
+        myVote: 1,
+        createdAt: new Date().toISOString(),
+        deleted: false,
+        replyCount: 0,
+      },
+    });
   }).as('createComment');
+  // Sidebar "Communities" — the home feed expects a bare ARRAY here.
+  cy.intercept('GET', '/api/groups', { fixture: 'groups-array.json' }).as('getSidebarGroups');
 });
 
 Cypress.Commands.add('interceptBlogs', () => {
-  cy.intercept('GET', '/api/blogs/featured', { fixture: 'blogs.json' }).as('getFeaturedBlogs');
+  // Registration order matters — Cypress matches the most-recently-defined
+  // intercept first. Generic list first, detail glob next, then the exact
+  // /featured + /categories routes LAST so they win over the detail glob.
   cy.intercept('GET', '/api/blogs*', { fixture: 'blogs.json' }).as('getBlogs');
-  cy.intercept('POST', '/api/blogs', (req) => {
-    req.reply({ statusCode: 200, body: { id: 'blog-uuid-new', ...req.body } });
-  }).as('createBlog');
-  cy.intercept('PATCH', '/api/blogs/*', (req) => {
-    req.reply({ statusCode: 200, body: { id: 'blog-uuid-001', ...req.body } });
-  }).as('updateBlog');
-  cy.intercept('DELETE', '/api/blogs/*', { statusCode: 204, body: {} }).as('deleteBlog');
+  cy.intercept('GET', '/api/blogs/*', { fixture: 'blog-detail.json' }).as('getBlog');
+  cy.intercept('GET', '/api/blogs/featured', { fixture: 'blogs-featured.json' }).as('getFeatured');
+  cy.intercept('GET', '/api/blogs/categories', {
+    body: ['General', 'Flood Alert', 'Safety Tips', 'Community', 'Updates', 'Research'],
+  }).as('getCategories');
 });
 
 Cypress.Commands.add('interceptGroups', () => {
-  cy.intercept('GET', '/api/groups*', { fixture: 'groups.json' }).as('getGroups');
-  cy.intercept('GET', '/api/groups/*', {
+  cy.intercept('GET', '/api/groups/*/posts*', { fixture: 'posts.json' }).as('getGroupPosts');
+  cy.intercept('GET', '/api/groups/*', { fixture: 'group-detail.json' }).as('getGroup');
+  // The group page replaces its state with the POST response, so it must be a
+  // full Group object (joined).
+  cy.intercept('POST', '/api/groups/*/membership', {
     body: {
       id: 'group-uuid-001',
       slug: 'flood-alerts-kuching',
       name: 'Flood Alerts Kuching',
-      description: 'Real-time flood updates for Kuching area.',
-      memberCount: 142,
-      isMember: false,
+      description: 'Real-time flood updates and community alerts for the Kuching area.',
+      iconLetter: 'F',
+      iconColor: '#2563eb',
+      membersCount: 143,
+      postsCount: 28,
+      joinedByMe: true,
       createdAt: '2025-01-01T00:00:00Z',
     },
-  }).as('getGroup');
-  cy.intercept('POST', '/api/groups/*/membership', {
-    body: { isMember: true, memberCount: 143 },
   }).as('joinGroup');
-  cy.intercept('DELETE', '/api/groups/*/membership', {
-    body: { isMember: false, memberCount: 142 },
-  }).as('leaveGroup');
+  cy.intercept('DELETE', '/api/groups/*/membership', { statusCode: 204, body: {} }).as('leaveGroup');
 });
 
-Cypress.Commands.add('interceptApi', (
-  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS',
-  path: string,
-  fixture: string | object,
-  alias: string,
-) => {
-  if (typeof fixture === 'string') {
-    cy.intercept(method, path, { fixture }).as(alias);
-  } else {
-    cy.intercept(method, path, { body: fixture }).as(alias);
-  }
+Cypress.Commands.add('interceptProfile', () => {
+  cy.intercept('GET', '/api/auth/profile', { fixture: 'profile.json' }).as('getProfile');
+  cy.intercept('PATCH', '/api/auth/profile', (req) => {
+    req.reply({ statusCode: 200, body: { id: Cypress.env('MOCK_USER_ID'), ...(req.body as object) } });
+  }).as('patchProfile');
+  cy.intercept('POST', '/api/auth/change-password', { body: { message: 'Password changed successfully.' } }).as('changePassword');
+  // Public profile route (/u/[id]) — user + their posts.
+  cy.intercept('GET', '/api/users/*/posts*', { fixture: 'posts.json' }).as('getUserPosts');
+  cy.intercept('GET', '/api/users/*', { fixture: 'user-profile.json' }).as('getUser');
 });
 
-// ── Utility commands ──────────────────────────────────────────────────────────
-
-Cypress.Commands.add('waitForPageLoad', () => {
-  cy.get('body').should('be.visible');
-  cy.document().its('readyState').should('eq', 'complete');
+Cypress.Commands.add('interceptNotifications', () => {
+  cy.intercept('GET', '/api/notifications*', { fixture: 'notifications.json' }).as('getNotifications');
+  cy.intercept('PATCH', '/api/notifications/*', { statusCode: 200, body: {} }).as('patchNotification');
+  cy.intercept('GET', '/api/notification-preferences*', { fixture: 'notification-preferences.json' }).as('getNotifPrefs');
+  cy.intercept('PUT', '/api/notification-preferences*', (req) => {
+    req.reply({ statusCode: 200, body: req.body as object });
+  }).as('putNotifPrefs');
 });
 
-// ── Legacy aliases ────────────────────────────────────────────────────────────
-
-Cypress.Commands.add('loginAsUser', () => {
-  cy.login();
+Cypress.Commands.add('interceptZones', () => {
+  cy.intercept('GET', '/api/zones*', { fixture: 'zones.json' }).as('getZones');
+  cy.intercept('GET', '/api/sensors*', { fixture: 'sensors.json' }).as('getSensors');
 });
 
-Cypress.Commands.add('loginAs', (email: string, password: string) => {
-  cy.login(email, password);
+Cypress.Commands.add('interceptAuth', () => {
+  cy.intercept('POST', '/api/auth/login', { fixture: 'login-response.json' }).as('loginPost');
+  cy.intercept('POST', '/api/auth/register', { body: { email: 'newuser@example.com' } }).as('registerPost');
+  cy.intercept('POST', '/api/auth/resend-verification', { body: { message: 'Code resent.' } }).as('resendVerification');
+  cy.intercept('POST', '/api/auth/verify-email', { body: { message: 'Email verified.' } }).as('verifyEmail');
+  cy.intercept('POST', '/api/auth/forgot-password', { body: { message: 'Reset code sent to your email.' } }).as('forgotPassword');
+  cy.intercept('POST', '/api/auth/verify-reset-code', { body: { message: 'Code verified.' } }).as('verifyResetCode');
+  cy.intercept('POST', '/api/auth/reset-password', { body: { message: 'Password reset successfully.' } }).as('resetPassword');
+  cy.intercept('GET', '/api/auth/crm-url', { body: { url: 'http://localhost:3000' } }).as('crmUrl');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Generic helpers.
+// ─────────────────────────────────────────────────────────────────────────────
+
+Cypress.Commands.add(
+  'interceptApi',
+  (
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    path: string,
+    body: string | object,
+    alias: string,
+  ) => {
+    if (typeof body === 'string') {
+      cy.intercept(method, path, { fixture: body }).as(alias);
+    } else {
+      cy.intercept(method, path, { body }).as(alias);
+    }
+  },
+);
+
+Cypress.Commands.add('cyGet', (selector: string) => {
+  return cy.get(`[data-cy="${selector}"]`);
 });
 
 export {};

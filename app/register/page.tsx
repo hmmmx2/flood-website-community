@@ -134,6 +134,7 @@ export default function RegisterPage() {
             {/* Error banner */}
             {error && (
               <div
+                data-cy="register-error"
                 className="mb-4 rounded-xl px-4 py-3 text-sm border"
                 style={{
                   background: "rgba(29,78,216,0.08)",
@@ -254,6 +255,8 @@ export default function RegisterPage() {
                   <button
                     type="button"
                     onClick={() => setShowPw((v) => !v)}
+                    data-cy="register-pw-toggle"
+                    aria-label={showPw ? "Hide password" : "Show password"}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-sm transition-colors"
                     style={{ color: "var(--color-muted)" }}
                   >
@@ -297,6 +300,7 @@ export default function RegisterPage() {
               <button
                 type="submit"
                 disabled={loading || !passwordMatch}
+                data-cy="register-submit"
                 className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1e40af] disabled:opacity-50 disabled:cursor-not-allowed bg-[#1d4ed8]"
               >
                 {loading ? "Creating account…" : "Create Account"}

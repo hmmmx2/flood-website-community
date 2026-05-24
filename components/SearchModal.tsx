@@ -72,7 +72,7 @@ export default function SearchModal({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4 bg-black/50 backdrop-blur-sm"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-xl bg-[var(--color-card)] rounded-2xl border border-[var(--color-border)] shadow-2xl overflow-hidden">
+      <div data-cy="search-modal" className="w-full max-w-xl bg-[var(--color-card)] rounded-2xl border border-[var(--color-border)] shadow-2xl overflow-hidden">
         {/* Search input */}
         <div className="flex items-center gap-3 border-b border-[var(--color-border)] px-3 py-3 sm:px-4">
           <SearchField
@@ -108,7 +108,7 @@ export default function SearchModal({
         {/* Results */}
         <div className="max-h-[60vh] overflow-y-auto">
           {!query.trim() ? (
-            <div className="px-4 py-8 text-center text-sm text-[var(--color-muted)]">
+            <div data-cy="search-initial" className="px-4 py-8 text-center text-sm text-[var(--color-muted)]">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-8 w-8 mx-auto mb-2 opacity-40">
                 <circle cx="11" cy="11" r="7" /><path strokeLinecap="round" d="M16.5 16.5L21 21" />
               </svg>
@@ -116,7 +116,7 @@ export default function SearchModal({
               <span className="mt-1 block text-xs">{placeholder}</span>
             </div>
           ) : !hasResults && !loading ? (
-            <div className="px-4 py-8 text-center text-sm text-[var(--color-muted)]">
+            <div data-cy="search-no-results" className="px-4 py-8 text-center text-sm text-[var(--color-muted)]">
               No results for &ldquo;{query}&rdquo;
             </div>
           ) : (
@@ -126,7 +126,7 @@ export default function SearchModal({
                 <div>
                   <p className="px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-[var(--color-muted)]">Communities</p>
                   {groups.map(g => (
-                    <Link key={g.id} href={`/g/${g.slug}`} onClick={onClose}
+                    <Link key={g.id} href={`/g/${g.slug}`} onClick={onClose} data-cy="search-result-group"
                       className="flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--color-hover)] transition-colors">
                       <div className="h-8 w-8 rounded-lg flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
                         style={{ backgroundColor: g.iconColor || "#1d4ed8" }}>
@@ -146,7 +146,7 @@ export default function SearchModal({
                 <div>
                   <p className="px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-[var(--color-muted)]">Posts</p>
                   {posts.map(p => (
-                    <Link key={p.id} href={`/post/${p.id}`} onClick={onClose}
+                    <Link key={p.id} href={`/post/${p.id}`} onClick={onClose} data-cy="search-result-post"
                       className="flex items-start gap-3 px-4 py-2.5 hover:bg-[var(--color-hover)] transition-colors">
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-5 w-5 text-[var(--color-muted)] flex-shrink-0 mt-0.5">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />

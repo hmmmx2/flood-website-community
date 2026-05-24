@@ -270,6 +270,7 @@ export default function SettingsPage() {
                   { key: "danger", label: "Account", icon: <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /> },
                 ] as const).map(tab => (
                   <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key as typeof activeTab)}
+                    data-cy={`settings-tab-${tab.key}`}
                     className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
                       activeTab === tab.key
                         ? "bg-[var(--color-brand)] text-white"
@@ -305,12 +306,12 @@ export default function SettingsPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-[var(--color-muted)] mb-1.5 uppercase tracking-wide">First Name</label>
-                      <input type="text" value={firstName} onChange={e => setFirstName(e.target.value)} required
+                      <input data-cy="settings-first-name" type="text" value={firstName} onChange={e => setFirstName(e.target.value)} required
                         className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-2.5 text-sm outline-none focus:border-[var(--color-brand)] focus:ring-2 focus:ring-[var(--color-brand)]/10" />
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-[var(--color-muted)] mb-1.5 uppercase tracking-wide">Last Name</label>
-                      <input type="text" value={lastName} onChange={e => setLastName(e.target.value)}
+                      <input data-cy="settings-last-name" type="text" value={lastName} onChange={e => setLastName(e.target.value)}
                         className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-2.5 text-sm outline-none focus:border-[var(--color-brand)] focus:ring-2 focus:ring-[var(--color-brand)]/10" />
                     </div>
                   </div>
@@ -329,7 +330,7 @@ export default function SettingsPage() {
                       onClear={() => setAvatarUrl("")}
                     />
                   </div>
-                  <button type="submit" disabled={profileSaving}
+                  <button type="submit" disabled={profileSaving} data-cy="settings-profile-save"
                     className="rounded-full bg-[var(--color-brand)] px-6 py-2.5 text-sm font-bold text-white transition hover:bg-[var(--color-brand-dark)] disabled:opacity-50">
                     {profileSaving ? "Saving…" : "Save Changes"}
                   </button>
@@ -346,7 +347,7 @@ export default function SettingsPage() {
                   <div>
                     <label className="block text-xs font-semibold text-[var(--color-muted)] mb-1.5 uppercase tracking-wide">Current Password</label>
                     <div className="relative">
-                      <input type={showPw ? "text" : "password"} value={currentPw} onChange={e => setCurrentPw(e.target.value)} required placeholder="Your current password"
+                      <input data-cy="settings-current-pw" type={showPw ? "text" : "password"} value={currentPw} onChange={e => setCurrentPw(e.target.value)} required placeholder="Your current password"
                         className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-2.5 pr-12 text-sm outline-none focus:border-[var(--color-brand)] focus:ring-2 focus:ring-[var(--color-brand)]/10" />
                       <button type="button" onClick={() => setShowPw(p => !p)}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]">
@@ -356,18 +357,18 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-[var(--color-muted)] mb-1.5 uppercase tracking-wide">New Password</label>
-                    <input type={showPw ? "text" : "password"} value={newPw} onChange={e => setNewPw(e.target.value)} required placeholder="At least 8 characters"
+                    <input data-cy="settings-new-pw" type={showPw ? "text" : "password"} value={newPw} onChange={e => setNewPw(e.target.value)} required placeholder="At least 8 characters"
                       className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-2.5 text-sm outline-none focus:border-[var(--color-brand)] focus:ring-2 focus:ring-[var(--color-brand)]/10" />
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-[var(--color-muted)] mb-1.5 uppercase tracking-wide">Confirm New Password</label>
-                    <input type={showPw ? "text" : "password"} value={confirmPw} onChange={e => setConfirmPw(e.target.value)} required placeholder="Repeat new password"
+                    <input data-cy="settings-confirm-pw" type={showPw ? "text" : "password"} value={confirmPw} onChange={e => setConfirmPw(e.target.value)} required placeholder="Repeat new password"
                       className={`w-full rounded-xl border bg-[var(--color-input-bg)] px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand)]/10 ${
                         confirmPw && confirmPw !== newPw ? "border-red-400 focus:border-red-400" : "border-[var(--color-border)] focus:border-[var(--color-brand)]"
                       }`} />
                     {confirmPw && confirmPw !== newPw && <p className="mt-1 text-xs text-red-500">Passwords do not match</p>}
                   </div>
-                  <button type="submit" disabled={pwSaving}
+                  <button type="submit" disabled={pwSaving} data-cy="settings-password-save"
                     className="rounded-full bg-[var(--color-brand)] px-6 py-2.5 text-sm font-bold text-white transition hover:bg-[var(--color-brand-dark)] disabled:opacity-50">
                     {pwSaving ? "Changing…" : "Change Password"}
                   </button>
@@ -397,6 +398,7 @@ export default function SettingsPage() {
                     </label>
                     <div className="flex gap-2">
                       <input
+                        data-cy="settings-phone"
                         type="tel"
                         value={prefs.phoneE164}
                         onChange={(e) => setPrefs(p => ({ ...p, phoneE164: e.target.value }))}
@@ -445,6 +447,7 @@ export default function SettingsPage() {
                             </p>
                           </div>
                           <input
+                            data-cy={`settings-channel-${channel.key}`}
                             type="checkbox"
                             checked={value}
                             disabled={blocked || prefsSaving || !prefsLoaded}
@@ -553,7 +556,7 @@ export default function SettingsPage() {
                 <div className="bg-red-50 border border-red-200 rounded-2xl p-6">
                   <h2 className="font-bold text-red-700 text-base mb-1">Sign Out</h2>
                   <p className="text-sm text-red-600/80 mb-4">Sign out of your account on this device.</p>
-                  <button type="button" onClick={handleSignOut}
+                  <button type="button" onClick={handleSignOut} data-cy="settings-signout"
                     className="rounded-full border border-red-400 px-5 py-2 text-sm font-semibold text-red-600 hover:bg-red-100 transition-colors">
                     Sign Out
                   </button>

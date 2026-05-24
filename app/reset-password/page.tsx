@@ -81,7 +81,7 @@ function ResetPasswordForm() {
         </div>
 
         {step === "done" ? (
-          <div className="text-center">
+          <div className="text-center" data-cy="reset-done">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-500/15 text-emerald-600 mb-4 mx-auto">
               <CheckCircleIcon className="h-10 w-10" />
             </div>
@@ -115,11 +115,11 @@ function ResetPasswordForm() {
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: "var(--color-text)" }}>Reset Code</label>
-                <input type="text" value={code} onChange={e => setCode(e.target.value.trim())} required placeholder="Enter the code from your email"
+                <input data-cy="reset-code" type="text" value={code} onChange={e => setCode(e.target.value.trim())} required placeholder="Enter the code from your email"
                   className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-colors focus:ring-2 font-mono tracking-widest text-center"
                   style={{ background: "var(--color-input-bg)", borderColor: "var(--color-border)", color: "var(--color-text)" }} />
               </div>
-              <button type="submit" disabled={loading}
+              <button type="submit" disabled={loading} data-cy="reset-verify-submit"
                 className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--color-brand-dark)] disabled:opacity-50 bg-[var(--color-brand)]">
                 {loading ? "Verifying…" : "Verify Code"}
               </button>
@@ -149,7 +149,7 @@ function ResetPasswordForm() {
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: "var(--color-text)" }}>New Password</label>
                 <div className="relative">
-                  <input type={showPw ? "text" : "password"} value={newPassword} onChange={e => setNewPassword(e.target.value)}
+                  <input data-cy="reset-new-password" type={showPw ? "text" : "password"} value={newPassword} onChange={e => setNewPassword(e.target.value)}
                     required minLength={8} placeholder="At least 8 characters"
                     className="w-full rounded-xl border px-4 py-2.5 pr-16 text-sm outline-none transition-colors focus:ring-2"
                     style={{ background: "var(--color-input-bg)", borderColor: "var(--color-border)", color: "var(--color-text)" }} />
@@ -165,7 +165,7 @@ function ResetPasswordForm() {
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: "var(--color-text)" }}>Confirm Password</label>
                 <div className="relative">
-                  <input type={showConfirmPw ? "text" : "password"} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+                  <input data-cy="reset-confirm-password" type={showConfirmPw ? "text" : "password"} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
                     required placeholder="Repeat your new password"
                     aria-invalid={confirmPassword.length > 0 && confirmPassword !== newPassword}
                     className="w-full rounded-xl border px-4 py-2.5 pr-16 text-sm outline-none transition-colors focus:ring-2"
@@ -183,7 +183,7 @@ function ResetPasswordForm() {
                   </p>
                 )}
               </div>
-              <button type="submit" disabled={loading}
+              <button type="submit" disabled={loading} data-cy="reset-submit"
                 className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--color-brand-dark)] disabled:opacity-50 bg-[var(--color-brand)]">
                 {loading ? "Resetting…" : "Reset Password"}
               </button>

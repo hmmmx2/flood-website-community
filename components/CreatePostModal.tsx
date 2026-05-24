@@ -86,11 +86,11 @@ export default function CreatePostModal({ onClose, onCreated, defaultGroupSlug }
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="w-full max-w-2xl bg-[var(--color-card)] rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+      <div data-cy="create-post-modal" className="w-full max-w-2xl bg-[var(--color-card)] rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
           <h2 className="font-bold text-[var(--color-text)] text-lg">Create Post</h2>
-          <button type="button" onClick={onClose} className="text-[var(--color-muted)] hover:text-[var(--color-text)] transition">
+          <button type="button" onClick={onClose} aria-label="Close create post" data-cy="create-post-close" className="text-[var(--color-muted)] hover:text-[var(--color-text)] transition">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -99,13 +99,14 @@ export default function CreatePostModal({ onClose, onCreated, defaultGroupSlug }
 
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
           {error && (
-            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>
+            <div data-cy="create-post-error" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>
           )}
 
           {/* Group selector */}
           <div>
             <label className="block text-xs font-semibold text-[var(--color-muted)] mb-1.5">Post to</label>
             <select
+              data-cy="create-post-group"
               value={groupSlug}
               onChange={e => setGroupSlug(e.target.value)}
               className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-2.5 text-sm outline-none focus:border-[var(--color-brand)] focus:ring-2 focus:ring-[var(--color-brand)]/10"
@@ -120,6 +121,7 @@ export default function CreatePostModal({ onClose, onCreated, defaultGroupSlug }
           {/* Title */}
           <div>
             <input
+              data-cy="create-post-title"
               type="text"
               value={title}
               onChange={e => setTitle(e.target.value)}
@@ -135,6 +137,7 @@ export default function CreatePostModal({ onClose, onCreated, defaultGroupSlug }
           {/* Content */}
           <div>
             <textarea
+              data-cy="create-post-content"
               value={content}
               onChange={e => setContent(e.target.value)}
               rows={6}
@@ -160,6 +163,7 @@ export default function CreatePostModal({ onClose, onCreated, defaultGroupSlug }
             </div>
           ) : (
             <div
+              data-cy="create-post-dropzone"
               role="button"
               tabIndex={0}
               aria-label="Upload an image — drag and drop, or activate to browse files"
@@ -183,11 +187,12 @@ export default function CreatePostModal({ onClose, onCreated, defaultGroupSlug }
 
           {/* Actions */}
           <div className="flex justify-end gap-3 pt-1">
-            <button type="button" onClick={onClose}
+            <button type="button" onClick={onClose} data-cy="create-post-cancel"
               className="rounded-full border border-[var(--color-border)] px-5 py-2.5 text-sm font-semibold text-[var(--color-muted)] hover:bg-[var(--color-pill-bg)] transition">
               Cancel
             </button>
             <button
+              data-cy="create-post-submit"
               type="submit"
               disabled={
                 !title.trim() || !content.trim() || loading ||

@@ -1,0 +1,29 @@
+{
+  "content": [
+    {
+      "id": "notif-uuid-001",
+      "kind": "flood_alert",
+      "title": "Flood Alert — Sungai Sabah",
+      "body": "Water level reached Warning (2 ft) near the main bridge.",
+      "link": "/flood-map",
+      "severity": "warning",
+      "readAt": null,
+      "createdAt": "2025-01-02T08:00:00Z"
+    },
+    {
+      "id": "notif-uuid-002",
+      "kind": "comment",
+      "title": "New comment on your post",
+      "body": "Jane Smith replied to your flood update.",
+      "link": "/post/post-uuid-001",
+      "severity": "info",
+      "readAt": null,
+      "createdAt": "2025-01-01T12:00:00Z"
+    }
+  ],
+  "totalElements": 2,
+  "totalPages": 1,
+  "number": 0,
+  "size": 20,
+  "last": true
+}

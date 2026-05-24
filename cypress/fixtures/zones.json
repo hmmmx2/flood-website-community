@@ -1,0 +1,72 @@
+[
+  {
+    "id": "zone-1",
+    "name": "Kota Kinabalu Centre",
+    "state": "Sabah",
+    "area": "Kota Kinabalu",
+    "centroidLat": 5.9804,
+    "centroidLng": 116.0735,
+    "radiusM": 250,
+    "worstLevel": 0,
+    "anyOffline": false,
+    "allOffline": false,
+    "sensorBand": "single",
+    "lastUpdated": "2025-01-02T08:00:00Z"
+  },
+  {
+    "id": "zone-2",
+    "name": "Penampang Riverside",
+    "state": "Sabah",
+    "area": "Penampang",
+    "centroidLat": 5.9221,
+    "centroidLng": 116.1056,
+    "radiusM": 250,
+    "worstLevel": 1,
+    "anyOffline": false,
+    "allOffline": false,
+    "sensorBand": "single",
+    "lastUpdated": "2025-01-02T08:00:00Z"
+  },
+  {
+    "id": "zone-3",
+    "name": "Tuaran Bridge",
+    "state": "Sabah",
+    "area": "Tuaran",
+    "centroidLat": 6.1769,
+    "centroidLng": 116.2286,
+    "radiusM": 250,
+    "worstLevel": 2,
+    "anyOffline": false,
+    "allOffline": false,
+    "sensorBand": "single",
+    "lastUpdated": "2025-01-02T08:00:00Z"
+  },
+  {
+    "id": "zone-4",
+    "name": "Papar Lowlands",
+    "state": "Sabah",
+    "area": "Papar",
+    "centroidLat": 5.7333,
+    "centroidLng": 115.9333,
+    "radiusM": 250,
+    "worstLevel": 3,
+    "anyOffline": false,
+    "allOffline": false,
+    "sensorBand": "single",
+    "lastUpdated": "2025-01-02T08:00:00Z"
+  },
+  {
+    "id": "zone-5",
+    "name": "Kinarut Station",
+    "state": "Sabah",
+    "area": "Kinarut",
+    "centroidLat": 5.8167,
+    "centroidLng": 115.9667,
+    "radiusM": 250,
+    "worstLevel": 0,
+    "anyOffline": true,
+    "allOffline": true,
+    "sensorBand": "single",
+    "lastUpdated": "2025-01-01T00:00:00Z"
+  }
+]
