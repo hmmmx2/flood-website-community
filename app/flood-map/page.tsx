@@ -1068,7 +1068,7 @@ export default function FloodMapPage() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-[var(--color-border)] overflow-hidden">
+              <div className="relative rounded-2xl border border-[var(--color-border)] overflow-hidden">
                 <NodeMap
                   zones={filteredZones}
                   height={620}
@@ -1093,6 +1093,61 @@ export default function FloodMapPage() {
                   routes={activeRoutes}
                   selectedRouteIndex={selectedRouteIndex}
                   isFirstLoad={loading}
+                />
+
+                {/* Place Card + Directions panel live INSIDE the map's
+                    overflow-hidden box so they dock to the map and can
+                    never spill outside it. (They were page-level +
+                    position:fixed before, which let them float above the
+                    map near the viewport top.) */}
+                <PlaceCard
+                  open={placeCardOpen}
+                  model={placeCardModel}
+                  onClose={() => setPlaceCardOpen(false)}
+                  onDirections={(dest) => {
+                    setPlaceCardOpen(false);
+                    openDirections({ destination: dest });
+                  }}
+                  onSave={
+                    placeCardModel?.kind === "place"
+                      ? () => {
+                          if (!session) {
+                            toast("Sign in to save a place.");
+                            return;
+                          }
+                          if (placeCardModel?.kind !== "place") return;
+                          setPlaceCardOpen(false);
+                          savedLocationsRef.current?.openWithPrefill({
+                            latitude: placeCardModel.lat,
+                            longitude: placeCardModel.lng,
+                            address: placeCardModel.address ?? placeCardModel.name,
+                          });
+                        }
+                      : undefined
+                  }
+                  onShare={() => {
+                    if (!placeCardModel) return;
+                    handleShareView({
+                      centerLat: placeCardModel.lat,
+                      centerLng: placeCardModel.lng,
+                      zoom: 14,
+                    });
+                  }}
+                />
+
+                <DirectionsPanel
+                  open={directionsOpen}
+                  request={directionsRequest}
+                  zones={zones}
+                  myLocation={myLocation}
+                  onRoutesChange={(routes, idx) => {
+                    setActiveRoutes(routes);
+                    setSelectedRouteIndex(idx);
+                  }}
+                  onClose={() => {
+                    setDirectionsOpen(false);
+                    setActiveRoutes(null);
+                  }}
                 />
               </div>
 
@@ -1180,58 +1235,9 @@ export default function FloodMapPage() {
           floating header button. */}
       <ShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
-      {/* Place Card (P1-5 + P1-8) — single surface for zone clicks,
-          right-click pins, and autocomplete picks. */}
-      <PlaceCard
-        open={placeCardOpen}
-        model={placeCardModel}
-        onClose={() => setPlaceCardOpen(false)}
-        onDirections={(dest) => {
-          setPlaceCardOpen(false);
-          openDirections({ destination: dest });
-        }}
-        onSave={
-          placeCardModel?.kind === "place"
-            ? () => {
-                if (!session) {
-                  toast("Sign in to save a place.");
-                  return;
-                }
-                if (placeCardModel?.kind !== "place") return;
-                setPlaceCardOpen(false);
-                savedLocationsRef.current?.openWithPrefill({
-                  latitude: placeCardModel.lat,
-                  longitude: placeCardModel.lng,
-                  address: placeCardModel.address ?? placeCardModel.name,
-                });
-              }
-            : undefined
-        }
-        onShare={() => {
-          if (!placeCardModel) return;
-          handleShareView({
-            centerLat: placeCardModel.lat,
-            centerLng: placeCardModel.lng,
-            zoom: 14,
-          });
-        }}
-      />
-
-      {/* Directions panel (P1-6) — flood-aware in-app routing. */}
-      <DirectionsPanel
-        open={directionsOpen}
-        request={directionsRequest}
-        zones={zones}
-        myLocation={myLocation}
-        onRoutesChange={(routes, idx) => {
-          setActiveRoutes(routes);
-          setSelectedRouteIndex(idx);
-        }}
-        onClose={() => {
-          setDirectionsOpen(false);
-          setActiveRoutes(null);
-        }}
-      />
+      {/* PlaceCard + DirectionsPanel were moved INTO the map box (see
+          the map card above) so they stay docked to and clipped within
+          the Live map instead of floating over the viewport. */}
     </div>
   );
 }

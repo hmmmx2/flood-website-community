@@ -236,10 +236,12 @@ export default function DirectionsPanel({
 
   return (
     <>
+      {/* `absolute` (not `fixed`) — dims only the map box this panel now
+          lives inside, never the whole viewport. */}
       <div
         onClick={onClose}
         aria-hidden
-        className={`fixed inset-0 z-30 bg-black/30 transition-opacity sm:hidden ${
+        className={`absolute inset-0 z-30 bg-black/30 transition-opacity sm:hidden ${
           open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
       />

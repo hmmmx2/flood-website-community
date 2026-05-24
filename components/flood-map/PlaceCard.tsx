@@ -112,11 +112,13 @@ export default function PlaceCard({ open, model, onSave, onShare, onDirections, 
 
   return (
     <>
-      {/* Backdrop — only on mobile (sm:hidden) so desktop stays usable. */}
+      {/* Backdrop — only on mobile (sm:hidden) so desktop stays usable.
+          `absolute` (not `fixed`) so it dims only the map box it now
+          lives inside, never the whole viewport. */}
       <div
         onClick={onClose}
         aria-hidden
-        className={`fixed inset-0 z-30 bg-black/30 transition-opacity sm:hidden ${
+        className={`absolute inset-0 z-30 bg-black/30 transition-opacity sm:hidden ${
           open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
       />
