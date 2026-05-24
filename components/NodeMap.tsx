@@ -448,6 +448,14 @@ export default function NodeMap({
   useEffect(() => {
     if (didAutoFit.current) return;
     if (!mapReady || !mapRef.current || zones.length === 0) return;
+    // A pending personal focus (live location / latest saved place / share
+    // deep-link) takes precedence over the zone auto-fit. Honour it and mark
+    // the one-shot fit done so it can't run later and clobber the frame —
+    // covers the race where geolocation resolves before the zones load.
+    if (focusLatLngRef.current) {
+      didAutoFit.current = true;
+      return;
+    }
     // Defer ONLY to a URL deep-link (?lat=&lng=) — that's a deliberate
     // sharer intent. Geolocation also writes to `focusLatLng` but it
     // arrives async after zones load; treating it as "user wants this
@@ -490,6 +498,9 @@ export default function NodeMap({
     if (!focusLatLng || !mapRef.current) return;
     mapRef.current.panTo({ lat: focusLatLng.lat, lng: focusLatLng.lng });
     if (focusLatLng.zoom != null) mapRef.current.setZoom(focusLatLng.zoom);
+    // A focus pan (personal framing / deep-link) settles the initial frame —
+    // mark the one-shot zone auto-fit done so it can't override it afterwards.
+    didAutoFit.current = true;
   }, [focusLatLng]);
 
   const onViewportChangedRef = useRef(onViewportChanged);

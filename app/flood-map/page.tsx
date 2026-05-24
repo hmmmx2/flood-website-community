@@ -301,36 +301,65 @@ export default function FloodMapPage() {
     [],
   );
 
-  // Auto-centre the map on the user's current position the first time
-  // they land here. Browser auto-prompts for permission. We never poll
-  // — just one read at mount; the recenter button on the map re-runs.
-  /**
-   * Whether the geolocation result should also pan the camera. The
-   * initial mount-time call (`useEffect` below) skips the pan because
-   * the map's own auto-fit-to-zones gives a more useful first frame —
-   * the user is here to see floods, not their own dot. The explicit
-   * "recenter on me" button passes `panAfter: true` so subsequent
-   * clicks do center the camera on the user.
-   */
+  // ── Initial "home" framing on load / refresh ──────────────────────────────
+  // A fresh load frames the map on the user's LIVE location, falling back to
+  // their most-recently-saved place, and finally to the zone auto-fit (handled
+  // in NodeMap). An explicit deep-link (?lat&lng, ?zone) always wins and skips
+  // home-framing. The "recenter on me" button re-runs `requestGeolocation`
+  // with `panAfter: true`.
+  //
+  // `geoStatus` drives the saved-place fallback effect (further down): when
+  // geolocation is denied/unavailable we centre on the latest saved place
+  // instead. `homeFramedRef` guarantees we only auto-navigate ONCE per load
+  // so we never fight the user's subsequent panning.
+  const [geoStatus, setGeoStatus] = useState<"pending" | "granted" | "denied">("pending");
+  const homeFramedRef = useRef(false);
+
   const requestGeolocation = useCallback((opts: { panAfter?: boolean } = {}) => {
-    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setGeoStatus("denied");
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
         const accuracyM = pos.coords.accuracy;
         setMyLocation({ lat, lng, accuracyM });
+        setGeoStatus("granted");
         if (opts.panAfter) {
-          setFocusLatLng({ lat, lng, zoom: 13 });
+          setFocusLatLng({ lat, lng, zoom: 14 });
+          homeFramedRef.current = true;
         }
       },
-      () => { /* user denied — silently skip */ },
+      () => {
+        // Denied or unavailable — let the saved-place fallback effect run.
+        setGeoStatus("denied");
+      },
       { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
     );
   }, []);
 
+  // On first load: honour an explicit deep-link, otherwise auto-navigate to the
+  // user's live location. If geolocation is denied, the saved-place fallback
+  // effect (below) takes over once the saved-places list has loaded.
   useEffect(() => {
-    requestGeolocation();
+    if (homeFramedRef.current) return;
+    const qs = new URLSearchParams(window.location.search);
+    const latStr = qs.get("lat");
+    const lngStr = qs.get("lng");
+    const hasLatLng =
+      latStr !== null &&
+      lngStr !== null &&
+      Number.isFinite(Number(latStr)) &&
+      Number.isFinite(Number(lngStr));
+    if (hasLatLng || qs.get("zone")) {
+      // The dedicated deep-link effects below perform the actual pan; just
+      // mark home-framing done so geolocation doesn't override the share link.
+      homeFramedRef.current = true;
+      return;
+    }
+    requestGeolocation({ panAfter: true });
   }, [requestGeolocation]);
 
   // ── Deep-link from a shared URL (P1-10) ───────────────────────────────────
@@ -395,13 +424,30 @@ export default function FloodMapPage() {
   // Raw shape (no status). The status-decorated view that goes to the
   // map is derived below from `placesWithStatus`.
   const [savedLocations, setSavedLocations] = useState<{
-    id: string; label: string; latitude: number; longitude: number; alertRadiusKm: number;
+    id: string; label: string; latitude: number; longitude: number; alertRadiusKm: number; createdAt: string;
   }[]>([]);
 
   function focusOnPoint(lat: number, lng: number, zoom = 13) {
     setFocusLatLng({ lat, lng, zoom });
     mapCardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
+
+  // Saved-place fallback for the initial framing: when live geolocation is
+  // denied / unavailable, centre the map on the user's most-recently-added
+  // saved place. Deps include `savedLocations` so this still fires when the
+  // list arrives AFTER geolocation was already denied. No-op once we've framed
+  // (homeFramedRef) or for anonymous users (empty list).
+  useEffect(() => {
+    if (homeFramedRef.current) return;
+    if (geoStatus !== "denied") return;
+    if (savedLocations.length === 0) return;
+    const latest = [...savedLocations].sort(
+      (a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""),
+    )[0];
+    if (!latest) return;
+    setFocusLatLng({ lat: latest.latitude, lng: latest.longitude, zoom: 14 });
+    homeFramedRef.current = true;
+  }, [geoStatus, savedLocations]);
 
   // Deep-link: /flood-map?zone=<zoneId> pans onto that zone once loaded.
   const search = useSearchParams();
@@ -1218,6 +1264,7 @@ export default function FloodMapPage() {
                   id: l.id, label: l.label,
                   latitude: l.latitude, longitude: l.longitude,
                   alertRadiusKm: l.alertRadiusKm,
+                  createdAt: l.createdAt,
                 })))}
               />
             )}
