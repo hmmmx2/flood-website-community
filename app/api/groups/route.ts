@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
  * `/community/groups` upstream is in Java's `permitAll` list and the
  * cache key doesn't vary by user. Calling auth() on every request
  * just added ~150 ms of session-resolution work for a response that
- * was about to be served straight from Upstash anyway.
+ * was about to be served straight from the Redis cache anyway.
  */
 export async function GET() {
   try {

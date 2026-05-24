@@ -25,7 +25,7 @@ Web Push notifications (VAPID) allow users to receive flood alerts even when the
 - **Favourites** — bookmark sensor nodes of interest for quick access
 - **User authentication** — full JWT-based registration, login, forgot password, and reset password flows
 - **Responsive design** — mobile-first layout with a collapsible navigation bar
-- **Server-side caching** — Upstash Redis used in API routes to reduce backend load
+- **Server-side caching** — Railway Redis (`ioredis`) used in API routes to reduce backend load
 
 ## Tech Stack
 
@@ -35,7 +35,7 @@ Web Push notifications (VAPID) allow users to receive flood alerts even when the
 | TypeScript | 5 | Static typing |
 | Tailwind CSS | 3 | Utility-first styling |
 | Web Push API (VAPID) | — | Browser push notifications |
-| Upstash Redis | — | Server-side response caching |
+| Railway Redis (`ioredis`) | — | Server-side response caching + SSO handoff store |
 | Node.js | ≥ 18 | Runtime |
 
 ## Architecture
@@ -43,7 +43,7 @@ Web Push notifications (VAPID) allow users to receive flood alerts even when the
 ```
 flood-website-community  (:3002)
         │  Next.js API routes (server-side proxy)
-        │  + Upstash Redis caching layer
+        │  + Railway Redis caching layer
         │
         └──────────────────────► flood-service-community  (:4001)
                                     Spring Boot 3 / PostgreSQL / Redis
@@ -56,7 +56,7 @@ The CRM dashboard (`flood-website-crm`) can redirect administrators to this port
 - **Node.js** ≥ 18.x
 - **npm** ≥ 9.x (or pnpm / yarn)
 - `flood-service-community` running on port 4001
-- An [Upstash Redis](https://upstash.com) database (free tier is sufficient for development)
+- A Redis instance — [Railway Redis](https://railway.app) in production, or `redis://localhost:6379` locally (optional; caching fails open if absent)
 - VAPID key pair for push notifications (see below)
 
 ### Generate VAPID keys
@@ -114,8 +114,7 @@ Copy `.env.example` to `.env.local` and set the following:
 |---|---|---|
 | `JAVA_API_URL` | Server-side URL for `flood-service-community` (used by API routes) | `http://localhost:4001` |
 | `NEXT_PUBLIC_JAVA_API_URL` | Browser-side URL for direct auth calls | `http://localhost:4001` |
-| `UPSTASH_REDIS_REST_URL` | Upstash Redis REST endpoint for server-side caching | `https://us1-xxx.upstash.io` |
-| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token | `AXxx...` |
+| `REDIS_URL` | Railway Redis (ioredis/TCP) for server-side cache + SSO handoff store | `${{Redis.REDIS_URL}}` or `rediss://default:PASS@HOST:PORT` |
 | `NEXT_PUBLIC_CRM_URL` | URL of the CRM dashboard (for admin redirects) | `http://localhost:3000` |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | VAPID public key for Web Push subscriptions | `BKxx...` |
 
@@ -202,8 +201,7 @@ docker build -t floodwatch-community .
 docker run -p 3002:3002 \
   -e JAVA_API_URL=http://host.docker.internal:4001 \
   -e NEXT_PUBLIC_JAVA_API_URL=http://localhost:4001 \
-  -e UPSTASH_REDIS_REST_URL=https://your-db.upstash.io \
-  -e UPSTASH_REDIS_REST_TOKEN=your_token \
+  -e REDIS_URL=rediss://default:your_password@your-host.railway.app:6379 \
   -e NEXT_PUBLIC_VAPID_PUBLIC_KEY=your_vapid_public_key \
   floodwatch-community
 ```

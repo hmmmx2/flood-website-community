@@ -6,7 +6,7 @@
 // Called by the community login form AFTER `/api/auth/login`
 // returned a successful Java response. We verify the role here
 // server-side (defence-in-depth: don't even mint a code for a
-// Customer) before stashing the tokens in Upstash.
+// Customer) before stashing the tokens in Redis.
 //
 // Request body:
 //   { accessToken, refreshToken, user: {...}, expiresAt }
@@ -15,7 +15,7 @@
 //   200 { code: "<32 URL-safe bytes>" }
 //   400 { error: "bad_request" }              — missing/malformed body
 //   403 { error: "not_operator" }             — role is Customer/unknown
-//   503 { error: "service_unavailable" }      — Upstash blip
+//   503 { error: "service_unavailable" }      — Redis blip
 
 import { NextRequest, NextResponse } from "next/server";
 import { isOperatorRole } from "@/lib/rbac";
@@ -90,11 +90,9 @@ export async function POST(req: NextRequest) {
     // immediately diagnosable. The most common case is the Redis
     // env var being absent on `flood-website-community.vercel.app`
     // — `getClient()` in lib/redis.ts throws "REDIS_URL env var
-    // missing". (Pre-migration this used to test for "Upstash …
-    // env vars missing"; the regex matches both so old + new
-    // deployment shapes route to the same error code.)
+    // missing".
     const msg = err instanceof Error ? err.message : String(err);
-    const storageUnconfigured = /REDIS_URL.*missing|Upstash.*env vars missing/i.test(msg);
+    const storageUnconfigured = /REDIS_URL.*missing/i.test(msg);
     console.error(
       "[sso/start] mint failed",
       storageUnconfigured

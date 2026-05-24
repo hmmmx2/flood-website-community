@@ -3,7 +3,7 @@
 //
 // The browser-facing SSO redirect goes through an opaque short-lived
 // code instead of putting tokens in the URL. Tokens travel via the
-// shared Upstash Redis (both Vercel apps reach the same DB).
+// shared Railway Redis (both Vercel apps reach the same DB).
 //
 // Flow (operator-class login):
 //   1. Community /api/auth/login succeeds against Java.
@@ -13,7 +13,7 @@
 //        - Returns the code.
 //   3. Community redirects browser to ${CRM_URL}/auth/callback?code=<code>
 //   4. CRM `/auth/callback` calls its sibling `redeemSsoCode(code)`
-//      (atomic GETDEL via Upstash), re-verifies role, sets cookies.
+//      (atomic GETDEL via Redis), re-verifies role, sets cookies.
 //
 // The URL the browser ever sees contains only the opaque code —
 // tokens never appear in browser history, server logs, or referrers.
@@ -23,7 +23,7 @@
 import { randomBytes } from "node:crypto";
 import { getRedis } from "@/lib/redis";
 
-/** The bundle stashed in Upstash and handed off to the CRM. */
+/** The bundle stashed in Redis and handed off to the CRM. */
 export type SsoPayload = {
   accessToken: string;
   refreshToken: string;
@@ -42,8 +42,8 @@ const KEY_PREFIX = "sso:";
 const TTL_SECONDS = 60;
 
 /**
- * Mint a new SSO code and stash the payload in Upstash. The code is
- * 32 random bytes encoded as URL-safe base64 (43 chars). The Upstash
+ * Mint a new SSO code and stash the payload in Redis. The code is
+ * 32 random bytes encoded as URL-safe base64 (43 chars). The Redis
  * key uses `set ... nx` so a freakishly-unlikely collision can't
  * silently overwrite an existing handoff in flight.
  */
