@@ -13,8 +13,20 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 15;
 
 export async function POST(req: NextRequest) {
+  // Parse the body in its own guard so a malformed JSON payload returns
+  // a clean 400 (client error) rather than falling through to the
+  // catch-all and surfacing as a misleading 500.
+  let body: unknown;
   try {
-    const body = await req.json();
+    body = await req.json();
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid request body.", code: "bad_request" },
+      { status: 400 },
+    );
+  }
+
+  try {
     // 12 s — slightly above our normal 10 s default to absorb Neon
     // wake-up + first-query overhead, but still inside `maxDuration`
     // so the Vercel platform never preempts us.
