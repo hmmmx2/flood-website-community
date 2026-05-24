@@ -41,8 +41,11 @@ describe('Community · login', () => {
 
   it('signs a customer in and routes to the feed on success', () => {
     // /api/auth/login returns a valid customer payload, then the page
-    // hands off to NextAuth credentials — stub that callback to succeed.
-    cy.intercept('POST', '/api/auth/callback/credentials*', {
+    // establishes the NextAuth session via the token-handoff provider
+    // (`admin-token`) REUSING those tokens — it no longer re-submits the
+    // password through the credentials provider (that doubled the login
+    // rate-limiter spend). Stub the admin-token callback to succeed.
+    cy.intercept('POST', '/api/auth/callback/admin-token*', {
       statusCode: 200,
       body: { url: `${Cypress.config('baseUrl')}/` },
     }).as('nextAuthCallback');
@@ -51,6 +54,52 @@ describe('Community · login', () => {
     cy.cyGet('login-submit').click();
     cy.wait('@loginPost');
     cy.location('pathname').should('eq', '/');
+  });
+
+  it('does NOT re-submit the password to a second /auth/login (single rate-limiter spend)', () => {
+    // Regression guard for the double-login bug: a single sign-in must
+    // hit /api/auth/login exactly once. The session is then established
+    // from the returned tokens via the admin-token provider, whose
+    // callback validates against /profile — not the login limiter.
+    let loginCalls = 0;
+    cy.intercept('POST', '/api/auth/login', (req) => {
+      loginCalls += 1;
+      req.reply({ fixture: 'login-response.json' });
+    }).as('loginOnce');
+    cy.intercept('POST', '/api/auth/callback/admin-token*', {
+      statusCode: 200,
+      body: { url: `${Cypress.config('baseUrl')}/` },
+    }).as('adminTokenCallback');
+    cy.get('#email').type('user@example.com');
+    cy.get('#password').type('Password@123');
+    cy.cyGet('login-submit').click();
+    cy.wait('@loginOnce');
+    cy.location('pathname').should('eq', '/');
+    cy.then(() => {
+      expect(loginCalls, 'POST /api/auth/login call count').to.eq(1);
+    });
+  });
+
+  it('routes an unverified account to /verify-email instead of a dead-end error', () => {
+    // Java returns 400 EMAIL_NOT_VERIFIED for a correct password on an
+    // unconfirmed account; the BFF normalises it to code
+    // `email_not_verified`. The page should re-issue a code and bounce
+    // the user to the verification screen — not strand them on a
+    // generic "Invalid email or password" banner.
+    cy.intercept('POST', '/api/auth/login', {
+      statusCode: 400,
+      body: {
+        error: 'Please verify your email before signing in.',
+        code: 'email_not_verified',
+      },
+    }).as('loginUnverified');
+    cy.get('#email').type('pending@example.com');
+    cy.get('#password').type('Password@123');
+    cy.cyGet('login-submit').click();
+    cy.wait('@loginUnverified');
+    cy.wait('@resendVerification');
+    cy.location('pathname').should('eq', '/verify-email');
+    cy.location('search').should('include', 'email=pending%40example.com');
   });
 
   it('switches to the register view and back', () => {

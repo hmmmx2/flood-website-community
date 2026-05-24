@@ -319,16 +319,20 @@ function LoginPageInner() {
               role: string;
             };
           }
-        | { error?: string };
+        | { error?: string; code?: string };
 
       if (!res.ok) {
+        const code =
+          "code" in body && typeof body.code === "string" ? body.code : "";
         const msg =
           "error" in body && typeof body.error === "string"
             ? body.error
             : "Invalid email or password.";
-        if (/verify your email/i.test(msg)) {
-          // Account exists but email isn't verified — re-issue a code and
-          // bounce them to the verification screen.
+        // Account exists but email isn't verified. Prefer the stable
+        // `email_not_verified` code (forwarded from Java's
+        // EMAIL_NOT_VERIFIED); fall back to a message match for older
+        // backends. Re-issue a fresh code and bounce to the verify screen.
+        if (code === "email_not_verified" || /verify your email/i.test(msg)) {
           await fetch("/api/auth/resend-verification", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -429,9 +433,19 @@ function LoginPageInner() {
         return;
       }
 
-      const result = await signIn("credentials", {
-        email: loginEmail,
-        password: loginPassword,
+      // Establish the NextAuth session by REUSING the tokens we just
+      // received from /api/auth/login — NOT by re-submitting the
+      // password through the credentials provider. The credentials
+      // provider's authorize() re-hits Java `POST /auth/login`, so the
+      // old flow spent TWO of the login rate-limiter's budget (5/min,
+      // 10/hr) per single user-perceived sign-in. Under load that second
+      // call would 429 and surface as a misleading "Login failed" even
+      // though the password was correct. The `admin-token` provider
+      // validates the access token against `/profile` (not the login
+      // limiter) and is the same handoff the /verify-email page uses.
+      const result = await signIn("admin-token", {
+        accessToken: payload.session.accessToken,
+        refreshToken: payload.session.refreshToken,
         redirect: false,
       });
 

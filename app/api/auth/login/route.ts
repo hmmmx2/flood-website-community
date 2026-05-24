@@ -99,6 +99,21 @@ export async function POST(req: NextRequest) {
 
     // ── 4. Java validation error (e.g. EMAIL_NOT_VERIFIED) ──────────
     if (status === 400) {
+      // Java signals an unverified account with the stable code
+      // `EMAIL_NOT_VERIFIED` (see AuthService.login). Forward a
+      // normalised `email_not_verified` code so the sign-in page can
+      // route the user to /verify-email deterministically instead of
+      // pattern-matching the human-readable message text.
+      const javaCode = (error as { code?: string }).code;
+      if (javaCode === "EMAIL_NOT_VERIFIED") {
+        return NextResponse.json(
+          {
+            error: rawMessage || "Please verify your email before signing in.",
+            code: "email_not_verified",
+          },
+          { status: 400 },
+        );
+      }
       return NextResponse.json(
         {
           error: rawMessage || "Invalid request. Please check your details.",

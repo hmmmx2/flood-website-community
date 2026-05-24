@@ -2,7 +2,7 @@
 
 **Suite:** `cypress/e2e/community/**/*.cy.ts`
 **Run mode:** headless, fully mocked (no backend)
-**Result:** ✅ **76/76 passing · 18 specs** · `tsc --noEmit` clean (strict, no `any`)
+**Result:** ✅ **76/76 passing · 17 specs** · `tsc --noEmit` clean (strict, no `any`)
 
 ```
 npx cypress run --e2e --spec "cypress/e2e/community/**/*.cy.ts"
@@ -28,7 +28,7 @@ npx cypress run --e2e --spec "cypress/e2e/community/**/*.cy.ts"
 | `/` feed | `feed.cy.ts` (9) | compose bar, posts render, end-of-feed, sort=top query, search query, Load-more pagination, Ctrl+K search modal (post nav, no-results, group match), anon CTA |
 | `/` create post | `feed-create-post.cy.ts` (6) | modal open, submit-disabled gating, group select + drop-zone, create → prepend, whitespace validation, cancel |
 | `/` interactions | `feed-interactions.cy.ts` (4) | optimistic like + reconcile, like rollback on 500, comments deep-link, Share modal permalink |
-| `/login` | `login.cy.ts` (6) | form + links, password toggle, invalid-creds banner, success→`/`, register view toggle, forgot-password nav |
+| `/login` | `login.cy.ts` (8) | form + links, password toggle, invalid-creds banner, success→`/` (via token-handoff provider), **single `/auth/login` call (no double rate-limiter spend)**, **unverified account → `/verify-email`**, register view toggle, forgot-password nav |
 | `/register` | `register.cy.ts` (6) | fields, mismatch disables submit, toggle, <8-char reject, success→`/verify-email`, **devCode never in URL (P1-2)** |
 | `/verify-email` | `verify-email.cy.ts` (4) | 6 OTP boxes, enable-on-complete, verify→sign-in, resend code |
 | `/forgot-password` | `forgot-password.cy.ts` (3) | form, send code → confirmation, route to reset |
@@ -40,7 +40,6 @@ npx cypress run --e2e --spec "cypress/e2e/community/**/*.cy.ts"
 | `/post/[id]` | `post-detail.cy.ts` (3) | full post + comments section, like from detail, not-found |
 | `/g/[slug]` | `groups.cy.ts` (3) | banner + stats + posts, join→Leave toggle, not-found |
 | `/u/[id]` | `profile.cy.ts` (3) | own profile + edit affordance, other member (no edit), not-found |
-| `/feedback` | `feedback.cy.ts` (2) | anon sign-in CTA, authed UAT survey renders |
 | Notifications bell | `notifications.cy.ts` (2) | dropdown list + settings link, mark-all-read |
 
 ## `data-cy` hooks added to source (no behaviour change)

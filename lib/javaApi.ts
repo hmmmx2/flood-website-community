@@ -54,21 +54,29 @@ export async function javaFetch<T>(path: string, opts: Opts = {}): Promise<T> {
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    // Try to extract a human-readable message from the JSON body.
-    // Spring Boot returns { message: "..." } or { error: "..." }.
-    let parsed: string | undefined;
+    // Try to extract a human-readable message AND the machine-readable
+    // error code from the JSON body. The Java GlobalExceptionHandler
+    // returns { code: "...", message: "..." } (and some routes use
+    // { error: "..." }). Callers that need to branch on the specific
+    // failure (e.g. EMAIL_NOT_VERIFIED) read `err.code` rather than
+    // regex-matching the human message, which is wording-fragile.
+    let parsedMessage: string | undefined;
+    let parsedCode: string | undefined;
     try {
       const json = JSON.parse(text);
-      parsed = json.message || json.error;
+      parsedMessage = json.message || json.error;
+      if (typeof json.code === "string") parsedCode = json.code;
     } catch {
       /* not JSON — use raw text */
     }
 
-    const err = new Error(parsed || `${method} ${p} → ${res.status}`) as Error & {
+    const err = new Error(parsedMessage || `${method} ${p} → ${res.status}`) as Error & {
       status: number;
+      code?: string;
       rawBody: string;
     };
     err.status = res.status;
+    err.code = parsedCode;
     err.rawBody = text;
     throw err;
   }
