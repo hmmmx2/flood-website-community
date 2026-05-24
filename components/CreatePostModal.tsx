@@ -160,11 +160,15 @@ export default function CreatePostModal({ onClose, onCreated, defaultGroupSlug }
             </div>
           ) : (
             <div
+              role="button"
+              tabIndex={0}
+              aria-label="Upload an image — drag and drop, or activate to browse files"
               onDragOver={e => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
               onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
               onClick={() => fileRef.current?.click()}
-              className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed py-8 transition-colors ${
+              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileRef.current?.click(); } }}
+              className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed py-8 transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)] ${
                 dragOver ? "border-[var(--color-brand)] bg-[var(--color-hover)]" : "border-[var(--color-border)] bg-[var(--color-pill-bg)] hover:border-[var(--color-brand)]/50"
               }`}
             >

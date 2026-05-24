@@ -56,7 +56,18 @@ export default function RegisterPage() {
 
       const targetEmail = data.email ?? email;
       const params = new URLSearchParams({ email: targetEmail });
-      if (data.devCode) params.set("devCode", data.devCode);
+      // Keep the dev verification code OUT of the URL (it would leak into
+      // browser history / Referer headers). Stash it in sessionStorage
+      // (cleared on tab close); the verify-email page reads the same key
+      // on mount. Matches the login page's handoff. Production never
+      // returns devCode, so this is a dev-only convenience.
+      if (data.devCode && typeof window !== "undefined") {
+        try {
+          sessionStorage.setItem("verify_email_dev_code", data.devCode);
+        } catch {
+          /* sessionStorage unavailable (private mode) — user types the code from email */
+        }
+      }
       router.push(`/verify-email?${params.toString()}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed.");

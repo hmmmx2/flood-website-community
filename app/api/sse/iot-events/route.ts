@@ -241,12 +241,17 @@ export async function GET(req: Request) {
   const upstreamUrl = buildStreamUrl({ types, dataset });
 
   try {
+    // Bound the upstream connection to just under Vercel's 300 s
+    // maxDuration so a stalled upstream is aborted gracefully (the
+    // browser EventSource then auto-reconnects) rather than holding the
+    // serverless connection open until the platform force-kills it.
     const upstream = await fetch(upstreamUrl, {
       headers: {
         Accept: "text/event-stream",
         "Cache-Control": "no-cache",
       },
       cache: "no-store",
+      signal: AbortSignal.timeout(280_000),
     });
 
     if (!upstream.ok) {

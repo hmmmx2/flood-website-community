@@ -269,9 +269,14 @@ export default function HomePage() {
               ))}
               {hasMore && (
                 <button type="button" onClick={() => fetchPosts(page + 1, sort, false, debouncedFeedSearch)} disabled={loadingMore}
-                  className="w-full py-3 rounded-2xl bg-[var(--color-card)] border border-[var(--color-border)] text-sm font-semibold text-[var(--color-brand)] hover:bg-[var(--color-hover)] transition disabled:opacity-50">
+                  className="w-full min-h-[44px] py-3 rounded-2xl bg-[var(--color-card)] border border-[var(--color-border)] text-sm font-semibold text-[var(--color-brand)] hover:bg-[var(--color-hover)] transition disabled:opacity-50">
                   {loadingMore ? "Loading…" : "Load more"}
                 </button>
+              )}
+              {!hasMore && !loadingMore && posts.length > 0 && (
+                <p className="py-4 text-center text-xs text-[var(--color-muted)]">
+                  You&apos;re all caught up — that&apos;s the end of the feed.
+                </p>
               )}
             </div>
           )}

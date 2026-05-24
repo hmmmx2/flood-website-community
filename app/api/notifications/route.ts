@@ -14,18 +14,21 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   try {
-    const url = new URL(req.url);
-    const qs = url.searchParams.toString();
+    // Validate + clamp pagination instead of forwarding raw params
+    // straight to upstream (prevents unbounded page sizes / negative
+    // pages reaching Java).
+    const sp = new URL(req.url).searchParams;
+    const rawPage = parseInt(sp.get("page") ?? "0", 10);
+    const page = Math.max(0, Number.isNaN(rawPage) ? 0 : rawPage);
+    const rawSize = parseInt(sp.get("size") ?? "20", 10);
+    const size = Math.max(1, Math.min(Number.isNaN(rawSize) ? 20 : rawSize, 100));
     const data = await javaFetch<unknown>(
-      qs ? `/notifications?${qs}` : "/notifications",
+      `/notifications?page=${page}&size=${size}`,
       { token: session.accessToken },
     );
     return NextResponse.json(data);
   } catch (error) {
     const status = (error as { status?: number }).status ?? 500;
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed" },
-      { status },
-    );
+    return NextResponse.json({ error: "Failed to fetch notifications" }, { status });
   }
 }
