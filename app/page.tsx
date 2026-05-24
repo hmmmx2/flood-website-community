@@ -97,16 +97,36 @@ export default function HomePage() {
       void signIn(undefined, { callbackUrl: typeof window !== "undefined" ? window.location.href : "/" });
       return;
     }
+    // Optimistic update — toggle the heart + count instantly so the tap
+    // feels immediate, then reconcile with the server's authoritative
+    // count. Snapshot the prior values so we can roll back on failure.
+    const prior = posts.find((p) => p.id === postId);
+    const wasLiked = prior?.likedByMe ?? false;
+    const priorCount = prior?.likesCount ?? 0;
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId
+          ? { ...p, likedByMe: !wasLiked, likesCount: Math.max(0, priorCount + (wasLiked ? -1 : 1)) }
+          : p,
+      ),
+    );
     try {
       const data = await authFetchJson<{ liked: boolean; likesCount: number }>(`/api/posts/${postId}/like`, {
         method: "POST",
       });
+      // Reconcile with the server truth (handles races / double-taps).
       setPosts((prev) =>
         prev.map((p) =>
           p.id === postId ? { ...p, likedByMe: data.liked, likesCount: Math.max(0, data.likesCount) } : p,
         ),
       );
     } catch (e) {
+      // Roll back to the snapshot so the UI never lies.
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId ? { ...p, likedByMe: wasLiked, likesCount: priorCount } : p,
+        ),
+      );
       showErrorToast(e, "like-error", "Failed to update like.");
     }
   }
