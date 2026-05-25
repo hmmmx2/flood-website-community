@@ -15,6 +15,40 @@ import { useCallback, useEffect, useImperativeHandle, useRef, useState, forwardR
 import toast from "react-hot-toast";
 import SavedLocationEditor, { type SavedLocationDraft } from "./SavedLocationEditor";
 import KebabMenu from "./ui/KebabMenu";
+import type { FloodLevel } from "@/lib/types";
+import type { SavedPlaceWithStatus } from "./flood-map/SavedPlaceStatusRow";
+
+// ── Per-place / per-sensor status presentation ──────────────────────────────
+// Everything rendered here is the SAME aggregated, privacy-safe data the map
+// already shows publicly (zone label = area, rounded centroid, flood level,
+// online state) — just filtered to a saved place's radius. No raw sensor id
+// or precise coordinates are displayed, and rows only re-centre the map (they
+// never open a detail card).
+const LEVEL_LABEL: Record<FloodLevel, string> = { 0: "Normal", 1: "Alert", 2: "Warning", 3: "Critical" };
+const LEVEL_HEX: Record<FloodLevel, string> = { 0: "#16a34a", 1: "#facc15", 2: "#f97316", 3: "#dc2626" };
+const OFFLINE_HEX = "#6b7280";
+
+type PlaceTone = "clear" | "alert" | "warning" | "critical" | "offline" | "empty";
+
+function placeTone(s: SavedPlaceWithStatus | undefined): PlaceTone {
+  if (!s || s.items.length === 0) return "empty";
+  if (s.allOffline) return "offline";
+  if (s.worstLevel === 3) return "critical";
+  if (s.worstLevel === 2) return "warning";
+  if (s.worstLevel === 1) return "alert";
+  return "clear";
+}
+
+const TONE_LABEL: Record<PlaceTone, string> = {
+  clear: "All clear", alert: "Alert nearby", warning: "Warning nearby",
+  critical: "Critical nearby", offline: "Sensors offline", empty: "No sensors",
+};
+
+const TONE_PILL: Record<PlaceTone, string> = {
+  clear: "bg-emerald-600 text-white", alert: "bg-amber-500 text-white",
+  warning: "bg-orange-500 text-white", critical: "bg-red-600 text-white",
+  offline: "bg-slate-500 text-white", empty: "bg-slate-400 text-white",
+};
 
 /** Imperative handle exposed to the parent flood-map page so a
  *  right-click on the map can prefill + open the editor without going
@@ -39,12 +73,35 @@ interface SavedLocationsPanelProps {
   onFocusLocation?: (lat: number, lng: number) => void;
   /** Notifies the parent flood-map so it can render radius circles. */
   onLocationsChange?: (locations: SavedLocation[]) => void;
+  /**
+   * Per-place live status (sensors within each radius + flood/online state),
+   * computed by the parent from the live zone feed. Keyed back to a place by
+   * `place.id`. When omitted, only the CRUD list renders.
+   */
+  placesStatus?: SavedPlaceWithStatus[];
+  /** Re-centre the map on a sensor's (rounded) centroid when its row is tapped. */
+  onFocusZone?: (lat: number, lng: number) => void;
 }
 
 const SavedLocationsPanel = forwardRef<SavedLocationsPanelHandle, SavedLocationsPanelProps>(function SavedLocationsPanel({
   onFocusLocation,
   onLocationsChange,
+  placesStatus,
+  onFocusZone,
 }, ref) {
+  // Index the per-place status by place id for O(1) lookup while rendering.
+  const statusByPlace = new Map<string, SavedPlaceWithStatus>(
+    (placesStatus ?? []).map((s) => [s.place.id, s]),
+  );
+  // Which place cards have their sensor list expanded.
+  const [expandedPlaces, setExpandedPlaces] = useState<Set<string>>(new Set());
+  const togglePlace = (id: string) =>
+    setExpandedPlaces((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const [locations, setLocations] = useState<SavedLocation[]>([]);
   const [loading, setLoading] = useState(true);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -265,6 +322,83 @@ const SavedLocationsPanel = forwardRef<SavedLocationsPanelHandle, SavedLocations
                   </div>
                 </div>
               )}
+
+              {/* Live sensor status within this place's radius — status pill +
+                  expandable list of in-range sensors (flood level + online state). */}
+              {(() => {
+                const s = statusByPlace.get(loc.id);
+                const tone = placeTone(s);
+                const items = s?.items ?? [];
+                const isOpen = expandedPlaces.has(loc.id);
+                return (
+                  <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--color-border)" }}>
+                    <button
+                      type="button"
+                      onClick={() => { if (items.length > 0) togglePlace(loc.id); }}
+                      aria-expanded={isOpen}
+                      className="flex w-full items-center justify-between gap-2 text-left"
+                      style={{ cursor: items.length > 0 ? "pointer" : "default" }}
+                    >
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${TONE_PILL[tone]}`}>
+                        {TONE_LABEL[tone]}
+                      </span>
+                      <span className="flex items-center gap-1 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                        {items.length === 0
+                          ? `No sensors within ${loc.alertRadiusKm} km`
+                          : `${items.length} sensor${items.length === 1 ? "" : "s"} in range`}
+                        {items.length > 0 && (
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                               stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                               className={`h-3.5 w-3.5 transition-transform ${isOpen ? "rotate-180" : ""}`} aria-hidden>
+                            <path d="M6 9l6 6 6-6" />
+                          </svg>
+                        )}
+                      </span>
+                    </button>
+
+                    {isOpen && items.length > 0 && (
+                      <ul className="mt-2 space-y-1">
+                        {items.map(({ z, d }) => {
+                          const offline = z.allOffline;
+                          return (
+                            <li key={z.id}>
+                              <button
+                                type="button"
+                                onClick={() => onFocusZone?.(z.centroidLat, z.centroidLng)}
+                                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition hover:opacity-90"
+                                style={{ background: "var(--color-input-bg, var(--color-card))" }}
+                              >
+                                <span className="h-2 w-2 flex-shrink-0 rounded-full"
+                                      style={{ backgroundColor: offline ? OFFLINE_HEX : LEVEL_HEX[z.worstLevel] }} aria-hidden />
+                                <span className="truncate text-xs font-semibold" style={{ color: "var(--color-text)" }}>
+                                  {z.name}
+                                </span>
+                                <span className="ml-auto flex flex-shrink-0 items-center gap-1.5">
+                                  <span className="rounded-full px-1.5 py-0.5 text-[9px] font-bold"
+                                        style={offline
+                                          ? { background: "rgba(107,114,128,0.18)", color: OFFLINE_HEX }
+                                          : { background: `${LEVEL_HEX[z.worstLevel]}26`, color: LEVEL_HEX[z.worstLevel] }}>
+                                    {offline ? "—" : LEVEL_LABEL[z.worstLevel]}
+                                  </span>
+                                  <span className="rounded-full px-1.5 py-0.5 text-[9px] font-bold"
+                                        style={offline
+                                          ? { background: "rgba(107,114,128,0.18)", color: OFFLINE_HEX }
+                                          : { background: "rgba(22,163,74,0.15)", color: "#16a34a" }}>
+                                    {offline ? "Offline" : "Online"}
+                                  </span>
+                                  <span className="text-[10px] tabular-nums" style={{ color: "var(--color-muted)" }}>
+                                    {d.toFixed(1)} km
+                                  </span>
+                                </span>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })()}
             </li>
           ))}
         </ul>

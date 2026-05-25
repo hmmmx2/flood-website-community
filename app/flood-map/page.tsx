@@ -1260,6 +1260,8 @@ export default function FloodMapPage() {
               <SavedLocationsPanel
                 ref={savedLocationsRef}
                 onFocusLocation={(lat, lng) => focusOnPoint(lat, lng, 14)}
+                placesStatus={placesWithStatus}
+                onFocusZone={(lat, lng) => focusOnPoint(lat, lng, 15)}
                 onLocationsChange={(locs) => setSavedLocations(locs.map(l => ({
                   id: l.id, label: l.label,
                   latitude: l.latitude, longitude: l.longitude,
