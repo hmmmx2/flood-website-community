@@ -22,6 +22,21 @@ const TRANSIENT_REFRESH_RETRY_MS = 60 * 1000; // re-try refresh in ~1 min
 /** Used by Credentials authorize(); never throw at module load (that breaks Vercel build). */
 const AUTH_SECRET = process.env.AUTH_SECRET;
 
+/**
+ * Resolve what to store in the session's `image` field for a user.
+ *
+ * NEVER store a base64 `data:` URL here — avatars are ~30-60 KB and the
+ * NextAuth JWT lives in a cookie; a data URL there blows past Vercel's
+ * request-header limit (494 REQUEST_HEADER_TOO_LARGE). Instead store the
+ * short `/api/users/{id}/avatar` path, which serves the real bytes as a
+ * cacheable image response. Plain http(s) URLs are kept as-is.
+ */
+function sessionImageFor(userId: string, avatarUrl?: string | null): string | null {
+  if (!avatarUrl) return null;
+  if (avatarUrl.startsWith("data:")) return `/api/users/${userId}/avatar`;
+  return avatarUrl;
+}
+
 if (process.env.NODE_ENV === "production" && !AUTH_SECRET) {
   throw new Error(
     "[auth] AUTH_SECRET is not set. Add it to Vercel → Settings → Environment Variables (all scopes) and redeploy.",
@@ -153,7 +168,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             id: user.id,
             email: user.email,
             name: user.displayName,
-            image: user.avatarUrl ?? null,
+            image: sessionImageFor(user.id, user.avatarUrl),
             role: user.role,
             accessToken: tokens.accessToken,
             refreshToken: tokens.refreshToken,
@@ -198,7 +213,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             id: user.id,
             email: user.email,
             name: user.displayName,
-            image: user.avatarUrl ?? null,
+            image: sessionImageFor(user.id, user.avatarUrl),
             role: user.role,
             accessToken: credentials.accessToken as string,
             refreshToken: (credentials.refreshToken as string) ?? "",
@@ -215,7 +230,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async jwt({ token, user, trigger, session }) {
       if (trigger === "update" && session?.user) {
         if (session.user.name !== undefined) token.name = session.user.name;
-        if (session.user.image !== undefined) token.picture = session.user.image;
+        if (session.user.image !== undefined) {
+          const img = session.user.image;
+          // A client update() may pass the raw data: URL (the uploader emits
+          // one). Never let that into the cookie — swap it for the avatar
+          // endpoint path, cache-busted so the navbar shows the new image.
+          token.picture =
+            typeof img === "string" && img.startsWith("data:")
+              ? `/api/users/${token.sub}/avatar?v=${Date.now()}`
+              : img;
+        }
       }
 
       if (user) {
@@ -227,6 +251,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           accessTokenExpires: (user as unknown as { accessTokenExpires: number })
             .accessTokenExpires,
         };
+      }
+
+      // Defence-in-depth: never carry a base64 data-URL avatar in the JWT
+      // cookie (it can exceed Vercel's header limit → 494). Replace any that
+      // slipped in (e.g. legacy sessions) with the avatar endpoint path.
+      if (typeof token.picture === "string" && token.picture.startsWith("data:")) {
+        token.picture = `/api/users/${token.sub}/avatar`;
       }
 
       const expires = token.accessTokenExpires as number | undefined;
