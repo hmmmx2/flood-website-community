@@ -13,7 +13,8 @@ import { AlertIcon, WaveIcon } from "@/components/icons";
 import { useSession, signIn } from "next-auth/react";
 import { clientSignOut } from "@/lib/clientSignOut";
 import toast from "react-hot-toast";
-import { sessionToAuthUser, getInitials } from "@/lib/auth";
+import { sessionToAuthUser } from "@/lib/auth";
+import UserAvatar from "@/components/UserAvatar";
 import { fetchJson, authFetchJson } from "@/lib/fetchJson";
 import { showErrorToast } from "@/lib/errorToast";
 import type { Post, PagedPosts, Group } from "@/lib/types";
@@ -188,9 +189,7 @@ export default function HomePage() {
           {/* Create post bar */}
           {user ? (
             <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl flex items-center gap-3 p-3 mb-4">
-              <div className="h-9 w-9 rounded-full bg-[var(--color-brand)] flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
-                {getInitials(user.displayName)}
-              </div>
+              <UserAvatar src={user.avatarUrl} name={user.displayName} className="h-9 w-9" textClassName="text-sm" />
               <button type="button" onClick={() => setCreateOpen(true)} data-cy="feed-compose-open"
                 className="flex-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-input-bg)] px-4 py-2 text-sm text-[var(--color-muted)] text-left hover:border-[var(--color-brand)] hover:bg-[var(--color-hover)] transition">
                 Share a flood update…
