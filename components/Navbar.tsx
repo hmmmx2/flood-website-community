@@ -6,7 +6,7 @@ import { ThemeToggle } from "@/lib/theme/ThemeToggle";
 import NotificationBell from "@/components/NotificationBell";
 import { useRef, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { signOut } from "next-auth/react";
+import { clientSignOut } from "@/lib/clientSignOut";
 import { getInitials } from "@/lib/auth";
 import type { AuthUser } from "@/lib/auth";
 import { Kbd } from "@/components/ui/kbd";
@@ -153,7 +153,7 @@ export default function Navbar({
     if (onLogout) {
       onLogout();
     } else {
-      void signOut({ callbackUrl: "/login" });
+      void clientSignOut();
     }
   }
 

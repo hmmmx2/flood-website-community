@@ -10,7 +10,8 @@ import Footer from "@/components/Footer";
 import { PAGE_CONTAINER } from "@/lib/layout";
 import { SearchField } from "@/components/ui/search-field";
 import { AlertIcon, WaveIcon } from "@/components/icons";
-import { useSession, signOut, signIn } from "next-auth/react";
+import { useSession, signIn } from "next-auth/react";
+import { clientSignOut } from "@/lib/clientSignOut";
 import toast from "react-hot-toast";
 import { sessionToAuthUser, getInitials } from "@/lib/auth";
 import { fetchJson, authFetchJson } from "@/lib/fetchJson";
@@ -148,7 +149,7 @@ export default function HomePage() {
   }
 
   function handleLogout() {
-    signOut({ callbackUrl: "/login" });
+    void clientSignOut();
   }
 
   return (
