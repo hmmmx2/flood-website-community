@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 // POST /api/auth/sso/start
 //
 // Mint a one-time SSO handoff code that the CRM can redeem to set
@@ -42,10 +43,13 @@ function decodeJwtPayload(token: string): { role?: string } | null {
     return null;
   }
 }
+=======
+import { NextResponse } from "next/server";
+>>>>>>> Stashed changes
 
 export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
 
+<<<<<<< Updated upstream
 type Body = Partial<SsoPayload>;
 
 export async function POST(req: NextRequest) {
@@ -115,4 +119,8 @@ export async function POST(req: NextRequest) {
       { status: 503 },
     );
   }
+=======
+export async function POST() {
+  return NextResponse.json({ error: "disabled" }, { status: 410 });
+>>>>>>> Stashed changes
 }

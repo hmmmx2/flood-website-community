@@ -42,7 +42,22 @@ const nextConfig: NextConfig = {
   //                       a too-strict CSP breaks them. A follow-up sprint
   //                       should iterate a CSP via Report-Only mode.
   async headers() {
+    const csp = [
+      "default-src 'self'",
+      "base-uri 'self'",
+      "frame-ancestors 'none'",
+      "object-src 'none'",
+      "form-action 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com https://maps.gstatic.com",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "img-src 'self' data: blob: https://maps.gstatic.com https://maps.googleapis.com https://*.googleusercontent.com",
+      "font-src 'self' data: https://fonts.gstatic.com",
+      "connect-src 'self' https://maps.googleapis.com https://maps.gstatic.com https://*.upstash.io",
+      "worker-src 'self' blob:",
+      "manifest-src 'self'",
+    ].join("; ");
     const securityHeaders = [
+      { key: "Content-Security-Policy-Report-Only", value: csp },
       {
         key: "Strict-Transport-Security",
         value: "max-age=31536000; includeSubDomains; preload",

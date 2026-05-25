@@ -1,18 +1,18 @@
-import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { NextRequest, NextResponse } from "next/server";
+import { getServerAccessToken } from "@/lib/serverAuth";
 import { javaFetch } from "@/lib/javaApi";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const session = await auth();
-  if (!session?.accessToken) {
+export async function GET(req: NextRequest) {
+  const token = await getServerAccessToken(req);
+  if (!token) {
     return NextResponse.json({ count: 0 }, { status: 200 });
   }
   try {
     const data = await javaFetch<{ count: number }>(
       "/notifications/unread-count",
-      { token: session.accessToken },
+      { token: token },
     );
     return NextResponse.json(data);
   } catch {

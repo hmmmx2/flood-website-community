@@ -1,25 +1,27 @@
 "use client";
 
-import { getSession } from "next-auth/react";
-
 /**
  * Authenticated fetch wrapper for client components.
  *
- * Retrieves the current NextAuth session before each call — the session JWT
- * callback automatically refreshes the Spring Boot access token when it
- * expires, so `getSession()` always yields a valid token when the session
- * is healthy.
+ * Client components call same-origin BFF routes. Backend bearer tokens stay
+ * server-side in NextAuth route handlers instead of being copied into browser
+ * request headers.
  */
 export async function authFetch(
   url: string,
   options: RequestInit = {},
 ): Promise<Response> {
-  const session = await getSession();
+  const method = (options.method ?? "GET").toUpperCase();
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
   };
-  if (session?.accessToken) {
-    headers["Authorization"] = `Bearer ${session.accessToken}`;
+
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    const csrf = (await fetch("/api/auth/csrf", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null)) as { csrfToken?: string } | null;
+    if (csrf?.csrfToken) headers["X-CSRF-Token"] = csrf.csrfToken;
   }
-  return fetch(url, { ...options, headers });
+
+  return fetch(url, { ...options, headers, credentials: "same-origin" });
 }

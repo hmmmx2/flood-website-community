@@ -1,4 +1,5 @@
 import NextAuth from "next-auth";
+import type { JWT } from "next-auth/jwt";
 import Credentials from "next-auth/providers/credentials";
 
 import authConfig from "./auth.config";
@@ -21,7 +22,7 @@ if (process.env.NODE_ENV === "production" && !AUTH_SECRET) {
   );
 }
 
-async function refreshAccessToken(token: Record<string, unknown>) {
+async function refreshAccessToken(token: JWT): Promise<JWT> {
   try {
     const res = await fetch(`${JAVA_API}/auth/refresh`, {
       method: "POST",
@@ -104,50 +105,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     }),
 
-    Credentials({
-      id: "admin-token",
-      credentials: {
-        accessToken: {},
-        refreshToken: {},
-      },
-      async authorize(credentials) {
-        if (!AUTH_SECRET) return null;
-        if (!credentials?.accessToken) return null;
-        try {
-          const res = await fetch(`${JAVA_API}/profile`, {
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${credentials.accessToken}`,
-            },
-            signal: AbortSignal.timeout(10_000),
-          });
-          if (!res.ok) return null;
-          const user = (await res.json()) as {
-            id: string;
-            email: string;
-            displayName: string;
-            avatarUrl?: string;
-            role: string;
-          };
-          // QA P1-2 — same operator-class gate as the credentials
-          // provider above; the admin-token provider is a back door
-          // we mustn't leave wider than the front door.
-          if (isOperatorRole(user.role)) return null;
-          return {
-            id: user.id,
-            email: user.email,
-            name: user.displayName,
-            image: user.avatarUrl ?? null,
-            role: user.role,
-            accessToken: credentials.accessToken as string,
-            refreshToken: (credentials.refreshToken as string) ?? "",
-            accessTokenExpires: Date.now() + ACCESS_TOKEN_MS,
-          };
-        } catch {
-          return null;
-        }
-      },
-    }),
+
   ],
   callbacks: {
     ...authConfig.callbacks,
@@ -190,8 +148,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           id: (token.sub ?? "") as string,
           role: (token.role ?? "") as string,
         },
-        accessToken: (token.accessToken as string | undefined) ?? "",
-        refreshToken: (token.refreshToken as string | undefined) ?? "",
         error: token.error as string | undefined,
       };
     },

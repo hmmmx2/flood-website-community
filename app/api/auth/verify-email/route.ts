@@ -10,12 +10,12 @@ export const maxDuration = 15;
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const data = await javaFetch<unknown>("/auth/verify-email", {
+    const data = await javaFetch<{ user?: unknown; message?: string }>("/auth/verify-email", {
       method: "POST",
       body,
       timeoutMs: 12_000,
     });
-    return NextResponse.json(data);
+    return NextResponse.json({ ok: true, user: data.user, message: data.message });
   } catch (error) {
     const name = (error as Error).name;
     const status = (error as { status?: number }).status;

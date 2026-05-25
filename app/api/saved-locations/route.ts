@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireServerAccessToken } from "@/lib/serverAuth";
 import { javaFetch } from "@/lib/javaApi";
 
 export const dynamic = "force-dynamic";
@@ -12,13 +12,11 @@ export const dynamic = "force-dynamic";
  * NextAuth access token attached. Same pattern as /api/favourites.
  */
 
-export async function GET() {
-  const session = await auth();
-  if (!session?.accessToken) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(req: NextRequest) {
+  const token = await requireServerAccessToken(req);
+  if (token instanceof NextResponse) return token;
   try {
-    const data = await javaFetch<unknown>("/saved-locations", { token: session.accessToken });
+    const data = await javaFetch<unknown>("/saved-locations", { token: token });
     return NextResponse.json(data);
   } catch (error) {
     const status = (error as { status?: number }).status ?? 500;
@@ -30,16 +28,14 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.accessToken) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const token = await requireServerAccessToken(req);
+  if (token instanceof NextResponse) return token;
   try {
     const body = await req.json();
     const data = await javaFetch<unknown>("/saved-locations", {
       method: "POST",
       body,
-      token: session.accessToken,
+      token: token,
     });
     return NextResponse.json(data, { status: 201 });
   } catch (error) {

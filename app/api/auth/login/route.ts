@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { javaFetch } from "@/lib/javaApi";
+import { isOperatorRole } from "@/lib/rbac";
+import { mintSsoCode, type SsoPayload } from "@/lib/sso";
 
 export const dynamic = "force-dynamic";
 
@@ -30,12 +32,40 @@ export async function POST(req: NextRequest) {
     // 12 s — slightly above our normal 10 s default to absorb Neon
     // wake-up + first-query overhead, but still inside `maxDuration`
     // so the Vercel platform never preempts us.
-    const data = await javaFetch<unknown>("/auth/login", {
+    const data = await javaFetch<{
+      session?: { accessToken: string; refreshToken: string; expiresAt?: string };
+      user?: {
+        id: string;
+        email: string;
+        displayName: string;
+        avatarUrl?: string | null;
+        role: string;
+      };
+    }>("/auth/login", {
       method: "POST",
       body,
       timeoutMs: 12_000,
     });
-    return NextResponse.json(data);
+
+    if (data.user && data.session && isOperatorRole(data.user.role)) {
+      const expiresAt =
+        data.session.expiresAt ?? new Date(Date.now() + 15 * 60_000).toISOString();
+      const ssoCode = await mintSsoCode({
+        accessToken: data.session.accessToken,
+        refreshToken: data.session.refreshToken,
+        user: {
+          id: data.user.id,
+          email: data.user.email,
+          displayName: data.user.displayName,
+          avatarUrl: data.user.avatarUrl ?? undefined,
+          role: data.user.role,
+        },
+        expiresAt,
+      } satisfies SsoPayload);
+      return NextResponse.json({ user: data.user, ssoCode, expiresAt });
+    }
+
+    return NextResponse.json({ user: data.user });
   } catch (error) {
     const name = (error as Error).name;
     const status = (error as { status?: number }).status;

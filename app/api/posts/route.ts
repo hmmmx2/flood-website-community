@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { getServerAccessToken, requireServerAccessToken } from "@/lib/serverAuth";
 import { javaFetch } from "@/lib/javaApi";
 import { withCache, CACHE_TTL } from "@/lib/redis";
 
@@ -27,6 +27,10 @@ function hasSessionCookie(req: NextRequest): boolean {
 }
 
 export async function GET(req: NextRequest) {
+<<<<<<< Updated upstream
+=======
+  const token = await getServerAccessToken(req);
+>>>>>>> Stashed changes
   try {
     const { searchParams } = new URL(req.url);
 
@@ -46,11 +50,21 @@ export async function GET(req: NextRequest) {
     if (group)  params.set("group",  encodeURIComponent(group));
     if (search) params.set("search", encodeURIComponent(search));
 
+<<<<<<< Updated upstream
     // Hot path — anonymous visitor. Skip auth() entirely and serve
     // from the shared cache. This is by far the most common case
     // (every signed-out home-feed visit), and the previous always-
     // call-auth() path made it ~300 ms slower than necessary.
     if (!hasSessionCookie(req)) {
+=======
+    const fetcher = () => javaFetch<unknown>(`/community/posts?${params}`, { token: token ?? undefined });
+
+    // Skip cache for authenticated users — response includes user-specific likedByMe field
+    let data: unknown;
+    if (token) {
+      data = await fetcher();
+    } else {
+>>>>>>> Stashed changes
       const cacheKey = `posts:${page}:${sort}:${group}:${search}`;
       const data = await withCache(cacheKey, CACHE_TTL.posts, () =>
         javaFetch<unknown>(`/community/posts?${params}`),
@@ -74,13 +88,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.accessToken) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const token = await requireServerAccessToken(req);
+  if (token instanceof NextResponse) return token;
   try {
     const body = await req.json();
-    const data = await javaFetch<unknown>("/community/posts", { method: "POST", body, token: session.accessToken });
+    const data = await javaFetch<unknown>("/community/posts", { method: "POST", body, token: token });
     return NextResponse.json(data);
   } catch (error) {
     const status = (error as { status?: number }).status ?? 500;

@@ -5,9 +5,8 @@
  *
  * Modern OTP UI: six separated digit boxes with auto-advance, paste support,
  * arrow-key navigation, and animated success/error feedback. After
- * /api/auth/verify-email succeeds we install the NextAuth session via the
- * token-based "admin-token" provider so the user lands signed-in on the home
- * page without retyping their password.
+ * /api/auth/verify-email succeeds we send the user back to sign in. The API
+ * response deliberately does not expose backend tokens to browser JavaScript.
  */
 
 import {
@@ -25,14 +24,12 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { signIn } from "next-auth/react";
 import { AuthFooter, AuthTopNav } from "@/components/auth/AuthChrome";
 
 const CODE_LEN = 6;
 const RESEND_COOLDOWN_S = 30;
 
 type VerifyEmailResponse = {
-  session?: { accessToken?: string; refreshToken?: string };
   user?: { id?: string; email?: string };
 };
 
@@ -173,19 +170,6 @@ function VerifyEmailInner() {
 
       setStatus("success");
 
-      const accessToken = data.session?.accessToken;
-      const refreshToken = data.session?.refreshToken;
-      if (accessToken && refreshToken) {
-        const result = await signIn("admin-token", {
-          accessToken,
-          refreshToken,
-          redirect: false,
-        });
-        if (!result?.error) {
-          setTimeout(() => router.push("/"), 900);
-          return;
-        }
-      }
       setInfo("Account verified. Sign in below to continue.");
       setTimeout(() => router.push("/login"), 1100);
     } catch (err) {

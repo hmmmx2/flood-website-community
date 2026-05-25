@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+<<<<<<< Updated upstream
+=======
+import { getServerAccessToken } from "@/lib/serverAuth";
+>>>>>>> Stashed changes
 import { javaFetch } from "@/lib/javaApi";
 import { withCache, CACHE_TTL } from "@/lib/redis";
 
@@ -17,6 +21,10 @@ export const revalidate = 0;
  * lets the cache layer serve requests in well under a second.
  */
 export async function GET(req: NextRequest) {
+<<<<<<< Updated upstream
+=======
+  const token = await getServerAccessToken(req);
+>>>>>>> Stashed changes
   try {
     const { searchParams } = new URL(req.url);
 
@@ -32,7 +40,11 @@ export async function GET(req: NextRequest) {
     const cat = (category && category !== "All") ? category : "all";
     const cacheKey = `blogs:${page}:${size}:${cat}`;
 
+<<<<<<< Updated upstream
     const data = await withCache(cacheKey, CACHE_TTL.blogs, () => javaFetch(path));
+=======
+    const data = await withCache(cacheKey, CACHE_TTL.blogs, () => javaFetch(path, { token: token ?? undefined }));
+>>>>>>> Stashed changes
     return NextResponse.json(data);
   } catch (err: unknown) {
     const e = err as { message?: string; status?: number };

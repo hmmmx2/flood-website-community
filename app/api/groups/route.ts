@@ -1,9 +1,15 @@
+<<<<<<< Updated upstream
 import { NextResponse } from "next/server";
+=======
+import { NextRequest, NextResponse } from "next/server";
+import { getServerAccessToken } from "@/lib/serverAuth";
+>>>>>>> Stashed changes
 import { javaFetch } from "@/lib/javaApi";
 import { withCache, CACHE_TTL } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 
+<<<<<<< Updated upstream
 /**
  * GET /api/groups — public list of community groups.
  *
@@ -17,6 +23,13 @@ export async function GET() {
   try {
     const data = await withCache("groups:all", CACHE_TTL.groups, () =>
       javaFetch<unknown>("/community/groups"),
+=======
+export async function GET(req: NextRequest) {
+  const token = await getServerAccessToken(req);
+  try {
+    const data = await withCache("groups:all", CACHE_TTL.groups, () =>
+      javaFetch<unknown>("/community/groups", { token: token ?? undefined }),
+>>>>>>> Stashed changes
     );
     return NextResponse.json(data);
   } catch (error) {

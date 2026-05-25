@@ -4,21 +4,19 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { javaFetch } from '@/lib/javaApi';
+import { requireServerAccessToken } from '@/lib/serverAuth';
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.accessToken) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const token = await requireServerAccessToken(req);
+  if (token instanceof NextResponse) return token;
 
   const subscription = await req.json();
   try {
     await javaFetch<unknown>('/settings/push-subscription', {
       method: 'POST',
       body: subscription,
-      token: session.accessToken,
+      token: token,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
@@ -29,17 +27,15 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const session = await auth();
-  if (!session?.accessToken) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const token = await requireServerAccessToken(req);
+  if (token instanceof NextResponse) return token;
 
   const { endpoint } = await req.json();
   try {
     await javaFetch<unknown>('/settings/push-subscription', {
       method: 'DELETE',
       body: { endpoint },
-      token: session.accessToken,
+      token: token,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';

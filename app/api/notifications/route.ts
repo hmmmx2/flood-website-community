@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireServerAccessToken } from "@/lib/serverAuth";
 import { javaFetch } from "@/lib/javaApi";
 
 export const dynamic = "force-dynamic";
@@ -9,10 +9,8 @@ export const dynamic = "force-dynamic";
  * Returns the authenticated user's most-recent in-app notifications.
  */
 export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (!session?.accessToken) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const token = await requireServerAccessToken(req);
+  if (token instanceof NextResponse) return token;
   try {
     // Validate + clamp pagination instead of forwarding raw params
     // straight to upstream (prevents unbounded page sizes / negative
@@ -23,8 +21,13 @@ export async function GET(req: NextRequest) {
     const rawSize = parseInt(sp.get("size") ?? "20", 10);
     const size = Math.max(1, Math.min(Number.isNaN(rawSize) ? 20 : rawSize, 100));
     const data = await javaFetch<unknown>(
+<<<<<<< Updated upstream
       `/notifications?page=${page}&size=${size}`,
       { token: session.accessToken },
+=======
+      qs ? `/notifications?${qs}` : "/notifications",
+      { token: token },
+>>>>>>> Stashed changes
     );
     return NextResponse.json(data);
   } catch (error) {

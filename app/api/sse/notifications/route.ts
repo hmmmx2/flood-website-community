@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { NextRequest, NextResponse } from "next/server";
+import { requireServerAccessToken } from "@/lib/serverAuth";
 import { JAVA_API_BASE } from "@/lib/javaApi";
 
 export const dynamic = "force-dynamic";
@@ -13,15 +13,13 @@ export const runtime = "nodejs";
  * connection to Spring Boot's /notifications/stream with a Bearer
  * header, and pipes the byte stream straight back to the client.
  */
-export async function GET() {
-  const session = await auth();
-  if (!session?.accessToken) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(req: NextRequest) {
+  const token = await requireServerAccessToken(req);
+  if (token instanceof NextResponse) return token;
 
   const upstream = await fetch(`${JAVA_API_BASE}/notifications/stream`, {
     headers: {
-      Authorization: `Bearer ${session.accessToken}`,
+      Authorization: `Bearer ${token}`,
       Accept: "text/event-stream",
     },
     // Long-lived stream — disable Next's fetch cache and let it run.

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireServerAccessToken } from "@/lib/serverAuth";
 import { javaFetch } from "@/lib/javaApi";
 
 export const dynamic = "force-dynamic";
@@ -8,14 +8,12 @@ export const dynamic = "force-dynamic";
  * GET   /api/profile/notification-prefs  — current channel prefs + phone
  * PATCH /api/profile/notification-prefs  — partial update
  */
-export async function GET() {
-  const session = await auth();
-  if (!session?.accessToken) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(req: NextRequest) {
+  const token = await requireServerAccessToken(req);
+  if (token instanceof NextResponse) return token;
   try {
     const data = await javaFetch<unknown>("/profile/notification-prefs", {
-      token: session.accessToken,
+      token: token,
     });
     return NextResponse.json(data);
   } catch (error) {
@@ -28,16 +26,14 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
-  const session = await auth();
-  if (!session?.accessToken) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const token = await requireServerAccessToken(req);
+  if (token instanceof NextResponse) return token;
   try {
     const body = await req.json();
     const data = await javaFetch<unknown>("/profile/notification-prefs", {
       method: "PATCH",
       body,
-      token: session.accessToken,
+      token: token,
     });
     return NextResponse.json(data);
   } catch (error) {

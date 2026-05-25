@@ -1,20 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireServerAccessToken } from "@/lib/serverAuth";
 import { javaFetch } from "@/lib/javaApi";
 
 export const dynamic = "force-dynamic";
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ nodeId: string }> },
 ) {
-  const session = await auth();
-  if (!session?.accessToken) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const token = await requireServerAccessToken(req);
+  if (token instanceof NextResponse) return token;
   try {
     const { nodeId } = await params;
-    await javaFetch<unknown>(`/favourites/${nodeId}`, { method: "DELETE", token: session.accessToken });
+    await javaFetch<unknown>(`/favourites/${nodeId}`, { method: "DELETE", token: token });
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     const status = (error as { status?: number }).status ?? 500;
@@ -26,16 +24,14 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ nodeId: string }> },
 ) {
-  const session = await auth();
-  if (!session?.accessToken) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const token = await requireServerAccessToken(req);
+  if (token instanceof NextResponse) return token;
   try {
     const { nodeId } = await params;
     const body = await req.json();
     const data = await javaFetch<unknown>(`/favourites/${nodeId}`, {
       method: "PATCH",
-      token: session.accessToken,
+      token: token,
       body,
     });
     return NextResponse.json(data);

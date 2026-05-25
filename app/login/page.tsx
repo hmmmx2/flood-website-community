@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { signIn } from "next-auth/react";
 import { AuthFooter, AuthTopNav } from "@/components/auth/AuthChrome";
-import type { AuthUser } from "@/lib/auth";
 import { isOperatorRole } from "@/lib/rbac";
 
 type View = "login" | "register";
@@ -32,6 +31,7 @@ async function getCrmUrl(): Promise<string> {
  * `/api/auth/sso/start`. Throws on network failure so the caller
  * can fall back to a friendly error banner.
  */
+<<<<<<< Updated upstream
 async function buildCrmCallbackUrl(
   accessToken: string,
   refreshToken: string,
@@ -80,6 +80,11 @@ async function mintSsoHandoffCode(payload: {
   }
   const { code } = (await res.json()) as { code: string };
   return code;
+=======
+async function buildCrmCallbackUrl(ssoCode: string): Promise<string> {
+  const crmBase = await getCrmUrl();
+  return `${crmBase}/auth/callback?code=${encodeURIComponent(ssoCode)}`;
+>>>>>>> Stashed changes
 }
 
 /**
@@ -90,11 +95,8 @@ async function mintSsoHandoffCode(payload: {
  * response shapes, switch to `zod` or `valibot`.
  */
 type LoginSuccessPayload = {
-  session: {
-    accessToken: string;
-    refreshToken: string;
-    expiresAt?: string;
-  };
+  ssoCode?: string;
+  expiresAt?: string;
   user: {
     id: string;
     email: string;
@@ -107,21 +109,8 @@ type LoginSuccessPayload = {
 function validateLoginResponse(raw: unknown): LoginSuccessPayload | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  const session = o.session as Record<string, unknown> | undefined;
   const user = o.user as Record<string, unknown> | undefined;
-  if (!session || typeof session !== "object") return null;
   if (!user || typeof user !== "object") return null;
-  if (typeof session.accessToken !== "string" || session.accessToken.length === 0) return null;
-  if (typeof session.refreshToken !== "string" || session.refreshToken.length === 0) return null;
-  // expiresAt may be absent (older Java builds), present as string (current),
-  // or null (some edge cases). All three are acceptable.
-  if (
-    session.expiresAt !== undefined &&
-    session.expiresAt !== null &&
-    typeof session.expiresAt !== "string"
-  ) {
-    return null;
-  }
   if (typeof user.id !== "string" || user.id.length === 0) return null;
   if (typeof user.email !== "string" || user.email.length === 0) return null;
   // displayName is the computed `firstName + " " + lastName` from Java —
@@ -306,11 +295,8 @@ function LoginPageInner() {
 
       const body = (await res.json().catch(() => ({}))) as
         | {
-            session: {
-              accessToken: string;
-              refreshToken: string;
-              expiresAt?: string;
-            };
+            ssoCode?: string;
+            expiresAt?: string;
             user: {
               id: string;
               email: string;
@@ -368,19 +354,10 @@ function LoginPageInner() {
       // role on redeem, so a forged `role` claim here cannot unlock
       // the CRM; the worst case is one extra round-trip and a 403.
       if (isOperatorRole(payload.user.role)) {
-        const adminUser: AuthUser = {
-          id: payload.user.id,
-          email: payload.user.email,
-          displayName: payload.user.displayName,
-          avatarUrl: payload.user.avatarUrl,
-          role: payload.user.role,
-        };
-        const url = await buildCrmCallbackUrl(
-          payload.session.accessToken,
-          payload.session.refreshToken,
-          adminUser,
-          payload.session.expiresAt ?? new Date(Date.now() + 15 * 60_000).toISOString(),
-        );
+        if (!payload.ssoCode) {
+          throw new Error("Sign-in handoff failed. Please try again.");
+        }
+        const url = await buildCrmCallbackUrl(payload.ssoCode);
 
         // Detect environments where cross-port localhost navigation
         // is blocked (notably the Claude Code preview tool, which
