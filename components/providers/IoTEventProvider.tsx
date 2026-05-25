@@ -35,7 +35,7 @@ import {
   type ReactNode,
 } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 import type {
   AlertSeverity,
@@ -508,6 +508,22 @@ const POPUP_COOLDOWN_PER_KEY_MS = 60_000;
 const GLOBAL_POPUP_RATE_MAX = 3;
 const GLOBAL_POPUP_WINDOW_MS = 10_000;
 
+// Auth/entry pages where the live flood-alert dock must NOT appear. These
+// are focused sign-in screens for logged-out visitors — a flashing flood
+// toast (plus its chime + desktop notification) is inappropriate there.
+// On these routes we skip the SSE connection entirely so nothing pops,
+// chimes, or notifies. Public CONTENT pages (home, /flood-map) keep the
+// dock — flood alerts are public-safety info the community site shows to
+// everyone. Only /settings is auth-gated by proxy.ts.
+const AUTH_ROUTE_PREFIXES = ["/login", "/register", "/forgot-password", "/reset-password"];
+
+function isAuthRoutePath(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return AUTH_ROUTE_PREFIXES.some(
+    (r) => pathname === r || pathname.startsWith(`${r}/`),
+  );
+}
+
 export function IoTEventProvider({ children }: { children: ReactNode }) {
   // Pick up `?dataset=sample|all` from the URL so the SSE stream pulls
   // the same dataset the page is rendering. Without this, navigating to
@@ -521,6 +537,11 @@ export function IoTEventProvider({ children }: { children: ReactNode }) {
     datasetParam === "sample" || datasetParam === "all"
       ? datasetParam
       : null;
+
+  // Suppress the entire live-alert pipeline on auth/entry pages (login,
+  // register, forgot/reset password). See AUTH_ROUTE_PREFIXES above.
+  const pathname = usePathname();
+  const onAuthRoute = isAuthRoutePath(pathname);
 
   const subscribers = useRef(new Set<(event: IoTStreamEvent) => void>());
   const [alerts, setAlerts] = useState<IoTAlert[]>([]);
@@ -594,6 +615,13 @@ export function IoTEventProvider({ children }: { children: ReactNode }) {
 
   // ── SSE connection effect ────────────────────────────────────────
   useEffect(() => {
+    // Don't open a live stream on auth/entry pages — no dock, no chime,
+    // no desktop notification for a logged-out visitor signing in.
+    if (onAuthRoute) {
+      setStatus("offline");
+      return;
+    }
+
     let closed = false;
     let es: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -818,8 +846,9 @@ export function IoTEventProvider({ children }: { children: ReactNode }) {
     };
     // dataset is intentionally in the dep list: when the URL flips
     // between real and sample, we tear down the old EventSource and
-    // open a new one against the right upstream.
-  }, [dataset]);
+    // open a new one against the right upstream. onAuthRoute is here too
+    // so navigating into / out of /login tears down or re-opens the pipe.
+  }, [dataset, onAuthRoute]);
 
   const value = useMemo<IoTStreamContextValue>(
     () => ({
@@ -865,11 +894,14 @@ export function IoTEventProvider({ children }: { children: ReactNode }) {
   return (
     <IoTStreamContext.Provider value={value}>
       {children}
-      <IoTFloodAlertDock
-        alerts={dockAlerts}
-        onDismiss={dismissAlert}
-        onDismissAll={dismissAll}
-      />
+      {/* No live-alert dock on auth/entry pages (login, register, etc.). */}
+      {!onAuthRoute && (
+        <IoTFloodAlertDock
+          alerts={dockAlerts}
+          onDismiss={dismissAlert}
+          onDismissAll={dismissAll}
+        />
+      )}
     </IoTStreamContext.Provider>
   );
 }
