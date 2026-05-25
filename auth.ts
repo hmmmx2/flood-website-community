@@ -11,6 +11,13 @@ const JAVA_API = normaliseJavaApiBase(
   "http://localhost:4001",
 );
 const ACCESS_TOKEN_MS = 15 * 60 * 1000; // 15 min — matches Spring Boot access token expiry
+// After a TRANSIENT refresh failure (Railway cold start / brief 5xx /
+// network blip) we keep the session alive and re-attempt the refresh
+// after this delay instead of hard-logging the user out. This is what
+// stops the "kicked back to login every ~15 minutes" annoyance: the
+// access token refreshes every 15 min, and without this a single
+// backend hiccup during that refresh ended the whole session.
+const TRANSIENT_REFRESH_RETRY_MS = 60 * 1000; // re-try refresh in ~1 min
 
 /** Used by Credentials authorize(); never throw at module load (that breaks Vercel build). */
 const AUTH_SECRET = process.env.AUTH_SECRET;
@@ -21,28 +28,82 @@ if (process.env.NODE_ENV === "production" && !AUTH_SECRET) {
   );
 }
 
+/**
+ * Exchange the refresh token for a fresh access token.
+ *
+ * Resilience (the fix for "logged out too often"): the previous version
+ * treated ANY failure — including a transient Railway cold start or a
+ * one-off network blip — as a terminal session error, which forced a
+ * re-login roughly every 15 minutes of idle-then-active use. Now we:
+ *
+ *   • give each attempt a hard timeout (a hung fetch no longer stalls
+ *     the whole NextAuth session callback indefinitely),
+ *   • retry a few times with short backoff to ride out a cold start,
+ *   • distinguish a genuine 4xx (refresh token revoked / expired — the
+ *     session really is over → force re-login) from transient 5xx /
+ *     network errors (keep the session, re-attempt shortly).
+ *
+ * The Spring Boot `/auth/refresh` does NOT rotate the refresh token, so
+ * retrying with the same token is safe — there's no rotation race.
+ */
 async function refreshAccessToken(token: Record<string, unknown>) {
-  try {
-    const res = await fetch(`${JAVA_API}/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken: token.refreshToken }),
-    });
-    if (!res.ok) throw new Error("Refresh failed");
-    const data = (await res.json()) as {
-      accessToken: string;
-      refreshToken?: string;
-    };
-    return {
-      ...token,
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken ?? token.refreshToken,
-      accessTokenExpires: Date.now() + ACCESS_TOKEN_MS,
-      error: undefined,
-    };
-  } catch {
+  const refreshToken = token.refreshToken as string | undefined;
+  if (!refreshToken) {
     return { ...token, error: "RefreshAccessTokenError" as const };
   }
+
+  // Up to 3 attempts (~0s, 1s, 3s backoff). Each call is capped at 7s so
+  // a stuck backend can't hang the session callback forever.
+  const RETRY_DELAYS_MS = [0, 1000, 3000];
+  let terminalReject = false;
+
+  for (const delay of RETRY_DELAYS_MS) {
+    if (delay) await new Promise((r) => setTimeout(r, delay));
+    try {
+      const res = await fetch(`${JAVA_API}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken }),
+        signal: AbortSignal.timeout(7_000),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as {
+          accessToken: string;
+          refreshToken?: string;
+        };
+        return {
+          ...token,
+          accessToken: data.accessToken,
+          refreshToken: data.refreshToken ?? refreshToken,
+          accessTokenExpires: Date.now() + ACCESS_TOKEN_MS,
+          error: undefined,
+        };
+      }
+      // 4xx — the refresh token is invalid / revoked / expired. This is a
+      // real end-of-session; stop retrying and force re-login.
+      if (res.status >= 400 && res.status < 500) {
+        terminalReject = true;
+        break;
+      }
+      // 5xx — backend is up but unhappy (cold start, transient). Retry.
+    } catch {
+      // Network error / timeout / abort — treat as transient. Retry.
+    }
+  }
+
+  if (terminalReject) {
+    return { ...token, error: "RefreshAccessTokenError" as const };
+  }
+
+  // All retries exhausted on TRANSIENT failures: do NOT end the session.
+  // Keep the token and re-attempt the refresh on the next session read
+  // after a short delay, so a brief backend outage doesn't log the user
+  // out. The next successful refresh clears this and resumes normally.
+  return {
+    ...token,
+    accessTokenExpires: Date.now() + TRANSIENT_REFRESH_RETRY_MS,
+    error: undefined,
+  };
 }
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
