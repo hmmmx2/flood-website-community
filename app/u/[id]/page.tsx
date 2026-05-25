@@ -51,7 +51,7 @@ function joinedLabel(iso: string | null): string {
 export default function UserProfilePage() {
   const router = useRouter();
   const { id } = useParams<{ id: string }>();
-  const { data: session } = useSession();
+  const { data: session, update } = useSession();
   const viewer = session?.user ? sessionToAuthUser(session.user) : null;
   const isOwn = viewer?.id === id;
 
@@ -144,6 +144,11 @@ export default function UserProfilePage() {
         body: JSON.stringify({ avatarUrl: value }),
       });
       setProfile((p) => (p ? { ...p, avatarUrl: value } : p));
+      // Refresh the NextAuth session so session.user.image reflects the new
+      // avatar — otherwise the Navbar corner (which reads the session, not
+      // this page's local state) keeps showing the old picture / initials.
+      // The jwt callback maps session.user.image → token.picture on update.
+      await update({ user: { image: value } });
       setEditingAvatar(false);
       toast.success(value ? "Profile picture updated" : "Profile picture removed");
     } catch (e) {
