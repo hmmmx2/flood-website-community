@@ -255,7 +255,13 @@ export default function UserProfilePage() {
 
                   {/* Identity */}
                   <div className="flex-1 min-w-0">
-                    <h1 className="text-xl sm:text-2xl font-bold text-[var(--color-text)] tracking-tight">
+                    {/* On desktop (sm+) the name overlaps the blue banner via
+                        the negative margin + items-end, so it must be white in
+                        BOTH themes. On mobile it sits below the banner on the
+                        card surface, where var(--color-text) is correct. Light
+                        mode previously used the dark card colour over the blue
+                        banner, making the name unreadable. */}
+                    <h1 className="text-xl sm:text-2xl font-bold text-[var(--color-text)] sm:text-white tracking-tight">
                       {profile.displayName}
                     </h1>
                     <p className="text-xs text-[var(--color-muted)] mt-0.5">
