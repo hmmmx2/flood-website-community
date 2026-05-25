@@ -40,15 +40,59 @@ function placeTone(s: SavedPlaceWithStatus | undefined): PlaceTone {
 }
 
 const TONE_LABEL: Record<PlaceTone, string> = {
-  clear: "All clear", alert: "Alert nearby", warning: "Warning nearby",
-  critical: "Critical nearby", offline: "Sensors offline", empty: "No sensors",
+  clear: "All clear", alert: "Alert", warning: "Warning",
+  critical: "Critical", offline: "Offline", empty: "No sensors",
 };
+
+// Plain-language one-liner so the headline status is self-explanatory —
+// answers "what does 'All clear' mean?" right under the pill.
+function toneCaption(tone: PlaceTone, radiusKm: number): string {
+  switch (tone) {
+    case "clear":    return "No flood risk detected by nearby sensors.";
+    case "alert":    return "Water level rising at a sensor nearby.";
+    case "warning":  return "Possible flooding near this place.";
+    case "critical": return "Severe flooding near this place — take care.";
+    case "offline":  return "Nearby sensors aren't reporting right now.";
+    default:         return `No sensors within ${radiusKm} km of this place.`;
+  }
+}
 
 const TONE_PILL: Record<PlaceTone, string> = {
   clear: "bg-emerald-600 text-white", alert: "bg-amber-500 text-white",
   warning: "bg-orange-500 text-white", critical: "bg-red-600 text-white",
   offline: "bg-slate-500 text-white", empty: "bg-slate-400 text-white",
 };
+
+// Small status glyph inside the pill (white stroke on the coloured pill).
+function ToneIcon({ tone }: { tone: PlaceTone }) {
+  const common = {
+    xmlns: "http://www.w3.org/2000/svg",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 2.5,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    className: "h-3 w-3 flex-shrink-0",
+    "aria-hidden": true,
+  };
+  if (tone === "clear") {
+    return (<svg {...common}><path d="M20 6L9 17l-5-5" /></svg>);
+  }
+  if (tone === "offline") {
+    return (<svg {...common}><circle cx="12" cy="12" r="9" /><path d="M6 6l12 12" /></svg>);
+  }
+  if (tone === "empty") {
+    return (<svg {...common}><circle cx="12" cy="12" r="9" /><path d="M8 12h8" /></svg>);
+  }
+  // alert / warning / critical → warning triangle
+  return (
+    <svg {...common}>
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <path d="M12 9v4M12 17h.01" />
+    </svg>
+  );
+}
 
 /** Imperative handle exposed to the parent flood-map page so a
  *  right-click on the map can prefill + open the editor without going
@@ -329,6 +373,8 @@ const SavedLocationsPanel = forwardRef<SavedLocationsPanelHandle, SavedLocations
                 const s = statusByPlace.get(loc.id);
                 const tone = placeTone(s);
                 const items = s?.items ?? [];
+                const offlineCount = items.filter((i) => i.z.allOffline).length;
+                const onlineCount = items.length - offlineCount;
                 const isOpen = expandedPlaces.has(loc.id);
                 return (
                   <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--color-border)" }}>
@@ -339,13 +385,27 @@ const SavedLocationsPanel = forwardRef<SavedLocationsPanelHandle, SavedLocations
                       className="flex w-full items-center justify-between gap-2 text-left"
                       style={{ cursor: items.length > 0 ? "pointer" : "default" }}
                     >
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${TONE_PILL[tone]}`}>
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${TONE_PILL[tone]}`}>
+                        <ToneIcon tone={tone} />
                         {TONE_LABEL[tone]}
                       </span>
-                      <span className="flex items-center gap-1 text-[11px]" style={{ color: "var(--color-muted)" }}>
-                        {items.length === 0
-                          ? `No sensors within ${loc.alertRadiusKm} km`
-                          : `${items.length} sensor${items.length === 1 ? "" : "s"} in range`}
+                      <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "var(--color-muted)" }}>
+                        {/* Coverage breakdown — always surfaces offline sensors,
+                            so an "All clear" place with an offline sensor reads
+                            honestly (e.g. "2 online · 1 offline"). */}
+                        {items.length === 0 ? (
+                          <span>No sensors within {loc.alertRadiusKm} km</span>
+                        ) : (
+                          <span className="flex items-center gap-1">
+                            {onlineCount > 0 && (
+                              <span style={{ color: "#16a34a", fontWeight: 600 }}>{onlineCount} online</span>
+                            )}
+                            {onlineCount > 0 && offlineCount > 0 && <span aria-hidden>·</span>}
+                            {offlineCount > 0 && (
+                              <span style={{ color: OFFLINE_HEX, fontWeight: 600 }}>{offlineCount} offline</span>
+                            )}
+                          </span>
+                        )}
                         {items.length > 0 && (
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                                stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
@@ -355,6 +415,11 @@ const SavedLocationsPanel = forwardRef<SavedLocationsPanelHandle, SavedLocations
                         )}
                       </span>
                     </button>
+
+                    {/* Plain-language explanation of the status. */}
+                    <p className="mt-1 text-[10px] leading-snug" style={{ color: "var(--color-muted)" }}>
+                      {toneCaption(tone, loc.alertRadiusKm)}
+                    </p>
 
                     {isOpen && items.length > 0 && (
                       <ul className="mt-2 space-y-1">
