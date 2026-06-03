@@ -238,3 +238,7 @@ This project is licensed under the [MIT License](../LICENSE).
 ---
 
 Part of the **FloodWatch** flood monitoring system for Sabah, Malaysia.
+
+## Deployment
+
+Production is served from the `production` branch on Vercel. The `main` branch is the integration branch and deploys as a preview.
