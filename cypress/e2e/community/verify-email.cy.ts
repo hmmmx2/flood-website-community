@@ -36,6 +36,18 @@ describe('Community · verify email', () => {
     cy.location('pathname', { timeout: 8000 }).should('eq', '/login');
   });
 
+  it('shows the expired-code message on a 410 and stays on the page', () => {
+    cy.intercept('POST', '/api/auth/verify-email', {
+      statusCode: 410,
+      body: { error: 'This verification code has expired. Request a new one from the sign-in page.' },
+    }).as('verifyExpired');
+    typeCode('123456');
+    cy.cyGet('verify-submit').click();
+    cy.wait('@verifyExpired');
+    cy.contains('expired').should('be.visible');
+    cy.location('pathname').should('eq', '/verify-email');
+  });
+
   it('resends a fresh verification code', () => {
     cy.cyGet('verify-resend').click();
     cy.wait('@resendVerification');

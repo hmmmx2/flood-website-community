@@ -11,7 +11,7 @@
     "cy:open": "cypress open",
     "cy:run": "cypress run",
     "cy:run:headed": "cypress run --headed",
-    "cy:run:auth": "cypress run --spec 'cypress/e2e/auth/**/*.cy.ts'",
+    "cy:run:auth": "cypress run --spec 'cypress/e2e/community/login.cy.ts,cypress/e2e/community/register.cy.ts,cypress/e2e/community/verify-email.cy.ts,cypress/e2e/community/forgot-password.cy.ts,cypress/e2e/community/reset-password.cy.ts,cypress/e2e/community/auth-gate.cy.ts'",
     "cy:run:feed": "cypress run --spec 'cypress/e2e/feed/**/*.cy.ts'",
     "cy:run:blog": "cypress run --spec 'cypress/e2e/blog/**/*.cy.ts'",
     "cy:run:sensors": "cypress run --spec 'cypress/e2e/sensors/**/*.cy.ts'",

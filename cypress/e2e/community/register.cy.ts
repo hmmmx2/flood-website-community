@@ -52,6 +52,37 @@ describe('Community · register', () => {
     cy.location('search').should('include', 'email=');
   });
 
+  it('surfaces a friendly message when the email already exists (409)', () => {
+    cy.intercept('POST', '/api/auth/register', {
+      statusCode: 409,
+      body: { error: 'An account with this email already exists.' },
+    }).as('registerConflict');
+    cy.get('#firstName').type('Ada');
+    cy.get('#lastName').type('Lovelace');
+    cy.get('#email').type('taken@example.com');
+    cy.get('#password').type('Password@123');
+    cy.get('#confirmPassword').type('Password@123');
+    cy.cyGet('register-submit').click();
+    cy.wait('@registerConflict');
+    cy.cyGet('register-error').should('contain', 'already exists');
+    cy.location('pathname').should('eq', '/register'); // no handoff on failure
+  });
+
+  it('surfaces the rate-limit message on 429 (no dead-end)', () => {
+    cy.intercept('POST', '/api/auth/register', {
+      statusCode: 429,
+      body: { error: 'Too many sign-up attempts from your network. Please wait a few minutes and try again.' },
+    }).as('registerRateLimited');
+    cy.get('#firstName').type('Ada');
+    cy.get('#lastName').type('Lovelace');
+    cy.get('#email').type('ada@example.com');
+    cy.get('#password').type('Password@123');
+    cy.get('#confirmPassword').type('Password@123');
+    cy.cyGet('register-submit').click();
+    cy.wait('@registerRateLimited');
+    cy.cyGet('register-error').should('contain', 'Too many');
+  });
+
   it('never leaks the dev verification code into the URL (QA P1-2)', () => {
     cy.intercept('POST', '/api/auth/register', {
       body: { email: 'ada@example.com', devCode: '654321' },
