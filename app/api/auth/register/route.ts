@@ -48,6 +48,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (status === 429) {
+      return NextResponse.json(
+        { error: "Too many sign-up attempts from your network. Please wait a few minutes and try again." },
+        { status: 429 }
+      );
+    }
+
     return NextResponse.json(
       { error: "Registration failed. Please try again." },
       { status: status ?? 500 }
