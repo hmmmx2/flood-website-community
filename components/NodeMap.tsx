@@ -35,7 +35,6 @@ import {
   Autocomplete,
   Circle,
   GoogleMap,
-  HeatmapLayer,
   Marker,
   Polyline,
   TrafficLayer,
@@ -136,7 +135,7 @@ function getZoneColour(z: Zone): string {
  * `drawing` stays deferred — it's only behind annotation tools that
  * we haven't built yet.
  */
-const MAPS_LIBRARIES: Libraries = ["places", "geometry", "marker", "visualization"];
+const MAPS_LIBRARIES: Libraries = ["places", "geometry", "marker"];
 
 const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ?? "";
 const hasValidApiKey = apiKey.length > 10 && !apiKey.includes("Example");
@@ -853,30 +852,15 @@ export default function NodeMap({
           />
         ))}
 
-        {/* Heatmap (P2-3) — points are zone centroids weighted by
-            worst level so Critical clusters glow brighter than Alert.
-            Renders below the circles so the per-zone affordances stay
-            tappable. */}
-        {/* Guard on the actual HeatmapLayer constructor, not just the
-            visualization namespace. Google removed HeatmapLayer in Maps JS
-            v3.65 while keeping the `visualization` namespace, so the old
-            check passed and `new HeatmapLayer()` threw, crashing the whole
-            map. This degrades gracefully when the API no longer ships it. */}
-        {heatmapOn && typeof google !== "undefined" && typeof google.maps?.visualization?.HeatmapLayer === "function" && (
-          <HeatmapLayer
-            data={zones
-              .filter(z => !z.allOffline)
-              .map(z => ({
-                location: new google.maps.LatLng(z.centroidLat, z.centroidLng),
-                weight: z.worstLevel + 1,
-              }))}
-            options={{
-              radius: 60,
-              opacity: 0.55,
-              dissipating: true,
-            }}
-          />
-        )}
+        {/* Heatmap removed (2026): Google retired google.maps.visualization
+            HeatmapLayer in Maps JS v3.65 and left a STUB constructor that
+            THROWS "no longer available" on instantiation. A feature check
+            (typeof HeatmapLayer === "function") is therefore not enough — the
+            stub still passes it, then `new HeatmapLayer()` throws and crashes
+            the whole map. Worse, heatmapOn is restored from localStorage, so a
+            user who once toggled it on crashed the map on every later load.
+            The layer is no longer rendered. The toggle is left as a no-op;
+            swap in a non-deprecated heatmap (e.g. deck.gl) to revive it. */}
 
         {/* Aggregated flood-zone circles (re-enabled 2026-05-24).
             These render the privacy-safe output of the BFF aggregator
