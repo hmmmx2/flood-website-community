@@ -857,7 +857,12 @@ export default function NodeMap({
             worst level so Critical clusters glow brighter than Alert.
             Renders below the circles so the per-zone affordances stay
             tappable. */}
-        {heatmapOn && typeof google !== "undefined" && google.maps?.visualization && (
+        {/* Guard on the actual HeatmapLayer constructor, not just the
+            visualization namespace. Google removed HeatmapLayer in Maps JS
+            v3.65 while keeping the `visualization` namespace, so the old
+            check passed and `new HeatmapLayer()` threw, crashing the whole
+            map. This degrades gracefully when the API no longer ships it. */}
+        {heatmapOn && typeof google !== "undefined" && typeof google.maps?.visualization?.HeatmapLayer === "function" && (
           <HeatmapLayer
             data={zones
               .filter(z => !z.allOffline)
